@@ -52,6 +52,16 @@ export function FilterBar({
     },
   })
 
+  const categoryItems = React.useMemo(() => {
+    const items: Record<string, React.ReactNode> = {
+      all: "Alle Kategorien",
+    }
+    for (const c of categories ?? []) {
+      items[String(c.id)] = c.name
+    }
+    return items
+  }, [categories])
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative min-w-56 flex-1">
@@ -87,6 +97,7 @@ export function FilterBar({
       </div>
 
       <Select
+        items={{ all: "Alle", Eingang: "Eingang", Ausgang: "Ausgang" }}
         value={filters.type}
         onValueChange={(v) =>
           onChange({
@@ -106,6 +117,7 @@ export function FilterBar({
       </Select>
 
       <Select
+        items={categoryItems}
         value={
           filters.categoryIds.length === 1
             ? String(filters.categoryIds[0])
