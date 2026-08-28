@@ -30,11 +30,17 @@ export class LabellerRequestError extends Error {
   }
 }
 
+const textEncoder = new TextEncoder()
+const textDecoder = new TextDecoder()
+
 function truncate(s: string): string {
   const normalized = normalizeWhitespace(s)
-  return normalized.length > MAX_FIELD_LENGTH
-    ? normalized.slice(0, MAX_FIELD_LENGTH)
-    : normalized
+  const bytes = textEncoder.encode(normalized)
+  if (bytes.length <= MAX_FIELD_LENGTH) return normalized
+  // the service enforces maxLength in UTF-8 bytes; cut on a char boundary
+  let end = MAX_FIELD_LENGTH
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) end--
+  return textDecoder.decode(bytes.subarray(0, end))
 }
 
 function sleep(ms: number): Promise<void> {
@@ -193,12 +199,19 @@ export async function labelWithChunking(
         413
       )
     }
-    if (chunk.length > maxBatch) {
-      // hard slice at maxBatch (preserves API limit), recurse for the rest
-      await run(chunk.slice(0, maxBatch), depth + 1)
-      await run(chunk.slice(maxBatch), depth + 1)
-      return
+    // hard slice at maxBatch (preserves API limit); iterative so ordinary
+    // slicing never consumes the split-depth budget
+    while (chunk.length > maxBatch) {
+      await send(chunk.slice(0, maxBatch), depth)
+      chunk = chunk.slice(maxBatch)
     }
+    await send(chunk, depth)
+  }
+
+  async function send(
+    chunk: LabellerInput[],
+    depth: number
+  ): Promise<void> {
     try {
       const results = await client.labelChunk(chunk)
       await onBatchDone(results)

@@ -97,6 +97,34 @@ describe("LabellerClient.labelChunk", () => {
     expect(captured!.options.language).toBe("de")
   })
 
+  it("truncates by UTF-8 bytes, not chars", async () => {
+    let captured: {
+      transactions: Array<{ counterparty: string; purpose: string }>
+    } | null = null
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        captured = JSON.parse(String(init?.body))
+        return okResponse([])
+      })
+    )
+    // 600 'ü' = 600 chars but 1200 bytes; emoji are 4 bytes each
+    const longUmlaut = "ü".repeat(600)
+    const longEmoji = "😀".repeat(600)
+    await new LabellerClient("http://x").labelChunk([
+      {
+        id: "tx-0",
+        amountCents: -100,
+        counterparty: longUmlaut,
+        purpose: longEmoji,
+        bookingDate: "2026-02-03",
+      },
+    ])
+    const tx = captured!.transactions[0]
+    expect(new TextEncoder().encode(tx.counterparty).length).toBeLessThanOrEqual(512)
+    expect(new TextEncoder().encode(tx.purpose).length).toBeLessThanOrEqual(512)
+  })
+
   it("retries on 503 honoring Retry-After then succeeds", async () => {
     let calls = 0
     vi.stubGlobal(
@@ -191,6 +219,40 @@ describe("labelWithChunking", () => {
     expect(sizes).toEqual([100, 100, 50])
     expect(seen).toHaveLength(250)
     expect(new Set(seen).size).toBe(250)
+  })
+
+  it("slices large sweeps iteratively without exhausting split depth", async () => {
+    const sizes: number[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body))
+        sizes.push(body.transactions.length)
+        return new Response(
+          JSON.stringify({
+            results: body.transactions.map((t: { id: string }) => ({
+              id: t.id,
+              label: "L",
+            })),
+          }),
+          { status: 200 }
+        )
+      })
+    )
+    const client = new LabellerClient("http://x")
+    const seen: string[] = []
+    // 2000 items: old code recursed per 100-item slice and hit depth > 16
+    await labelWithChunking(
+      client,
+      Array.from({ length: 2000 }, (_, i) => baseInput(i)),
+      (results) => {
+        for (const r of results) seen.push(r.id)
+      }
+    )
+    expect(sizes).toHaveLength(20)
+    expect(sizes.every((s) => s === 100)).toBe(true)
+    expect(seen).toHaveLength(2000)
+    expect(new Set(seen).size).toBe(2000)
   })
 
   it("splits on 413 and marks single-item 413 as failed item", async () => {
