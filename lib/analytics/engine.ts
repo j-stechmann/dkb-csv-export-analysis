@@ -224,8 +224,6 @@ export function computeAnalytics(
 
   let currentBalanceCents: number | null
   let balanceWithoutSnapshot: boolean
-  let openingBalance: number | null
-  let timelineStart: string | null
 
   if (anchor) {
     const afterSnapshot = db
@@ -242,39 +240,69 @@ export function computeAnalytics(
       .get()?.sum ?? 0
     currentBalanceCents = anchor.snapshotAmountCents + afterSnapshot
     balanceWithoutSnapshot = false
-    openingBalance = anchor.snapshotAmountCents - afterSnapshot
-    timelineStart = anchor.snapshotDate
   } else {
     currentBalanceCents = totalSum
     balanceWithoutSnapshot = true
-    openingBalance = 0
-    timelineStart = null
   }
 
-  // ── balance timeline: daily sums + cumulative from anchor ─────────
+  // ── balance timeline: daily sums, back/forward from the anchor ────
   const dailyRows = db
     .select({
       date: transactions.bookingDate,
       sum: sql<number>`SUM(${transactions.amountCents})`,
     })
     .from(transactions)
-    .where(
-      anchor
-        ? and(...base, gt(transactions.bookingDate, anchor.snapshotDate))
-        : and(...base)
-    )
+    .where(and(...base))
     .groupBy(transactions.bookingDate)
     .orderBy(transactions.bookingDate)
     .all()
 
-  let running = openingBalance
   const balanceTimeline: BalancePoint[] = []
-  if (timelineStart) {
-    balanceTimeline.push({ date: timelineStart, balanceCents: running })
-  }
-  for (const row of dailyRows) {
-    running += row.sum
-    balanceTimeline.push({ date: row.date, balanceCents: running })
+
+  if (anchor) {
+    // DKB snapshots sit at the END of the export period, so earlier balances
+    // are back-calculated: at every booked day d ≤ snapshot the balance is
+    // snapshot − Σ(sums of booked days after d, up to and incl. snapshot day).
+    const firstAfter = dailyRows.findIndex(
+      (r) => r.date > anchor.snapshotDate
+    )
+    const lastBeforeIdx = firstAfter === -1 ? dailyRows.length : firstAfter
+
+    let suffix = 0
+    const backward: BalancePoint[] = []
+    for (let i = lastBeforeIdx - 1; i >= 0; i--) {
+      const row = dailyRows[i]
+      if (row.date !== anchor.snapshotDate) {
+        backward.push({ date: row.date, balanceCents: anchor.snapshotAmountCents - suffix })
+      }
+      suffix += row.sum
+    }
+    backward.reverse()
+
+    const anchorPoint: BalancePoint = {
+      date: anchor.snapshotDate,
+      balanceCents: anchor.snapshotAmountCents,
+    }
+
+    let running = anchor.snapshotAmountCents
+    const forward: BalancePoint[] = []
+    for (let i = firstAfter === -1 ? dailyRows.length : firstAfter; i < dailyRows.length; i++) {
+      running += dailyRows[i].sum
+      forward.push({ date: dailyRows[i].date, balanceCents: running })
+    }
+
+    balanceTimeline.push(
+      ...backward,
+      anchorPoint,
+      ...forward
+    )
+  } else {
+    // no snapshot: cumulative sum from zero (best-effort pseudo balance)
+    let running = 0
+    for (const row of dailyRows) {
+      running += row.sum
+      balanceTimeline.push({ date: row.date, balanceCents: running })
+    }
   }
 
   // ── top categories (expenses only) ────────────────────────────────

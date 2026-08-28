@@ -212,6 +212,32 @@ describe("fixture end-to-end correctness", () => {
     }
   })
 
+  it("back-calculates the balance timeline from the snapshot anchor", () => {
+    const filters = parseFilters(new URLSearchParams())
+    const result = computeAnalytics(filters, "2026-08-28")
+    const t = result.balanceTimeline
+
+    // fixture: bookings start 2024-01-01, snapshot 2024-01-05 = 5.000,00 €
+    // bookings ≤ snapshot: 01-01 +3500€, 01-03 −1200€, 01-05 −67,53€
+    // → backward: 01-01 = 5000 + 1200 + 67,53 = 6267,53 €
+    //             01-03 = 5000 + 67,53        = 5067,53 €
+    // (01-05 IS the anchor point = 5000,00 €)
+    expect(t.length).toBeGreaterThan(manifest.expected.monthlyCashflow.length)
+    expect(t[0]).toEqual({ date: "2024-01-01", balanceCents: 626753 })
+    expect(t[1]).toEqual({ date: "2024-01-03", balanceCents: 506753 })
+    expect(t[2]).toEqual({ date: "2024-01-05", balanceCents: 500000 })
+
+    // strictly ascending dates
+    for (let i = 1; i < t.length; i++) {
+      expect(t[i].date > t[i - 1].date, `${t[i].date} after ${t[i - 1].date}`).toBe(true)
+    }
+
+    // last point equals the current balance KPI
+    expect(t[t.length - 1].balanceCents).toBe(
+      manifest.expected.currentBalanceCents
+    )
+  })
+
   it("top categories match hand-computed totals", () => {
     const filters = parseFilters(new URLSearchParams())
     const result = computeAnalytics(filters, "2026-08-28")

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { FilterBar } from "@/components/filter-bar"
-import { KpiRow, useAnalytics, type AnalyticsResponse } from "@/components/analytics-kpis"
+import { KpiRow, useAnalytics } from "@/components/analytics-kpis"
 import {
   BalanceChart,
   CashflowChart,
