@@ -1,0 +1,166 @@
+{
+  "csvFileName": "fixture.csv",
+  "account": {
+    "iban": "DE02120300000000202051",
+    "name": "Girokonto"
+  },
+  "snapshot": {
+    "date": "2024-01-05",
+    "amountCents": 500000
+  },
+  "rowCount": 249,
+  "pendingCount": 24,
+  "zeroAmountCount": 8,
+  "expected": {
+    "transactionCount": 225,
+    "currentBalanceCents": 5257194,
+    "avgMonthlyIncomeCents": 350000,
+    "avgMonthlyExpensesCents": 142482,
+    "savingsRate": 0.5929085714285715,
+    "monthsCounted": 24,
+    "monthlyCashflow": [
+      {
+        "month": "2024-01",
+        "incomeCents": 350000,
+        "expensesCents": 142525
+      },
+      {
+        "month": "2024-02",
+        "incomeCents": 350000,
+        "expensesCents": 141441
+      },
+      {
+        "month": "2024-03",
+        "incomeCents": 350000,
+        "expensesCents": 140357
+      },
+      {
+        "month": "2024-04",
+        "incomeCents": 350000,
+        "expensesCents": 139273
+      },
+      {
+        "month": "2024-05",
+        "incomeCents": 350000,
+        "expensesCents": 144189
+      },
+      {
+        "month": "2024-06",
+        "incomeCents": 350000,
+        "expensesCents": 137105
+      },
+      {
+        "month": "2024-07",
+        "incomeCents": 350000,
+        "expensesCents": 142021
+      },
+      {
+        "month": "2024-08",
+        "incomeCents": 350000,
+        "expensesCents": 146937
+      },
+      {
+        "month": "2024-09",
+        "incomeCents": 350000,
+        "expensesCents": 139853
+      },
+      {
+        "month": "2024-10",
+        "incomeCents": 350000,
+        "expensesCents": 144769
+      },
+      {
+        "month": "2024-11",
+        "incomeCents": 350000,
+        "expensesCents": 143685
+      },
+      {
+        "month": "2024-12",
+        "incomeCents": 350000,
+        "expensesCents": 142601
+      },
+      {
+        "month": "2025-01",
+        "incomeCents": 350000,
+        "expensesCents": 142529
+      },
+      {
+        "month": "2025-02",
+        "incomeCents": 350000,
+        "expensesCents": 141445
+      },
+      {
+        "month": "2025-03",
+        "incomeCents": 350000,
+        "expensesCents": 140361
+      },
+      {
+        "month": "2025-04",
+        "incomeCents": 350000,
+        "expensesCents": 139277
+      },
+      {
+        "month": "2025-05",
+        "incomeCents": 350000,
+        "expensesCents": 144193
+      },
+      {
+        "month": "2025-06",
+        "incomeCents": 350000,
+        "expensesCents": 137109
+      },
+      {
+        "month": "2025-07",
+        "incomeCents": 350000,
+        "expensesCents": 142025
+      },
+      {
+        "month": "2025-08",
+        "incomeCents": 350000,
+        "expensesCents": 146941
+      },
+      {
+        "month": "2025-09",
+        "incomeCents": 350000,
+        "expensesCents": 139857
+      },
+      {
+        "month": "2025-10",
+        "incomeCents": 350000,
+        "expensesCents": 144773
+      },
+      {
+        "month": "2025-11",
+        "incomeCents": 350000,
+        "expensesCents": 143689
+      },
+      {
+        "month": "2025-12",
+        "incomeCents": 350000,
+        "expensesCents": 152604
+      }
+    ],
+    "topCategories": [
+      {
+        "name": "Vermieter GmbH",
+        "totalCents": 2880000
+      },
+      {
+        "name": "Supermarkt",
+        "totalCents": 481584
+      },
+      {
+        "name": "Streaming AG",
+        "totalCents": 31176
+      },
+      {
+        "name": "Cafe Mittelmeer",
+        "totalCents": 16800
+      },
+      {
+        "name": "Langtext GmbH",
+        "totalCents": 9999
+      }
+    ]
+  }
+}

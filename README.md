@@ -1,21 +1,39 @@
-# Next.js template
+# DKB Analytics
 
-This is a Next.js template with shadcn/ui.
+Next.js app for analyzing DKB banking CSV exports: import via drag-and-drop,
+automatic categorization through a local labeller service, and analytics
+(balance, monthly cash flow, savings rate, top categories) that always
+reflect the filtered query results.
 
-## Adding components
-
-To add components to your app, run the following command:
+## Setup
 
 ```bash
-npx shadcn@latest add button
+bun install
+bun run build && bun run start   # or: bun run dev
 ```
 
-This will place the ui components in the `components` directory.
+Environment (all optional):
 
-## Using components
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATABASE_PATH` | `./data/dkb.db` | SQLite database file |
+| `LABELLER_BASE_URL` | `http://127.0.0.1:8080` | transaction-labeller service |
+| `LABELLER_LANGUAGE` | `de` | ISO 639-1 label language |
+| `LABELLER_BATCH_SIZE` | `100` | max items per labeller request |
+| `LABELLER_MAX_RETRIES` | `3` | retries when labeller is down |
 
-To use the components in your app, import them as follows:
+Imports: drag any DKB CSV export onto the window. Processing runs in the
+background; progress is shown in the floating pill and on the Imports page.
+Re-importing the same or overlapping exports deduplicates automatically —
+transactions are never deleted.
 
-```tsx
-import { Button } from "@/components/ui/button";
+## Correctness
+
+All amounts are stored as integer cents and verified by a test suite that
+includes property-based round-trips (20k random amounts), a synthetic
+24-month fixture with a hand-computed KPI manifest asserted **to the cent**
+through the real HTTP API, and dedupe/labeller edge cases:
+
+```bash
+bunx vitest run
 ```

@@ -34,3 +34,10 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# app data
+/data/
+/tmp/
+*.db
+*.db-wal
+*.db-shm

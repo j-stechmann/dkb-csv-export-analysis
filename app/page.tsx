@@ -1,18 +1,59 @@
-import { Button } from "@/components/ui/button"
+"use client"
 
-export default function Page() {
+import * as React from "react"
+import { FilterBar } from "@/components/filter-bar"
+import { KpiRow, useAnalytics, type AnalyticsResponse } from "@/components/analytics-kpis"
+import {
+  BalanceChart,
+  CashflowChart,
+  TopCategoriesChart,
+} from "@/components/analytics-charts"
+import { TransactionsTable } from "@/components/transactions-table"
+import { EMPTY_FILTERS, type DashboardFilters } from "@/lib/filters"
+
+export default function DashboardPage() {
+  const [filters, setFilters] = React.useState<DashboardFilters>(EMPTY_FILTERS)
+
+  const params = React.useMemo(() => {
+    const sp = new URLSearchParams()
+    if (filters.q) sp.set("q", filters.q)
+    if (filters.dateFrom) sp.set("dateFrom", filters.dateFrom)
+    if (filters.dateTo) sp.set("dateTo", filters.dateTo)
+    if (filters.type !== "all") sp.set("type", filters.type)
+    for (const id of filters.categoryIds) sp.append("categoryId", String(id))
+    return sp.toString()
+  }, [filters])
+
+  const { data: analytics, isLoading } = useAnalytics(params)
+
   return (
-    <div className="flex min-h-svh p-6">
-      <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
-        <div>
-          <h1 className="font-medium">Project ready!</h1>
-          <p>You may now add components and start building.</p>
-          <p>We&apos;ve already added the button component for you.</p>
-          <Button className="mt-2">Button</Button>
-        </div>
-        <div className="font-mono text-xs text-muted-foreground">
-          (Press <kbd>d</kbd> to toggle dark mode)
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-serif text-2xl font-semibold tracking-tight">
+          Dashboard
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Analysen basieren auf den gefilterten Transaktionen.
+        </p>
+      </div>
+
+      <FilterBar filters={filters} onChange={setFilters} />
+
+      <KpiRow analytics={analytics} loading={isLoading} />
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <CashflowChart data={analytics?.monthlyCashflow} loading={isLoading} />
+        <TopCategoriesChart
+          data={analytics?.topCategories}
+          loading={isLoading}
+        />
+      </div>
+
+      <BalanceChart data={analytics?.balanceTimeline} loading={isLoading} />
+
+      <div>
+        <h2 className="mb-3 font-serif text-lg font-semibold">Transaktionen</h2>
+        <TransactionsTable filters={filters} />
       </div>
     </div>
   )

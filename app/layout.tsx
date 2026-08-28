@@ -1,20 +1,7 @@
-import { Geist, Geist_Mono, EB_Garamond } from "next/font/google"
-
+import { AppNav } from "@/components/app-nav"
+import { Providers } from "@/components/providers"
+import { LabellerHealthBadge } from "@/components/labeller-health-badge"
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
-import { cn } from "@/lib/utils";
-
-const ebGaramond = EB_Garamond({subsets:['latin'],variable:'--font-serif'});
-
-const fontSans = Geist({
-  subsets: ["latin"],
-  variable: "--font-sans",
-})
-
-const fontMono = Geist_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-})
 
 export default function RootLayout({
   children,
@@ -22,13 +9,26 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html
-      lang="en"
-      suppressHydrationWarning
-      className={cn("antialiased", fontSans.variable, fontMono.variable, "font-serif", ebGaramond.variable)}
-    >
-      <body>
-        <ThemeProvider>{children}</ThemeProvider>
+    <html lang="de" suppressHydrationWarning>
+      <body className="font-serif antialiased">
+        <Providers>
+          <div className="flex min-h-svh flex-col">
+            <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+              <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-4 px-4">
+                <div className="flex items-center gap-6">
+                  <span className="text-sm font-semibold tracking-tight">
+                    DKB Analytics
+                  </span>
+                  <AppNav />
+                </div>
+                <LabellerHealthBadge />
+              </div>
+            </header>
+            <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
+              {children}
+            </main>
+          </div>
+        </Providers>
       </body>
     </html>
   )

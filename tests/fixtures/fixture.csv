@@ -1,0 +1,278 @@
+﻿Girokonto;DE02120300000000202051;
+Zeitraum:;01.01.2024 – 31.12.2025;
+Kontostand vom 05.01.2024:;5.000,00 €;
+
+Buchungsdatum;Wertstellung;Status;Zahlungspflichtige*r;Zahlungsempfänger*in;Verwendungszweck;Umsatztyp;IBAN;Betrag (€);Gläubiger-ID;Mandatsreferenz;Kundenreferenz
+01.01.24;01.01.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.01.24;03.01.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.01.24;05.01.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-67,53;;;
+10.01.24;10.01.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-26,72;;;
+15.01.24;15.01.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-45,91;;;
+20.01.24;20.01.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-65,10;;;
+10.01.24;10.01.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.01.24;10.01.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.01.24;15.01.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.01.24;28.01.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.02.24;01.02.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.02.24;03.02.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.02.24;05.02.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-34,82;;;
+10.02.24;10.02.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-54,01;;;
+15.02.24;15.02.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-73,20;;;
+20.02.24;20.02.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-32,39;;;
+10.02.24;10.02.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.02.24;10.02.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.02.24;15.02.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.02.24;28.02.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.03.24;01.03.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.03.24;03.03.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.03.24;05.03.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-62,11;;;
+10.03.24;10.03.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-21,30;;;
+15.03.24;15.03.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-40,49;;;
+20.03.24;20.03.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-59,68;;;
+10.03.24;10.03.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.03.24;10.03.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.03.24;15.03.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.03.24;28.03.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+20.03.24;20.03.24;Gebucht;Kreditkarte;Ich Selbst;Saldoausgleich;Eingang;DE02100100123456789001;0,00;;;
+01.04.24;01.04.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.04.24;03.04.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.04.24;05.04.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-29,40;;;
+10.04.24;10.04.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-48,59;;;
+15.04.24;15.04.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-67,78;;;
+20.04.24;20.04.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-26,97;;;
+10.04.24;10.04.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.04.24;10.04.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.04.24;15.04.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.04.24;28.04.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.05.24;01.05.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.05.24;03.05.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.05.24;05.05.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-56,69;;;
+10.05.24;10.05.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-75,88;;;
+15.05.24;15.05.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-35,07;;;
+20.05.24;20.05.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-54,26;;;
+10.05.24;10.05.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.05.24;10.05.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.05.24;15.05.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.05.24;28.05.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.06.24;01.06.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.06.24;03.06.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.06.24;05.06.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-23,98;;;
+10.06.24;10.06.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-43,17;;;
+15.06.24;15.06.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-62,36;;;
+20.06.24;20.06.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-21,55;;;
+10.06.24;10.06.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.06.24;10.06.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.06.24;15.06.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.06.24;28.06.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+20.06.24;20.06.24;Gebucht;Kreditkarte;Ich Selbst;Saldoausgleich;Eingang;DE02100100123456789001;0,00;;;
+01.07.24;01.07.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.07.24;03.07.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.07.24;05.07.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-51,27;;;
+10.07.24;10.07.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-70,46;;;
+15.07.24;15.07.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-29,65;;;
+20.07.24;20.07.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-48,84;;;
+10.07.24;10.07.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.07.24;10.07.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.07.24;15.07.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.07.24;28.07.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.08.24;01.08.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.08.24;03.08.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.08.24;05.08.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-78,56;;;
+10.08.24;10.08.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-37,75;;;
+15.08.24;15.08.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-56,94;;;
+20.08.24;20.08.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-76,13;;;
+10.08.24;10.08.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.08.24;10.08.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.08.24;15.08.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.08.24;28.08.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.09.24;01.09.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.09.24;03.09.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.09.24;05.09.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-45,85;;;
+10.09.24;10.09.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-65,04;;;
+15.09.24;15.09.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-24,23;;;
+20.09.24;20.09.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-43,42;;;
+10.09.24;10.09.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.09.24;10.09.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.09.24;15.09.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.09.24;28.09.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+20.09.24;20.09.24;Gebucht;Kreditkarte;Ich Selbst;Saldoausgleich;Eingang;DE02100100123456789001;0,00;;;
+01.10.24;01.10.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.10.24;03.10.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.10.24;05.10.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-73,14;;;
+10.10.24;10.10.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-32,33;;;
+15.10.24;15.10.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-51,52;;;
+20.10.24;20.10.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-70,71;;;
+10.10.24;10.10.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.10.24;10.10.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.10.24;15.10.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.10.24;28.10.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.11.24;01.11.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.11.24;03.11.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.11.24;05.11.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-40,43;;;
+10.11.24;10.11.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-59,62;;;
+15.11.24;15.11.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-78,81;;;
+20.11.24;20.11.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-38,00;;;
+10.11.24;10.11.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.11.24;10.11.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.11.24;15.11.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.11.24;28.11.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.12.24;01.12.24;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.12.24;03.12.24;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.12.24;05.12.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-67,72;;;
+10.12.24;10.12.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-26,91;;;
+15.12.24;15.12.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-46,10;;;
+20.12.24;20.12.24;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-65,29;;;
+10.12.24;10.12.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.12.24;10.12.24;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.12.24;15.12.24;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.12.24;28.12.24;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+20.12.24;20.12.24;Gebucht;Kreditkarte;Ich Selbst;Saldoausgleich;Eingang;DE02100100123456789001;0,00;;;
+01.01.25;01.01.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.01.25;03.01.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.01.25;05.01.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-67,54;;;
+10.01.25;10.01.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-26,73;;;
+15.01.25;15.01.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-45,92;;;
+20.01.25;20.01.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-65,11;;;
+10.01.25;10.01.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.01.25;10.01.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.01.25;15.01.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.01.25;28.01.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.02.25;01.02.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.02.25;03.02.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.02.25;05.02.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-34,83;;;
+10.02.25;10.02.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-54,02;;;
+15.02.25;15.02.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-73,21;;;
+20.02.25;20.02.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-32,40;;;
+10.02.25;10.02.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.02.25;10.02.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.02.25;15.02.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.02.25;28.02.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.03.25;01.03.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.03.25;03.03.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.03.25;05.03.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-62,12;;;
+10.03.25;10.03.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-21,31;;;
+15.03.25;15.03.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-40,50;;;
+20.03.25;20.03.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-59,69;;;
+10.03.25;10.03.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.03.25;10.03.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.03.25;15.03.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.03.25;28.03.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+20.03.25;20.03.25;Gebucht;Kreditkarte;Ich Selbst;Saldoausgleich;Eingang;DE02100100123456789001;0,00;;;
+01.04.25;01.04.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.04.25;03.04.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.04.25;05.04.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-29,41;;;
+10.04.25;10.04.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-48,60;;;
+15.04.25;15.04.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-67,79;;;
+20.04.25;20.04.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-26,98;;;
+10.04.25;10.04.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.04.25;10.04.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.04.25;15.04.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.04.25;28.04.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.05.25;01.05.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.05.25;03.05.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.05.25;05.05.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-56,70;;;
+10.05.25;10.05.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-75,89;;;
+15.05.25;15.05.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-35,08;;;
+20.05.25;20.05.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-54,27;;;
+10.05.25;10.05.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.05.25;10.05.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.05.25;15.05.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.05.25;28.05.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.06.25;01.06.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.06.25;03.06.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.06.25;05.06.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-23,99;;;
+10.06.25;10.06.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-43,18;;;
+15.06.25;15.06.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-62,37;;;
+20.06.25;20.06.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-21,56;;;
+10.06.25;10.06.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.06.25;10.06.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.06.25;15.06.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.06.25;28.06.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+20.06.25;20.06.25;Gebucht;Kreditkarte;Ich Selbst;Saldoausgleich;Eingang;DE02100100123456789001;0,00;;;
+01.07.25;01.07.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.07.25;03.07.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.07.25;05.07.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-51,28;;;
+10.07.25;10.07.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-70,47;;;
+15.07.25;15.07.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-29,66;;;
+20.07.25;20.07.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-48,85;;;
+10.07.25;10.07.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.07.25;10.07.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.07.25;15.07.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.07.25;28.07.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.08.25;01.08.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.08.25;03.08.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.08.25;05.08.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-78,57;;;
+10.08.25;10.08.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-37,76;;;
+15.08.25;15.08.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-56,95;;;
+20.08.25;20.08.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-76,14;;;
+10.08.25;10.08.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.08.25;10.08.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.08.25;15.08.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.08.25;28.08.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.09.25;01.09.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.09.25;03.09.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.09.25;05.09.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-45,86;;;
+10.09.25;10.09.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-65,05;;;
+15.09.25;15.09.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-24,24;;;
+20.09.25;20.09.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-43,43;;;
+10.09.25;10.09.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.09.25;10.09.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.09.25;15.09.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.09.25;28.09.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+20.09.25;20.09.25;Gebucht;Kreditkarte;Ich Selbst;Saldoausgleich;Eingang;DE02100100123456789001;0,00;;;
+01.10.25;01.10.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.10.25;03.10.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.10.25;05.10.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-73,15;;;
+10.10.25;10.10.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-32,34;;;
+15.10.25;15.10.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-51,53;;;
+20.10.25;20.10.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-70,72;;;
+10.10.25;10.10.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.10.25;10.10.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.10.25;15.10.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.10.25;28.10.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.11.25;01.11.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.11.25;03.11.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.11.25;05.11.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-40,44;;;
+10.11.25;10.11.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-59,63;;;
+15.11.25;15.11.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-78,82;;;
+20.11.25;20.11.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-38,01;;;
+10.11.25;10.11.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.11.25;10.11.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.11.25;15.11.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.11.25;28.11.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+01.12.25;01.12.25;Gebucht;Arbeitgeber GmbH;Ich Selbst;Gehalt;Eingang;DE02100100123456789001;3.500,00;;;
+03.12.25;03.12.25;Gebucht;Ich Selbst;Vermieter GmbH;Miete;Ausgang;DE02100100123456789001;-1.200,00;;;
+05.12.25;05.12.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-67,73;;;
+10.12.25;10.12.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-26,92;;;
+15.12.25;15.12.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-46,11;;;
+20.12.25;20.12.25;Gebucht;Ich Selbst;Supermarkt;Einkauf;Ausgang;DE02100100123456789001;-65,30;;;
+10.12.25;10.12.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+10.12.25;10.12.25;Gebucht;Ich Selbst;Cafe Mittelmeer;Kaffee;Ausgang;DE02100100123456789001;-3,50;;;
+15.12.25;15.12.25;Gebucht;Ich Selbst;Streaming AG;"SVWZ+Streaming
+Abonnement 01/2024";Ausgang;DE02100100123456789001;-12,99;;;
+28.12.25;28.12.25;Nicht gebucht;Ich Selbst;Pending Shop;Noch nicht gebucht;Ausgang;DE02100100123456789001;-0,99;;;
+20.12.25;20.12.25;Gebucht;Kreditkarte;Ich Selbst;Saldoausgleich;Eingang;DE02100100123456789001;0,00;;;
+20.12.25;20.12.25;Gebucht;Ich Selbst;Langtext GmbH;XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX;Ausgang;DE02100100123456789001;-99,99;;;
