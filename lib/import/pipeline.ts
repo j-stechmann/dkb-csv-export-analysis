@@ -12,6 +12,7 @@ import {
 } from "@/lib/csv/parser"
 import { computeDedupe, hashTransaction, HASH_VERSION, lowestFreeIndex } from "@/lib/db/dedupe"
 import {
+  findBookedSelfHealPairs,
   findDbSelfHealPairs,
   matchIncoming,
   toDbMatchRow,
@@ -275,9 +276,13 @@ export interface ReconcileStageResult {
  * Fuzzy pending→booked reconciliation + occurrence-aware dedupe + insert,
  * all mutations in ONE transaction:
  * 1. self-heal: delete DB pending rows that match a DB booked row
- * 2. classify incoming rows vs DB (upgrades / skip / refresh)
- * 3. exact dedupe tier on unconsumed rows only
- * 4. apply: deletes → in-place updates (fresh hash + occurrence slot) → inserts
+ * 2. booked self-heal: delete the newer DB row of stored booked↔booked
+ *    re-render pairs (same Kundenreferenz, different content — DKB changed
+ *    the payee rendering between export formats)
+ * 3. classify incoming rows vs DB (upgrades / skip / refresh; booked
+ *    incoming with an already-stored bank identity is a skip)
+ * 4. exact dedupe tier on unconsumed rows only
+ * 5. apply: deletes → in-place updates (fresh hash + occurrence slot) → inserts
  */
 export function runReconcileAndDedupeStage(
   accountIban: string,
@@ -299,7 +304,19 @@ export function runReconcileAndDedupeStage(
   const selfHealIds = new Set(selfHeal.map((p) => p.pendingId))
   const remainingDbRows = dbMatchRows.filter((r) => !selfHealIds.has(r.id))
 
-  const fuzzy = matchIncoming(remainingDbRows, rows)
+  // booked↔booked re-renders (same Kundenreferenz, different content):
+  // the newer duplicated copy becomes a delete candidate before matching,
+  // so the incoming file cannot pair with it again
+  const createdAtById = new Map(
+    dbAccountRows.map((r) => [r.id, r.createdAt] as const)
+  )
+  const bookedHeal = findBookedSelfHealPairs(dbMatchRows, createdAtById)
+  const bookedHealIds = new Set(bookedHeal.map((p) => p.deleteId))
+  const effectiveDbRows = remainingDbRows.filter(
+    (r) => !bookedHealIds.has(r.id)
+  )
+
+  const fuzzy = matchIncoming(effectiveDbRows, rows)
   const consumedIncoming = new Set<number>([
     ...fuzzy.upgrades.map((m) => m.incomingIndex),
     ...fuzzy.refreshes.map((m) => m.incomingIndex),
@@ -312,7 +329,7 @@ export function runReconcileAndDedupeStage(
   // copy in the same file must count as a duplicate, not insert a phantom.
   const existingByHash = new Map<string, Set<number>>()
   for (const r of dbMatchRows) {
-    if (selfHealIds.has(r.id)) continue
+    if (selfHealIds.has(r.id) || bookedHealIds.has(r.id)) continue
     if (r.sourceHash && typeof r.occurrenceIndex === "number") {
       let set = existingByHash.get(r.sourceHash)
       if (!set) {
@@ -358,6 +375,12 @@ export function runReconcileAndDedupeStage(
     for (const pair of selfHeal) {
       tx.delete(transactions)
         .where(eq(transactions.id, pair.pendingId))
+        .run()
+    }
+
+    for (const pair of bookedHeal) {
+      tx.delete(transactions)
+        .where(eq(transactions.id, pair.deleteId))
         .run()
     }
 
@@ -420,7 +443,7 @@ export function runReconcileAndDedupeStage(
   // raw batch count includes them; imported means newly inserted rows only
   const updatedCount = fuzzyUpdates.length
   const skippedCount = fuzzy.skips.length
-  const deletedCount = selfHeal.length
+  const deletedCount = selfHeal.length + bookedHeal.length
   const imported = (totalInDb?.count ?? 0) - updatedCount
   const duplicateCount = skippedCount + dedupe.duplicateCount
 

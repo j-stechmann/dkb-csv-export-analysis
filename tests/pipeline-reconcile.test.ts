@@ -287,3 +287,116 @@ describe("import fuzzy reconciliation stages", () => {
     expect(n).toBe(1)
   })
 })
+
+describe("booked↔booked re-render dedupe (DKB format change)", () => {
+  const REF = "484095562717841"
+
+  it("importing the same card charge under a new payee spelling does not duplicate", () => {
+    // old export (scored spelling), already stored
+    const batch1 = startBatch("b1")
+    seedDbRow(
+      batch1,
+      row({
+        bookingDate: "2024-04-05",
+        payee: "EDEKA.SCHROT/ELXLEBEN",
+        customerRef: REF,
+        counterpartyIban: "",
+      })
+    )
+
+    // new export renders the payee as merchant-only name
+    const batch2 = startBatch("b2")
+    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
+      row({
+        bookingDate: "2024-04-05",
+        payee: "EDEKA",
+        customerRef: REF,
+        counterpartyIban: "",
+      }),
+    ])
+
+    expect(res.insertedCount).toBe(0)
+    expect(res.skippedCount).toBe(1)
+    const all = db.select().from(transactions).all()
+    expect(all).toHaveLength(1)
+    expect(all[0].payee).toBe("EDEKA.SCHROT/ELXLEBEN")
+  })
+
+  it("self-heal deletes the newer stored copy on the next import after a format change", () => {
+    // both copies already in DB (historical corruption, payees differ)
+    const batch1 = startBatch("b1")
+    const oldId = seedDbRow(
+      batch1,
+      row({
+        bookingDate: "2024-04-05",
+        payee: "EDEKA.SCHROT/ELXLEBEN",
+        customerRef: REF,
+        counterpartyIban: "",
+      })
+    )
+    // fake an older createdAt for batch1's row
+    db.run(
+      `UPDATE transactions SET created_at = '2025-12-21T00:00:00.000Z' WHERE id = '${oldId}'`
+    )
+
+    const batch2 = startBatch("b2")
+    seedDbRow(
+      batch2,
+      row({
+        bookingDate: "2024-04-05",
+        payee: "EDEKA",
+        customerRef: REF,
+        counterpartyIban: "",
+      })
+    )
+
+    expect(
+      db.select().from(transactions).all()
+    ).toHaveLength(2)
+
+    // any subsequent import heals the historical duplicate
+    const batch3 = startBatch("b3")
+    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch3, [
+      row({
+        bookingDate: "2026-02-10",
+        payee: "ALDI",
+        counterpartyIban: "DE02100100123456789002",
+      }),
+    ])
+
+    expect(res.deletedCount).toBe(1)
+    const all = db.select().from(transactions).all()
+    expect(all).toHaveLength(2) // ALDI inserted + one EDEKA copy survives
+    expect(all.filter((t) => t.payee === "EDEKA")).toHaveLength(0)
+    expect(all.filter((t) => t.payee === "EDEKA.SCHROT/ELXLEBEN")).toHaveLength(
+      1
+    )
+    const inserted = all.find((t) => t.payee === "ALDI")
+    expect(inserted).toBeDefined()
+  })
+
+  it("two genuinely different same-day card charges with distinct refs are both kept", () => {
+    const batch1 = startBatch("b1")
+    seedDbRow(
+      batch1,
+      row({
+        bookingDate: "2024-04-05",
+        payee: "EDEKA",
+        customerRef: "ref-A",
+        counterpartyIban: "",
+      })
+    )
+    const batch2 = startBatch("b2")
+    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
+      row({
+        bookingDate: "2024-04-05",
+        payee: "EDEKA",
+        amountCents: -100,
+        customerRef: "ref-B",
+        counterpartyIban: "",
+      }),
+    ])
+    expect(res.insertedCount).toBe(1)
+    expect(db.select().from(transactions).all()).toHaveLength(2)
+  })
+})

@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest"
 import {
+  findBookedSelfHealPairs,
   findDbSelfHealPairs,
   matchIncoming,
+  sameBankIdentity,
   toDbMatchRow,
   dayDiff,
   type DbMatchRow,
@@ -426,6 +428,181 @@ describe("self-heal pairing", () => {
       }),
     ]
     expect(findDbSelfHealPairs(rows)).toEqual([])
+  })
+})
+
+describe("bank identity (Kundenreferenz)", () => {
+  const ref = {
+    customerRef: "386238826586486",
+    counterpartyIban: "DE96120300009005290904",
+  }
+
+  it("same ref + amount + type + close date is the same bank transaction", () => {
+    const a = { ...incRow(), ...ref }
+    const b = { ...incRow({ payee: "EDEKA" }), ...ref }
+    expect(sameBankIdentity(a, b)).toBe(true)
+  })
+
+  it("same ref but different amount is NOT the same", () => {
+    const a = { ...incRow(), ...ref }
+    const b = { ...incRow({ amountCents: -200 }), ...ref }
+    expect(sameBankIdentity(a, b)).toBe(false)
+  })
+
+  it("different refs are never the same", () => {
+    const a = { ...incRow(), ...ref }
+    const b = incRow({ customerRef: "other" })
+    expect(sameBankIdentity(a, b)).toBe(false)
+  })
+
+  it("missing refs are never the same", () => {
+    const a = incRow()
+    const b = incRow()
+    expect(sameBankIdentity(a, b)).toBe(false)
+  })
+
+  it("booked↔booked re-render (same ref, different payee) is a skip", () => {
+    const db = [
+      dbRow({
+        id: "b1",
+        status: "Gebucht",
+        payee: "EDEKA",
+        ...ref,
+      }),
+    ]
+    const inc = [
+      incRow({ status: "Gebucht", payee: "EDEKA.SCHROT/ELXLEBEN", ...ref }),
+    ]
+    const res = matchIncoming(db, inc)
+    expect(res.skips).toEqual([{ incomingIndex: 0, dbId: "b1" }])
+    expect(res.upgrades).toEqual([])
+    expect(res.refreshes).toEqual([])
+  })
+
+  it("identical-content booked↔booked stays with tier 1 (no skip)", () => {
+    const db = [dbRow({ id: "b1", status: "Gebucht", ...ref })]
+    const inc = [incRow({ status: "Gebucht", ...ref })]
+    const res = matchIncoming(db, inc)
+    expect(res.skips).toEqual([])
+  })
+
+  it("booked↔booked with different refs does not match", () => {
+    const db = [dbRow({ id: "b1", status: "Gebucht", customerRef: "ref-1" })]
+    const inc = [
+      incRow({ status: "Gebucht", customerRef: "ref-2" }),
+    ]
+    const res = matchIncoming(db, inc)
+    expect(res.skips).toEqual([])
+  })
+})
+
+describe("findBookedSelfHealPairs", () => {
+  const ref = { customerRef: "484095562717841", counterpartyIban: null }
+  const sameDay = { bookingDate: "2024-04-05" }
+
+  function createdAt(id: string, when: string): Map<string, string> {
+    return new Map([[id, when]])
+  }
+
+  it("newer re-rendered copy is deleted, older kept", () => {
+    const rows = [
+      dbRow({
+        id: "old",
+        status: "Gebucht",
+        payee: "EDEKA.SCHROT/ELXLEBEN",
+        ...ref,
+        ...sameDay,
+      }),
+      dbRow({
+        id: "new",
+        status: "Gebucht",
+        payee: "EDEKA",
+        ...ref,
+        ...sameDay,
+      }),
+    ]
+    const times = createdAt("old", "2025-12-21T00:00:00Z").set(
+      "new",
+      "2026-08-27T00:00:00Z"
+    )
+    expect(findBookedSelfHealPairs(rows, times)).toEqual([
+      expect.objectContaining({ keepId: "old", deleteId: "new" }),
+    ])
+  })
+
+  it("no pairs when content is identical (tier-1 territory)", () => {
+    const rows = [
+      dbRow({ id: "a", status: "Gebucht", ...ref, ...sameDay }),
+      dbRow({ id: "b", status: "Gebucht", ...ref, ...sameDay }),
+    ]
+    const times = createdAt("a", "2025-12-21T00:00:00Z").set(
+      "b",
+      "2026-08-27T00:00:00Z"
+    )
+    expect(findBookedSelfHealPairs(rows, times)).toEqual([])
+  })
+
+  it("no pairs when refs differ", () => {
+    const rows = [
+      dbRow({ id: "a", status: "Gebucht", customerRef: "ref-1", ...sameDay }),
+      dbRow({ id: "b", status: "Gebucht", customerRef: "ref-2", ...sameDay }),
+    ]
+    const times = createdAt("a", "2025-12-21T00:00:00Z").set(
+      "b",
+      "2026-08-27T00:00:00Z"
+    )
+    expect(findBookedSelfHealPairs(rows, times)).toEqual([])
+  })
+
+  it("recurring debits with the same generic ref on DIFFERENT days stay distinct", () => {
+    const rows = [
+      dbRow({
+        id: "jun",
+        status: "Gebucht",
+        payee: "RD-Invest Nebendahl und Behrens GbR",
+        customerRef: "62",
+        counterpartyIban: null,
+        bookingDate: "2025-06-04",
+        amountCents: -103000,
+      }),
+      dbRow({
+        id: "may",
+        status: "Gebucht",
+        payee: "RD-Invest GbR Nebendahl & Behrens",
+        customerRef: "62",
+        counterpartyIban: null,
+        bookingDate: "2025-05-02",
+        amountCents: -103000,
+      }),
+    ]
+    const times = createdAt("jun", "2026-08-27T00:00:00Z").set(
+      "may",
+      "2025-12-21T00:00:00Z"
+    )
+    expect(findBookedSelfHealPairs(rows, times)).toEqual([])
+  })
+
+  it("three same-ref same-day rows collapse to the oldest keeper", () => {
+    const rows = [
+      dbRow({ id: "a", status: "Gebucht", payee: "A", ...ref, ...sameDay }),
+      dbRow({ id: "b", status: "Gebucht", payee: "B", ...ref, ...sameDay }),
+      dbRow({ id: "c", status: "Gebucht", payee: "C", ...ref, ...sameDay }),
+    ]
+    const times = createdAt("a", "2025-01-01T00:00:00Z")
+      .set("b", "2025-06-01T00:00:00Z")
+      .set("c", "2026-01-01T00:00:00Z")
+    const res = findBookedSelfHealPairs(rows, times)
+    expect(res).toHaveLength(2)
+    for (const p of res) expect(p.keepId).toBe("a")
+    expect(res.map((p) => p.deleteId).sort()).toEqual(["b", "c"])
+  })
+
+  it("rows without createdAt fall back safely (no crash, no action)", () => {
+    const rows = [
+      dbRow({ id: "a", status: "Gebucht", payee: "A", ...ref, ...sameDay }),
+      dbRow({ id: "b", status: "Gebucht", payee: "B", ...ref, ...sameDay }),
+    ]
+    expect(findBookedSelfHealPairs(rows, new Map())).toEqual([])
   })
 })
 

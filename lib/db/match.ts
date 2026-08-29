@@ -107,6 +107,24 @@ function sameContent(db: DbMatchRow, inc: ParsedTransactionRow): boolean {
   )
 }
 
+/** Content equality between two DB rows (null-safe both sides). */
+function sameDbContent(a: DbMatchRow, b: DbMatchRow): boolean {
+  return (
+    a.bookingDate === b.bookingDate &&
+    a.valueDate === b.valueDate &&
+    a.status === b.status &&
+    (a.payer ?? "") === (b.payer ?? "") &&
+    (a.payee ?? "") === (b.payee ?? "") &&
+    (a.purpose ?? "") === (b.purpose ?? "") &&
+    a.type === b.type &&
+    (a.counterpartyIban ?? "") === (b.counterpartyIban ?? "") &&
+    a.amountCents === b.amountCents &&
+    (a.creditorId ?? "") === (b.creditorId ?? "") &&
+    (a.mandateRef ?? "") === (b.mandateRef ?? "") &&
+    (a.customerRef ?? "") === (b.customerRef ?? "")
+  )
+}
+
 /**
  * Greedy 1:1 pairing over candidates: smallest |date diff| first, then
  * kind priority (upgrades before skips before refreshes), then earliest
@@ -173,6 +191,26 @@ export interface FuzzyMatch {
 }
 
 /**
+ * Bank-side identity for booked↔booked comparisons: DKB's Kundenreferenz
+ * identifies a mandate/creditor relationship for recurring SEPA debits
+ * (one generic reference per rent, insurance, …) but a per-transaction
+ * reference for card charges. Same-date re-renders of one transaction (DKB
+ * format changes) keep BOTH the Kundenreferenz and the Buchungstag, so
+ * identity = ref + type + amount + exact booking date. Distinct monthly
+ * debits never share a booking date and stay distinct.
+ */
+export function sameBankIdentity(a: Matchable & { customerRef: string | null }, b: Matchable & { customerRef: string | null }): boolean {
+  return (
+    !!a.customerRef &&
+    !!b.customerRef &&
+    a.customerRef === b.customerRef &&
+    a.amountCents === b.amountCents &&
+    a.type === b.type &&
+    a.bookingDate === b.bookingDate
+  )
+}
+
+/**
  * Classify incoming rows against the DB rows of one account:
  * - upgrade: incoming Gebucht ↔ DB Nicht gebucht (booked version arrived;
  *   DB pending row is updated in place)
@@ -180,8 +218,13 @@ export interface FuzzyMatch {
  *   do not import)
  * - refresh: incoming Nicht gebucht ↔ DB Nicht gebucht with differing
  *   content (DB pending row is refreshed in place)
- * Equal-content pending pairs are deliberately absent: the exact-dedupe
- * tier already counts them as duplicates, so they are not consumed here.
+ * - skip: incoming Gebucht ↔ DB Gebucht with equal Kundenreferenz but
+ *   differing content — DKB re-rendered the row between export formats
+ *   (e.g. "EDEKA" vs "EDEKA.SCHROT/ELXLEBEN"); the transaction is already
+ *   stored, so importing it again would double-count it.
+ * Identical-content pairs (pending and booked) are deliberately absent:
+ * the exact-dedupe tier already counts them as duplicates, so they are
+ * not consumed here.
  */
 export function matchIncoming(
   dbRows: DbMatchRow[],
@@ -202,6 +245,19 @@ export function matchIncoming(
       } else if (db.status === BOOKED && inc.status === PENDING) {
         const c = buildCandidate("skip", db, inc, i)
         if (c) candidates.push(c)
+      } else if (db.status === BOOKED && inc.status === BOOKED) {
+        // identical content is tier-1 territory; only re-rendered variants
+        // (same bank identity, different content) land here as skips
+        if (!sameContent(db, inc) && sameBankIdentity(db, inc)) {
+          candidates.push({
+            kind: "skip",
+            rank: KIND_RANK.skip,
+            leftKey: db.id,
+            rightKey: String(i),
+            diff: dayDiff(db.bookingDate, inc.bookingDate),
+            dbBookingDate: db.bookingDate,
+          })
+        }
       }
     }
   }
@@ -244,4 +300,69 @@ export function findDbSelfHealPairs(
     pendingId: c.leftKey,
     bookedId: c.rightKey,
   }))
+}
+
+/**
+ * Self-heal for booked↔booked duplicates: rows sharing the same bank
+ * identity (Kundenreferenz + exact booking date + amount + type) that
+ * differ in content are re-renders of one transaction imported under two
+ * DKB export formats. The strictly oldest member of an identity group is
+ * the keeper; every newer member becomes a delete candidate. Equal/unknown
+ * timestamps exclude a row from grouping (safe fallback). Identical-content
+ * groups are tier-1 territory and are never returned here.
+ */
+export function findBookedSelfHealPairs(
+  dbRows: DbMatchRow[],
+  /** row id → createdAt (DB-only field, not part of DbMatchRow) */
+  createdAtById: Map<string, string>
+): Array<{ keepId: string; deleteId: string }> {
+  const booked = dbRows.filter((r) => r.status === BOOKED)
+
+  // group by bank identity (includes the exact booking date — recurring
+  // SEPA debits reuse one generic Kundenreferenz per month and must NOT
+  // collapse into one group)
+  const groups = new Map<string, DbMatchRow[]>()
+  for (const r of booked) {
+    if (!r.customerRef) continue
+    const key = `${r.customerRef}|${r.type}|${r.amountCents}|${r.bookingDate}`
+    let group = groups.get(key)
+    if (!group) {
+      group = []
+      groups.set(key, group)
+    }
+    group.push(r)
+  }
+
+  const result: Array<{ keepId: string; deleteId: string }> = []
+  for (const group of groups.values()) {
+    if (group.length < 2) continue
+    // order by createdAt; unknown timestamps ("") sort last and are
+    // never keepers nor delete candidates (uncertain → no action)
+    const withTime = group
+      .map((r) => ({ row: r, createdAt: createdAtById.get(r.id) ?? null }))
+      .filter((x) => x.createdAt !== null) as Array<{
+      row: DbMatchRow
+      createdAt: string
+    }>
+    if (withTime.length < 2) continue
+    withTime.sort(
+      (x, y) =>
+        x.createdAt.localeCompare(y.createdAt) ||
+        x.row.id.localeCompare(y.row.id)
+    )
+    const keep = withTime[0]
+    for (let i = 1; i < withTime.length; i++) {
+      const candidate = withTime[i]
+      if (sameDbContent(keep.row, candidate.row)) {
+        continue // true duplicate → tier-1/unique index territory
+      }
+      result.push({ keepId: keep.row.id, deleteId: candidate.row.id })
+    }
+  }
+  // deterministic output order
+  result.sort(
+    (x, y) =>
+      x.deleteId.localeCompare(y.deleteId) || x.keepId.localeCompare(y.keepId)
+  )
+  return result
 }
