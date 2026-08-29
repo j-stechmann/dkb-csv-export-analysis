@@ -12,6 +12,15 @@ export interface DedupeResult {
 }
 
 /**
+ * Lowest non-negative integer not in `occupied` (used for occurrence slots).
+ */
+export function lowestFreeIndex(occupied: Set<number>): number {
+  let candidate = 0
+  while (occupied.has(candidate)) candidate++
+  return candidate
+}
+
+/**
  * Occurrence-aware, count-based dedupe (multiset union):
  * - content hash over all normalized content fields (account-scoped)
  * - per hash: if the file contains N rows and the DB already has E,
@@ -60,18 +69,15 @@ export function computeDedupe(
     // insert surplus at the lowest free slots
     let toPlace = incomingCount - duplicateHere
     let placed = 0
-    let candidate = 0
     while (toPlace > 0) {
-      if (!existingOcc.has(candidate)) {
-        const row = group[duplicateHere + placed]
-        toInsert.push(
-          rowToNewTransaction(row, accountId, batchId, hash, candidate)
-        )
-        existingOcc.add(candidate)
-        placed++
-        toPlace--
-      }
-      candidate++
+      const candidate = lowestFreeIndex(existingOcc)
+      const row = group[duplicateHere + placed]
+      toInsert.push(
+        rowToNewTransaction(row, accountId, batchId, hash, candidate)
+      )
+      existingOcc.add(candidate)
+      placed++
+      toPlace--
     }
   }
 

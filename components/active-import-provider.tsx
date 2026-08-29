@@ -12,6 +12,7 @@ export interface ImportBatchState {
   rowsTotal: number
   rowsImported: number
   rowsDuplicate: number
+  rowsUpdated: number
   labelsTotal: number
   labelsDone: number
   labelsFailed: number
@@ -68,7 +69,9 @@ export function ActiveImportProvider({
     if (!batch) return
     if (batch.status === "completed" && prevStatus.current !== "completed") {
       toast.success("Import abgeschlossen", {
-        description: `${batch.rowsImported} neu, ${batch.rowsDuplicate} Duplikate (${batch.fileName})`,
+        description: `${batch.rowsImported} neu, ${batch.rowsDuplicate} Duplikate${
+          batch.rowsUpdated > 0 ? `, ${batch.rowsUpdated} aktualisiert` : ""
+        } (${batch.fileName})`,
       })
       void queryClient.invalidateQueries({ queryKey: ["analytics"] })
       void queryClient.invalidateQueries({ queryKey: ["transactions"] })

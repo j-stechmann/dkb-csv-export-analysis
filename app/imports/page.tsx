@@ -25,6 +25,7 @@ interface BatchRow {
   rowsTotal: number
   rowsImported: number
   rowsDuplicate: number
+  rowsUpdated: number
   labelsTotal: number
   labelsDone: number
   labelsFailed: number
@@ -175,7 +176,9 @@ function ActiveImportCard() {
   const rowProgress =
     batch.rowsTotal > 0
       ? Math.round(
-          ((batch.rowsImported + batch.rowsDuplicate) / batch.rowsTotal) * 100
+          ((batch.rowsImported + batch.rowsDuplicate + batch.rowsUpdated) /
+            batch.rowsTotal) *
+            100
         )
       : 0
 
@@ -198,7 +201,7 @@ function ActiveImportCard() {
         </div>
         <CardDescription>
           {batch.rowsTotal} Zeilen · {batch.rowsImported} neu ·{" "}
-          {batch.rowsDuplicate} Duplikate
+          {batch.rowsDuplicate} Duplikate · {batch.rowsUpdated} aktualisiert
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -208,7 +211,8 @@ function ActiveImportCard() {
               <div className="mb-1 flex justify-between text-xs text-muted-foreground">
                 <span>Speichern</span>
                 <span>
-                  {batch.rowsImported + batch.rowsDuplicate}/{batch.rowsTotal}
+                  {batch.rowsImported + batch.rowsDuplicate + batch.rowsUpdated}
+                  /{batch.rowsTotal}
                 </span>
               </div>
               <Progress value={rowProgress} />
@@ -266,7 +270,8 @@ function HistoryTable() {
                   <p className="truncate text-sm font-medium">{b.fileName}</p>
                   <p className="text-xs text-muted-foreground">
                     {new Date(b.createdAt).toLocaleString("de-DE")} ·{" "}
-                    {b.rowsImported} neu · {b.rowsDuplicate} Duplikate
+                    {b.rowsImported} neu · {b.rowsDuplicate} Duplikate ·{" "}
+                    {b.rowsUpdated} aktualisiert
                     {b.labelsFailed > 0
                       ? ` · ${b.labelsFailed} ohne Kategorie`
                       : ""}

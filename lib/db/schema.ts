@@ -33,6 +33,7 @@ export const importBatches = sqliteTable(
     rowsTotal: integer("rows_total").notNull().default(0),
     rowsImported: integer("rows_imported").notNull().default(0),
     rowsDuplicate: integer("rows_duplicate").notNull().default(0),
+    rowsUpdated: integer("rows_updated").notNull().default(0),
     labelsTotal: integer("labels_total").notNull().default(0),
     labelsDone: integer("labels_done").notNull().default(0),
     labelsFailed: integer("labels_failed").notNull().default(0),

@@ -1,0 +1,25 @@
+{
+  "csvFileName": "fixture-pending-resolved.csv",
+  "account": {
+    "iban": "DE02120300000000202051",
+    "name": "Girokonto"
+  },
+  "layout": {
+    "bookedPendingShopVersions": 24,
+    "purposeChangedCount": 1,
+    "purposeUnchangedCount": 23,
+    "upgradeCount": 24
+  },
+  "rowCount": 40,
+  "expected": {
+    "upgrades": 24,
+    "unchangedDuplicates": 10,
+    "newBookedCount": 5,
+    "duplicatePendingCopies": 1,
+    "insertedCount": 5,
+    "updatedCount": 24,
+    "skippedCount": 0,
+    "duplicateCount": 11,
+    "totalTransactionsAfter": 254
+  }
+}

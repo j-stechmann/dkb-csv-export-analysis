@@ -4,8 +4,19 @@ import path from "node:path"
 import { eq, inArray, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { accounts, importBatches, transactions } from "@/lib/db/schema"
-import { parseDkbCsv, peekDkbCsvAccount, CsvParseError } from "@/lib/csv/parser"
-import { computeDedupe, hashTransaction, HASH_VERSION } from "@/lib/db/dedupe"
+import {
+  parseDkbCsv,
+  peekDkbCsvAccount,
+  CsvParseError,
+  type ParsedTransactionRow,
+} from "@/lib/csv/parser"
+import { computeDedupe, hashTransaction, HASH_VERSION, lowestFreeIndex } from "@/lib/db/dedupe"
+import {
+  findDbSelfHealPairs,
+  matchIncoming,
+  toDbMatchRow,
+  type DbMatchRow,
+} from "@/lib/db/match"
 import { runLabeling, pruneOrphanCategories } from "@/lib/labeller/service"
 
 export type ImportStage =
@@ -151,76 +162,24 @@ async function runImportJob(
       .where(eq(importBatches.id, batchId))
       .run()
 
-    // ── stage: dedupe + insert ──────────────────────────────────────
-    const existingRows = db
-      .select({
-        sourceHash: transactions.sourceHash,
-        occurrenceIndex: transactions.occurrenceIndex,
-      })
-      .from(transactions)
-      .where(eq(transactions.accountId, account.id))
-      .all()
-
-    const existingByHash = new Map<string, Set<number>>()
-    for (const r of existingRows) {
-      if (r.sourceHash && typeof r.occurrenceIndex === "number") {
-        let set = existingByHash.get(r.sourceHash)
-        if (!set) {
-          set = new Set()
-          existingByHash.set(r.sourceHash, set)
-        }
-        set.add(r.occurrenceIndex)
-      }
-    }
-
-    const dedupe = computeDedupe(
-      parsed.accountIban,
+    // ── stage: fuzzy reconcile + dedupe + insert ─────────────────────
+    const {
+      imported,
+      duplicateCount,
+      updatedCount,
+      totalRows,
+    } = runReconcileAndDedupeStage(
+      account.iban,
       account.id,
       batchId,
-      parsed.rows,
-      existingByHash
+      parsed.rows
     )
 
-    const insertedCount = db.transaction((tx) => {
-      let count = 0
-      for (const row of dedupe.toInsert) {
-        tx.insert(transactions)
-          .values(row)
-          .onConflictDoNothing({
-            target: [
-              transactions.accountId,
-              transactions.sourceHash,
-              transactions.occurrenceIndex,
-            ],
-          })
-          .run()
-        count++
-      }
-      return count
-    })
-
-    // invariant check: imported + duplicates === total
-    const totalInDb = db
-      .select({ count: sql<number>`count(*)` })
-      .from(transactions)
-      .where(eq(transactions.batchId, batchId))
-      .get()
-    const imported = totalInDb?.count ?? 0
-    if (imported + dedupe.duplicateCount !== dedupe.totalRows) {
+    if (imported + duplicateCount + updatedCount !== totalRows) {
       throw new Error(
-        `dedupe invariant violated: imported(${imported}) + duplicates(${dedupe.duplicateCount}) !== total(${dedupe.totalRows})`
+        `dedupe invariant violated: imported(${imported}) + duplicates(${duplicateCount}) + updated(${updatedCount}) !== total(${totalRows})`
       )
     }
-
-    db.update(importBatches)
-      .set({
-        rowsImported: imported,
-        rowsDuplicate: dedupe.duplicateCount,
-        labelsTotal: imported,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(importBatches.id, batchId))
-      .run()
 
     // ── stage: labeling ─────────────────────────────────────────────
     db.update(importBatches)
@@ -301,3 +260,188 @@ export function resetFailedLabels(maxAttempts: number): number {
 }
 
 export { hashTransaction, HASH_VERSION }
+
+export interface ReconcileStageResult {
+  insertedCount: number
+  updatedCount: number
+  deletedCount: number
+  skippedCount: number
+  duplicateCount: number
+  totalRows: number
+  imported: number
+}
+
+/**
+ * Fuzzy pending→booked reconciliation + occurrence-aware dedupe + insert,
+ * all mutations in ONE transaction:
+ * 1. self-heal: delete DB pending rows that match a DB booked row
+ * 2. classify incoming rows vs DB (upgrades / skip / refresh)
+ * 3. exact dedupe tier on unconsumed rows only
+ * 4. apply: deletes → in-place updates (fresh hash + occurrence slot) → inserts
+ */
+export function runReconcileAndDedupeStage(
+  accountIban: string,
+  accountId: number,
+  batchId: string,
+  rows: ParsedTransactionRow[]
+): ReconcileStageResult {
+  const db = getDb()
+
+  const dbAccountRows = db
+    .select()
+    .from(transactions)
+    .where(eq(transactions.accountId, accountId))
+    .all()
+
+  const dbMatchRows = dbAccountRows.map(toDbMatchRow)
+
+  const selfHeal = findDbSelfHealPairs(dbMatchRows)
+  const selfHealIds = new Set(selfHeal.map((p) => p.pendingId))
+  const remainingDbRows = dbMatchRows.filter((r) => !selfHealIds.has(r.id))
+
+  const fuzzy = matchIncoming(remainingDbRows, rows)
+  const consumedIncoming = new Set<number>([
+    ...fuzzy.upgrades.map((m) => m.incomingIndex),
+    ...fuzzy.refreshes.map((m) => m.incomingIndex),
+    ...fuzzy.skips.map((m) => m.incomingIndex),
+  ])
+  const unconsumedRows = rows.filter((_, i) => !consumedIncoming.has(i))
+
+  // occurrence slots per hash from every non-deleted DB row. Rows being
+  // updated keep their old hash occupied on purpose: an identical pending
+  // copy in the same file must count as a duplicate, not insert a phantom.
+  const existingByHash = new Map<string, Set<number>>()
+  for (const r of dbMatchRows) {
+    if (selfHealIds.has(r.id)) continue
+    if (r.sourceHash && typeof r.occurrenceIndex === "number") {
+      let set = existingByHash.get(r.sourceHash)
+      if (!set) {
+        set = new Set()
+        existingByHash.set(r.sourceHash, set)
+      }
+      set.add(r.occurrenceIndex)
+    }
+  }
+
+  interface UpdatePlan {
+    dbRow: DbMatchRow
+    parsed: ParsedTransactionRow
+    newHash: string
+    occurrenceIndex: number
+  }
+  const updateById = new Map(dbMatchRows.map((r) => [r.id, r]))
+  const fuzzyUpdates: UpdatePlan[] = []
+  for (const m of [...fuzzy.upgrades, ...fuzzy.refreshes]) {
+    const parsed = rows[m.incomingIndex]
+    const newHash = hashTransaction(accountIban, parsed)
+    const set = existingByHash.get(newHash) ?? new Set<number>()
+    const occurrenceIndex = lowestFreeIndex(set)
+    set.add(occurrenceIndex)
+    existingByHash.set(newHash, set)
+    fuzzyUpdates.push({
+      dbRow: updateById.get(m.dbId)!,
+      parsed,
+      newHash,
+      occurrenceIndex,
+    })
+  }
+
+  const dedupe = computeDedupe(
+    accountIban,
+    accountId,
+    batchId,
+    unconsumedRows,
+    existingByHash
+  )
+
+  db.transaction((tx) => {
+    for (const pair of selfHeal) {
+      tx.delete(transactions)
+        .where(eq(transactions.id, pair.pendingId))
+        .run()
+    }
+
+    // updated rows keep their id but get a fresh hash + lowest-free
+    // occurrence slot; their old slot is released first
+    for (const u of fuzzyUpdates) {
+      const newHash = hashTransaction(accountIban, u.parsed)
+      const oldSet = existingByHash.get(u.dbRow.sourceHash)
+      oldSet?.delete(u.dbRow.occurrenceIndex)
+      const newSet = existingByHash.get(newHash) ?? new Set<number>()
+      const occ = lowestFreeIndex(newSet)
+      newSet.add(occ)
+      existingByHash.set(newHash, newSet)
+      tx.update(transactions)
+        .set({
+          batchId,
+          bookingDate: u.parsed.bookingDate,
+          valueDate: u.parsed.valueDate,
+          status: u.parsed.status,
+          payer: u.parsed.payer || null,
+          payee: u.parsed.payee || null,
+          purpose: u.parsed.purpose || null,
+          type: u.parsed.type,
+          counterpartyIban: u.parsed.counterpartyIban || null,
+          amountCents: u.parsed.amountCents,
+          creditorId: u.parsed.creditorId || null,
+          mandateRef: u.parsed.mandateRef || null,
+          customerRef: u.parsed.customerRef || null,
+          sourceHash: newHash,
+          occurrenceIndex: occ,
+          hashVersion: HASH_VERSION,
+          labelStatus: "pending",
+          labelAttempts: 0,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(transactions.id, u.dbRow.id))
+        .run()
+    }
+
+    for (const row of dedupe.toInsert) {
+      tx.insert(transactions)
+        .values(row)
+        .onConflictDoNothing({
+          target: [
+            transactions.accountId,
+            transactions.sourceHash,
+            transactions.occurrenceIndex,
+          ],
+        })
+        .run()
+    }
+  })
+
+  const totalInDb = db
+    .select({ count: sql<number>`count(*)` })
+    .from(transactions)
+    .where(eq(transactions.batchId, batchId))
+    .get()
+  // updated rows keep their id but were re-pointed to this batch, so the
+  // raw batch count includes them; imported means newly inserted rows only
+  const updatedCount = fuzzyUpdates.length
+  const skippedCount = fuzzy.skips.length
+  const deletedCount = selfHeal.length
+  const imported = (totalInDb?.count ?? 0) - updatedCount
+  const duplicateCount = skippedCount + dedupe.duplicateCount
+
+  db.update(importBatches)
+    .set({
+      rowsImported: imported,
+      rowsDuplicate: duplicateCount,
+      rowsUpdated: updatedCount,
+      labelsTotal: imported,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(importBatches.id, batchId))
+    .run()
+
+  return {
+    insertedCount: dedupe.toInsert.length,
+    updatedCount,
+    deletedCount,
+    skippedCount,
+    duplicateCount,
+    totalRows: rows.length,
+    imported,
+  }
+}

@@ -30,7 +30,9 @@ export function ImportProgressPill() {
   const rowProgress =
     batch.rowsTotal > 0
       ? Math.round(
-          ((batch.rowsImported + batch.rowsDuplicate) / batch.rowsTotal) * 100
+          ((batch.rowsImported + batch.rowsDuplicate + batch.rowsUpdated) /
+            batch.rowsTotal) *
+            100
         )
       : batch.status === "importing" || batch.status === "parsing"
         ? 0
@@ -71,7 +73,8 @@ export function ImportProgressPill() {
               <div className="mb-1 flex justify-between text-xs text-muted-foreground">
                 <span>Zeilen</span>
                 <span>
-                  {batch.rowsImported + batch.rowsDuplicate} / {batch.rowsTotal}
+                  {batch.rowsImported + batch.rowsDuplicate + batch.rowsUpdated}{" "}
+                  / {batch.rowsTotal}
                 </span>
               </div>
               <Progress value={rowProgress} />
@@ -95,6 +98,7 @@ export function ImportProgressPill() {
       ) : batch.status === "completed" ? (
         <p className="text-xs text-muted-foreground">
           {batch.rowsImported} neu importiert · {batch.rowsDuplicate} Duplikate
+          {batch.rowsUpdated > 0 ? ` · ${batch.rowsUpdated} aktualisiert` : ""}
           {batch.labelsFailed > 0
             ? ` · ${batch.labelsFailed} ohne Kategorie (erneut versuchen auf der Imports-Seite)`
             : ""}

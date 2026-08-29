@@ -32,10 +32,14 @@ export function getDb(): Db {
   if (!globalRef.__dkbDbHolder) {
     globalRef.__dkbDbHolder = {}
   }
-  if (!globalRef.__dkbDbHolder.__dkbDb) {
-    globalRef.__dkbDbHolder.__dkbDb = createDb()
+  const holder = globalRef.__dkbDbHolder
+  if (!holder.__dkbDb) {
+    holder.__dkbDb = createDb()
+    createSchemaSqlite(holder.__dkbDb)
   }
-  return globalRef.__dkbDbHolder.__dkbDb
+  // cheap idempotent re-check so a hot-reloaded schema heals the file DB
+  migrateSchema(holder.__dkbDb)
+  return holder.__dkbDb
 }
 
 /** For tests: inject an in-memory DB. */
@@ -76,6 +80,7 @@ export function createSchemaSqlite(db: Db) {
       rows_total INTEGER NOT NULL DEFAULT 0,
       rows_imported INTEGER NOT NULL DEFAULT 0,
       rows_duplicate INTEGER NOT NULL DEFAULT 0,
+      rows_updated INTEGER NOT NULL DEFAULT 0,
       labels_total INTEGER NOT NULL DEFAULT 0,
       labels_done INTEGER NOT NULL DEFAULT 0,
       labels_failed INTEGER NOT NULL DEFAULT 0,
@@ -150,4 +155,20 @@ export function createSchemaSqlite(db: Db) {
 export function ensureSchema() {
   const db = getDb()
   createSchemaSqlite(db)
+  migrateSchema(db)
+}
+
+/**
+ * Idempotent migrations: column additions for tables that already exist on
+ * disk (CREATE TABLE IF NOT EXISTS never alters a live table). Re-checked on
+ * every getDb() so a hot-reload picks up new columns without a restart.
+ */
+export function migrateSchema(db: Db) {
+  const cols = (table: string) =>
+    db.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name)
+  if (!cols("import_batches").includes("rows_updated")) {
+    db.run(
+      `ALTER TABLE import_batches ADD COLUMN rows_updated INTEGER NOT NULL DEFAULT 0`
+    )
+  }
 }
