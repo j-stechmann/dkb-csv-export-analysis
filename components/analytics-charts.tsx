@@ -105,8 +105,7 @@ export function CashflowChart({
       <CardHeader>
         <CardTitle>Monatlicher Cashflow</CardTitle>
         <CardDescription>
-          Einnahmen, Ausgaben und Saldo pro Monat · scrollen = blättern,
-          Strg+Scrollen / Pinchen = zoomen
+          Einnahmen, Ausgaben und Saldo pro Monat
         </CardDescription>
         <ZoomResetButton zoomed={zoom.isZoomed} onReset={zoom.reset} />
       </CardHeader>
@@ -176,8 +175,7 @@ export function BalanceChart({
       <CardHeader>
         <CardTitle>Kontostand über Zeit</CardTitle>
         <CardDescription>
-          ab frühestem Kontostand-Snapshot (alle Konten) · scrollen = blättern,
-          Strg+Scrollen / Pinchen = zoomen
+          ab frühestem Kontostand-Snapshot (alle Konten)
         </CardDescription>
         <ZoomResetButton zoomed={zoom.isZoomed} onReset={zoom.reset} />
       </CardHeader>
