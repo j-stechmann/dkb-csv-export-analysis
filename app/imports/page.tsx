@@ -77,8 +77,8 @@ function ImportDropzone() {
       <CardHeader>
         <CardTitle>Neuer Import</CardTitle>
         <CardDescription>
-          DKB CSV-Export hierher ziehen oder auswählen. Die Verarbeitung
-          erfolgt im Hintergrund; Duplikate werden automatisch erkannt.
+          DKB CSV-Export hierher ziehen oder auswählen. Die Verarbeitung erfolgt
+          im Hintergrund; Duplikate werden automatisch erkannt.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -146,7 +146,9 @@ function RetryLabelingButton() {
             void queryClient.invalidateQueries({ queryKey: ["analytics"] })
             void queryClient.invalidateQueries({ queryKey: ["transactions"] })
           } else {
-            toast.error("Erneuter Versuch fehlgeschlagen (Labeller erreichbar?)")
+            toast.error(
+              "Erneuter Versuch fehlgeschlagen (Labeller erreichbar?)"
+            )
           }
         } finally {
           setBusy(false)
@@ -265,7 +267,9 @@ function HistoryTable() {
                   <p className="text-xs text-muted-foreground">
                     {new Date(b.createdAt).toLocaleString("de-DE")} ·{" "}
                     {b.rowsImported} neu · {b.rowsDuplicate} Duplikate
-                    {b.labelsFailed > 0 ? ` · ${b.labelsFailed} ohne Kategorie` : ""}
+                    {b.labelsFailed > 0
+                      ? ` · ${b.labelsFailed} ohne Kategorie`
+                      : ""}
                   </p>
                   {b.error && (
                     <p className="mt-1 text-xs text-destructive">{b.error}</p>

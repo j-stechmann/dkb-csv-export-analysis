@@ -17,7 +17,10 @@ export async function POST(request: NextRequest) {
     name?: string
   } | null
   if (!body?.iban || !body?.name) {
-    return NextResponse.json({ error: "iban and name required" }, { status: 400 })
+    return NextResponse.json(
+      { error: "iban and name required" },
+      { status: 400 }
+    )
   }
   const db = getDb()
   const inserted = db

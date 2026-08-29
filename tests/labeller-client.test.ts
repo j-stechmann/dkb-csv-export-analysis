@@ -121,7 +121,9 @@ describe("LabellerClient.labelChunk", () => {
       },
     ])
     const tx = captured!.transactions[0]
-    expect(new TextEncoder().encode(tx.counterparty).length).toBeLessThanOrEqual(512)
+    expect(
+      new TextEncoder().encode(tx.counterparty).length
+    ).toBeLessThanOrEqual(512)
     expect(new TextEncoder().encode(tx.purpose).length).toBeLessThanOrEqual(512)
   })
 
@@ -174,7 +176,9 @@ describe("LabellerClient.labelChunk", () => {
       vi.fn(async () => {
         calls++
         return new Response(
-          JSON.stringify({ error: { code: "invalid_request", message: "dup ids" } }),
+          JSON.stringify({
+            error: { code: "invalid_request", message: "dup ids" },
+          }),
           { status: 400 }
         )
       })

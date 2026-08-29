@@ -12,10 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  EMPTY_FILTERS,
-  type DashboardFilters,
-} from "@/lib/filters"
+import { EMPTY_FILTERS, type DashboardFilters } from "@/lib/filters"
 
 interface CategoryOption {
   id: number
@@ -65,7 +62,7 @@ export function FilterBar({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative min-w-56 flex-1">
-        <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+        <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
         <Input
           value={qDraft}
           onChange={(e) => setQDraft(e.target.value)}
@@ -126,8 +123,7 @@ export function FilterBar({
         onValueChange={(v) =>
           onChange({
             ...filters,
-            categoryIds:
-              v === "all" ? [] : [Number.parseInt(String(v), 10)],
+            categoryIds: v === "all" ? [] : [Number.parseInt(String(v), 10)],
           })
         }
       >

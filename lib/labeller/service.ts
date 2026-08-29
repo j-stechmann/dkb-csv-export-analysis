@@ -1,9 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm"
 import { getDb } from "@/lib/db"
-import {
-  categories,
-  transactions,
-} from "@/lib/db/schema"
+import { categories, transactions } from "@/lib/db/schema"
 import {
   LabellerClient,
   labelWithChunking,
@@ -90,18 +87,19 @@ export async function runLabeling(
             .onConflictDoNothing()
             .returning({ id: categories.id })
             .get()
-          cat = inserted ?? tx
-            .select({ id: categories.id })
-            .from(categories)
-            .where(eq(categories.nameKey, nameKey))
-            .get()
+          cat =
+            inserted ??
+            tx
+              .select({ id: categories.id })
+              .from(categories)
+              .where(eq(categories.nameKey, nameKey))
+              .get()
         }
         if (!cat) {
           failed++
           continue
         }
-        tx
-          .update(transactions)
+        tx.update(transactions)
           .set({
             categoryId: cat.id,
             labelStatus: "labeled",

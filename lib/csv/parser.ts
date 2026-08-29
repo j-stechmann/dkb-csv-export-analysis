@@ -78,9 +78,7 @@ function cleanCellRaw(v: string | undefined): string {
  * Row 3: "Kontostand vom 17.01.2026:;1.234,56 €"
  * Row 2 (Zeitraum) is intentionally ignored (unreliable format).
  */
-function parsePreamble(
-  rowsBeforeHeader: string[][]
-): ParsedAccountInfo {
+function parsePreamble(rowsBeforeHeader: string[][]): ParsedAccountInfo {
   if (rowsBeforeHeader.length < 1) {
     throw new CsvParseError("missing preamble: no account row before header")
   }
@@ -98,16 +96,14 @@ function parsePreamble(
 
   let snapshotDate: string | null = null
   let snapshotAmountCents: number | null = null
-  const saldoRow = rowsBeforeHeader.find(
-    (r) => /^Kontostand vom/i.test(cleanCell(r[0]))
+  const saldoRow = rowsBeforeHeader.find((r) =>
+    /^Kontostand vom/i.test(cleanCell(r[0]))
   )
   if (saldoRow) {
     const label = cleanCell(saldoRow[0])
     const dateMatch = /Kontostand vom (\d{2}\.\d{2}\.\d{4})/.exec(label)
     if (!dateMatch) {
-      throw new CsvParseError(
-        `cannot parse Kontostand date from "${label}"`
-      )
+      throw new CsvParseError(`cannot parse Kontostand date from "${label}"`)
     }
     snapshotDate = parseGermanDateToIso(dateMatch[1])
     const amountRaw = saldoRow[1] ?? ""
@@ -195,18 +191,12 @@ export function parseDkbCsv(content: string): ParsedCsv {
       bookingDate = parseGermanDateToIso(get("Buchungsdatum"))
       valueDate = parseGermanDateToIso(get("Wertstellung"))
     } catch (e) {
-      throw new CsvParseError(
-        `row ${i + 1}: ${(e as Error).message}`,
-        i + 1
-      )
+      throw new CsvParseError(`row ${i + 1}: ${(e as Error).message}`, i + 1)
     }
     try {
       amountCents = parseGermanAmountToCents(get("Betrag (€)"))
     } catch (e) {
-      throw new CsvParseError(
-        `row ${i + 1}: ${(e as Error).message}`,
-        i + 1
-      )
+      throw new CsvParseError(`row ${i + 1}: ${(e as Error).message}`, i + 1)
     }
 
     // Sign consistency: Umsatztyp must match amount sign.
@@ -263,7 +253,7 @@ export function peekDkbCsvAccount(content: string): ParsedAccountInfo {
   )
   if (headerIdx === -1) {
     throw new CsvParseError(
-      'header row not found in first 10 rows: not a DKB export?'
+      "header row not found in first 10 rows: not a DKB export?"
     )
   }
   return parsePreamble(rows.slice(0, headerIdx))

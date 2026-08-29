@@ -66,10 +66,7 @@ export function ActiveImportProvider({
   const prevStatus = React.useRef<string | null>(null)
   React.useEffect(() => {
     if (!batch) return
-    if (
-      batch.status === "completed" &&
-      prevStatus.current !== "completed"
-    ) {
+    if (batch.status === "completed" && prevStatus.current !== "completed") {
       toast.success("Import abgeschlossen", {
         description: `${batch.rowsImported} neu, ${batch.rowsDuplicate} Duplikate (${batch.fileName})`,
       })

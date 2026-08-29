@@ -92,17 +92,22 @@ describe("parseGermanAmountToCents — round-trip property", () => {
     const intPart = fc.integer({ min: 0, max: 999_999_999 })
     const fracPart = fc.integer({ min: 0, max: 99 })
     fc.assert(
-      fc.property(intPart, fracPart, fc.constantFrom("-", ""), (int, frac, sign) => {
-        const magnitude = int * 100 + frac
-        const cents = sign === "-" ? -magnitude : magnitude
-        // "-0,00" is normalized to 0 by design (negative zero is not a
-        // meaningful amount), so it cannot round-trip bit-identically
-        const str =
-          magnitude === 0
-            ? "0"
-            : `${sign}${int.toLocaleString("de-DE")},${String(frac).padStart(2, "0")}`
-        expect(parseGermanAmountToCents(str)).toBe(cents === 0 ? 0 : cents)
-      }),
+      fc.property(
+        intPart,
+        fracPart,
+        fc.constantFrom("-", ""),
+        (int, frac, sign) => {
+          const magnitude = int * 100 + frac
+          const cents = sign === "-" ? -magnitude : magnitude
+          // "-0,00" is normalized to 0 by design (negative zero is not a
+          // meaningful amount), so it cannot round-trip bit-identically
+          const str =
+            magnitude === 0
+              ? "0"
+              : `${sign}${int.toLocaleString("de-DE")},${String(frac).padStart(2, "0")}`
+          expect(parseGermanAmountToCents(str)).toBe(cents === 0 ? 0 : cents)
+        }
+      ),
       { numRuns: 10_000 }
     )
   })

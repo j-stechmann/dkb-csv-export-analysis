@@ -84,7 +84,13 @@ function KpiCard({
   )
 }
 
-export function KpiRow({ analytics, loading }: { analytics: AnalyticsResponse | undefined; loading: boolean }) {
+export function KpiRow({
+  analytics,
+  loading,
+}: {
+  analytics: AnalyticsResponse | undefined
+  loading: boolean
+}) {
   const k = analytics?.kpis
   const savingsRate =
     k?.savingsRate !== null && k?.savingsRate !== undefined
@@ -114,7 +120,9 @@ export function KpiRow({ analytics, loading }: { analytics: AnalyticsResponse | 
         title="Ø Monatsausgaben"
         value={euro(k?.avgMonthlyExpensesCents)}
         loading={loading}
-        sub={k?.monthsCounted ? `über ${k.monthsCounted} volle Monate` : undefined}
+        sub={
+          k?.monthsCounted ? `über ${k.monthsCounted} volle Monate` : undefined
+        }
       />
       <KpiCard
         title="Sparquote"

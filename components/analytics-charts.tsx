@@ -114,11 +114,7 @@ export function CashflowChart({
         {loading ? (
           <Skeleton className="h-72 w-full" />
         ) : (
-          <div
-            ref={wrapRef}
-            className="h-72 w-full touch-none"
-            {...handlers}
-          >
+          <div ref={wrapRef} className="h-72 w-full touch-none" {...handlers}>
             <ChartContainer config={cashflowConfig} className="h-72 w-full">
               <ComposedChart data={visible} accessibilityLayer>
                 <CartesianGrid vertical={false} />
@@ -189,11 +185,7 @@ export function BalanceChart({
         {loading ? (
           <Skeleton className="h-72 w-full" />
         ) : (
-          <div
-            ref={wrapRef}
-            className="h-72 w-full touch-none"
-            {...handlers}
-          >
+          <div ref={wrapRef} className="h-72 w-full touch-none" {...handlers}>
             <ChartContainer config={balanceConfig} className="h-72 w-full">
               <LineChart data={visible} accessibilityLayer>
                 <CartesianGrid vertical={false} />

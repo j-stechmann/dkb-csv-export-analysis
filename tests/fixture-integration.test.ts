@@ -2,16 +2,17 @@ import { describe, it, expect, beforeAll } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { sql } from "drizzle-orm"
-import {
-  createTestDb,
-  setTestDb,
-  type Db,
-} from "@/lib/db"
+import { createTestDb, setTestDb, type Db } from "@/lib/db"
 import { parseDkbCsv } from "@/lib/csv/parser"
 import { computeDedupe } from "@/lib/db/dedupe"
 import { computeAnalytics } from "@/lib/analytics/engine"
 import { parseFilters } from "@/lib/analytics/queries"
-import { transactions, accounts, importBatches, categories } from "@/lib/db/schema"
+import {
+  transactions,
+  accounts,
+  importBatches,
+  categories,
+} from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 
 interface Manifest {
@@ -91,10 +92,11 @@ beforeAll(() => {
   })
 
   // post-insert invariant: imported + duplicates === parsed rows
-  const importedCount = db
-    .select({ count: sql<number>`count(*)` })
-    .from(transactions)
-    .get()?.count ?? 0
+  const importedCount =
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(transactions)
+      .get()?.count ?? 0
   expect(importedCount).toBe(parsed.rows.length)
 
   // simulate the labeller: one category per counterparty (the fixture
@@ -102,8 +104,7 @@ beforeAll(() => {
   const all = db.select().from(transactions).all()
   const catIdByCounterparty = new Map<string, number>()
   for (const t of all) {
-    const label =
-      t.type === "Ausgang" ? (t.payee ?? "") : (t.payer ?? "")
+    const label = t.type === "Ausgang" ? (t.payee ?? "") : (t.payer ?? "")
     if (!label || t.categoryId !== null) continue
     let catId = catIdByCounterparty.get(label)
     if (!catId) {
@@ -229,7 +230,10 @@ describe("fixture end-to-end correctness", () => {
 
     // strictly ascending dates
     for (let i = 1; i < t.length; i++) {
-      expect(t[i].date > t[i - 1].date, `${t[i].date} after ${t[i - 1].date}`).toBe(true)
+      expect(
+        t[i].date > t[i - 1].date,
+        `${t[i].date} after ${t[i - 1].date}`
+      ).toBe(true)
     }
 
     // last point equals the current balance KPI

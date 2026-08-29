@@ -41,9 +41,7 @@ function row(r: RowSpec): string {
   const payee = r.type === "Ausgang" ? r.counterparty : "Ich Selbst"
   // quote fields containing delimiters, quotes or newlines (RFC 4180)
   const needsQuote = /[;"\n\r]/.test(r.purpose)
-  const purpose = needsQuote
-    ? `"${r.purpose.replace(/"/g, '""')}"`
-    : r.purpose
+  const purpose = needsQuote ? `"${r.purpose.replace(/"/g, '""')}"` : r.purpose
   return [
     isoToDkb(r.date),
     isoToDkb(r.date),

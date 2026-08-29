@@ -22,7 +22,11 @@ export function LabellerHealthBadge() {
         ? "Labeller: eingeschränkt"
         : "Labeller: nicht erreichbar"
   const variant =
-    status === "ok" ? "default" : status === "degraded" ? "secondary" : "destructive"
+    status === "ok"
+      ? "default"
+      : status === "degraded"
+        ? "secondary"
+        : "destructive"
 
   return (
     <Badge variant={variant} className="font-normal">

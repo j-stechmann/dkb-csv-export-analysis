@@ -49,9 +49,7 @@ interface BalanceAnchor {
  * absolute balance point). Current balance = snapshot + Σ(booked amounts
  * with booking_date > snapshot_date) — robust to missing older history.
  */
-function latestAnchor(
-  accountId?: number
-): BalanceAnchor | null {
+function latestAnchor(accountId?: number): BalanceAnchor | null {
   const db = getDb()
   const rows = db
     .select({
@@ -216,28 +214,27 @@ export function computeAnalytics(
 
   // ── balance: latest snapshot anchor + subsequent bookings ─────────
   const anchor = latestAnchor(f.accountId)
-  const totalSum = db
-    .select({ sum: sql<number>`COALESCE(SUM(${transactions.amountCents}), 0)` })
-    .from(transactions)
-    .where(and(...base))
-    .get()?.sum ?? 0
+  const totalSum =
+    db
+      .select({
+        sum: sql<number>`COALESCE(SUM(${transactions.amountCents}), 0)`,
+      })
+      .from(transactions)
+      .where(and(...base))
+      .get()?.sum ?? 0
 
   let currentBalanceCents: number | null
   let balanceWithoutSnapshot: boolean
 
   if (anchor) {
-    const afterSnapshot = db
-      .select({
-        sum: sql<number>`COALESCE(SUM(${transactions.amountCents}), 0)`,
-      })
-      .from(transactions)
-      .where(
-        and(
-          ...base,
-          gt(transactions.bookingDate, anchor.snapshotDate)
-        )
-      )
-      .get()?.sum ?? 0
+    const afterSnapshot =
+      db
+        .select({
+          sum: sql<number>`COALESCE(SUM(${transactions.amountCents}), 0)`,
+        })
+        .from(transactions)
+        .where(and(...base, gt(transactions.bookingDate, anchor.snapshotDate)))
+        .get()?.sum ?? 0
     currentBalanceCents = anchor.snapshotAmountCents + afterSnapshot
     balanceWithoutSnapshot = false
   } else {
@@ -263,9 +260,7 @@ export function computeAnalytics(
     // DKB snapshots sit at the END of the export period, so earlier balances
     // are back-calculated: at every booked day d ≤ snapshot the balance is
     // snapshot − Σ(sums of booked days after d, up to and incl. snapshot day).
-    const firstAfter = dailyRows.findIndex(
-      (r) => r.date > anchor.snapshotDate
-    )
+    const firstAfter = dailyRows.findIndex((r) => r.date > anchor.snapshotDate)
     const lastBeforeIdx = firstAfter === -1 ? dailyRows.length : firstAfter
 
     let suffix = 0
@@ -273,7 +268,10 @@ export function computeAnalytics(
     for (let i = lastBeforeIdx - 1; i >= 0; i--) {
       const row = dailyRows[i]
       if (row.date !== anchor.snapshotDate) {
-        backward.push({ date: row.date, balanceCents: anchor.snapshotAmountCents - suffix })
+        backward.push({
+          date: row.date,
+          balanceCents: anchor.snapshotAmountCents - suffix,
+        })
       }
       suffix += row.sum
     }
@@ -286,16 +284,16 @@ export function computeAnalytics(
 
     let running = anchor.snapshotAmountCents
     const forward: BalancePoint[] = []
-    for (let i = firstAfter === -1 ? dailyRows.length : firstAfter; i < dailyRows.length; i++) {
+    for (
+      let i = firstAfter === -1 ? dailyRows.length : firstAfter;
+      i < dailyRows.length;
+      i++
+    ) {
       running += dailyRows[i].sum
       forward.push({ date: dailyRows[i].date, balanceCents: running })
     }
 
-    balanceTimeline.push(
-      ...backward,
-      anchorPoint,
-      ...forward
-    )
+    balanceTimeline.push(...backward, anchorPoint, ...forward)
   } else {
     // no snapshot: cumulative sum from zero (best-effort pseudo balance)
     let running = 0
@@ -315,12 +313,7 @@ export function computeAnalytics(
     })
     .from(transactions)
     .leftJoin(sql`categories`, sql`${transactions.categoryId} = categories.id`)
-    .where(
-      and(
-        ...base,
-        sql`${transactions.amountCents} < 0`
-      )
-    )
+    .where(and(...base, sql`${transactions.amountCents} < 0`))
     .groupBy(transactions.categoryId)
     .orderBy(sql`SUM(-${transactions.amountCents}) DESC`)
     .all()
@@ -336,11 +329,12 @@ export function computeAnalytics(
     }))
     .slice(0, 12)
 
-  const txCount = db
-    .select({ count: sql<number>`count(*)` })
-    .from(transactions)
-    .where(and(...base))
-    .get()?.count ?? 0
+  const txCount =
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(transactions)
+      .where(and(...base))
+      .get()?.count ?? 0
 
   return {
     kpis: {

@@ -202,8 +202,8 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
                   colSpan={4}
                   className="h-32 text-center text-muted-foreground"
                 >
-                  Keine Transaktionen gefunden. CSV-Datei in das Fenster
-                  ziehen, um zu importieren.
+                  Keine Transaktionen gefunden. CSV-Datei in das Fenster ziehen,
+                  um zu importieren.
                 </TableCell>
               </TableRow>
             ) : (
@@ -216,7 +216,7 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
                       {row.bookingDate}
                     </TableCell>
                     <TableCell>
-                      <div className="min-w-0 max-w-md">
+                      <div className="max-w-md min-w-0">
                         <p className="truncate font-medium">
                           {counterparty || "—"}
                         </p>
@@ -234,7 +234,7 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
                       <CategoryCell row={row} />
                     </TableCell>
                     <TableCell
-                      className={`whitespace-nowrap text-right tabular-nums font-medium ${
+                      className={`text-right font-medium whitespace-nowrap tabular-nums ${
                         row.amountCents < 0
                           ? "text-foreground"
                           : "text-emerald-600 dark:text-emerald-400"
@@ -252,9 +252,7 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {data
-            ? `${data.total.toLocaleString("de-DE")} Transaktionen`
-            : "…"}
+          {data ? `${data.total.toLocaleString("de-DE")} Transaktionen` : "…"}
         </p>
         <div className="flex items-center gap-2">
           <Button
@@ -265,7 +263,7 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
           >
             <ChevronLeft className="size-4" /> Zurück
           </Button>
-          <span className="text-sm tabular-nums text-muted-foreground">
+          <span className="text-sm text-muted-foreground tabular-nums">
             {page} / {data?.pageCount ?? 1}
           </span>
           <Button

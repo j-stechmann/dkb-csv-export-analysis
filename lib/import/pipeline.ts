@@ -3,25 +3,13 @@ import os from "node:os"
 import path from "node:path"
 import { eq, inArray, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
-import {
-  accounts,
-  importBatches,
-  transactions,
-} from "@/lib/db/schema"
-import {
-  parseDkbCsv,
-  peekDkbCsvAccount,
-  CsvParseError,
-} from "@/lib/csv/parser"
+import { accounts, importBatches, transactions } from "@/lib/db/schema"
+import { parseDkbCsv, peekDkbCsvAccount, CsvParseError } from "@/lib/csv/parser"
 import { computeDedupe, hashTransaction, HASH_VERSION } from "@/lib/db/dedupe"
 import { runLabeling, pruneOrphanCategories } from "@/lib/labeller/service"
 
 export type ImportStage =
-  | "parsing"
-  | "importing"
-  | "labeling"
-  | "completed"
-  | "failed"
+  "parsing" | "importing" | "labeling" | "completed" | "failed"
 
 export interface StartImportResult {
   batchId: string
@@ -139,11 +127,13 @@ async function runImportJob(
         .onConflictDoNothing()
         .returning()
         .get()
-      account = inserted ?? db
-        .select()
-        .from(accounts)
-        .where(eq(accounts.iban, parsed.accountIban))
-        .get()
+      account =
+        inserted ??
+        db
+          .select()
+          .from(accounts)
+          .where(eq(accounts.iban, parsed.accountIban))
+          .get()
     }
     if (!account) {
       throw new Error(`could not resolve account ${parsed.accountIban}`)
