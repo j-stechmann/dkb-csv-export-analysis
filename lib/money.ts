@@ -83,9 +83,7 @@ export function parseGermanAmountToCents(input: string): number {
   } else if (hasDot) {
     // (c) only dot: disambiguate thousands vs decimal
     const groups = s.split(".")
-    const allThousands = groups
-      .slice(1)
-      .every((g) => /^\d{3}$/.test(g))
+    const allThousands = groups.slice(1).every((g) => /^\d{3}$/.test(g))
     if (allThousands && /^\d{1,3}(\.\d{3})+$/.test(s)) {
       // "-1.074" → thousands
       intPart = s.replace(/\./g, "")

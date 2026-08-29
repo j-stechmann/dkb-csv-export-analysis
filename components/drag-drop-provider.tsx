@@ -21,11 +21,7 @@ export function useIsDraggingFile() {
  * Global drag-and-drop: dragging a file anywhere over the app shows an
  * overlay; dropping uploads it and kicks off an async import.
  */
-export function DragDropProvider({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export function DragDropProvider({ children }: { children: React.ReactNode }) {
   const [isDragging, setIsDragging] = React.useState(false)
   const [isUploading, setIsUploading] = React.useState(false)
   const dragCounter = React.useRef(0)
@@ -56,7 +52,8 @@ export function DragDropProvider({
           startPolling(data.batchId)
         } else if (res.status === 409) {
           toast.error("Import läuft bereits", {
-            description: "Bitte warten, bis der aktuelle Import abgeschlossen ist.",
+            description:
+              "Bitte warten, bis der aktuelle Import abgeschlossen ist.",
           })
         } else {
           toast.error("Import fehlgeschlagen", {
@@ -135,12 +132,14 @@ export function DragDropProvider({
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" x2="12" y1="3" y2="15" />
             </svg>
-            <p className="text-lg font-medium">CSV hier ablegen, um zu importieren</p>
+            <p className="text-lg font-medium">
+              CSV hier ablegen, um zu importieren
+            </p>
           </div>
         </div>
       )}
       {isUploading && (
-        <div className="fixed bottom-4 right-4 z-[100] rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground shadow-lg">
+        <div className="fixed right-4 bottom-4 z-[100] rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground shadow-lg">
           Datei wird hochgeladen…
         </div>
       )}

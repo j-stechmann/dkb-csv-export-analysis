@@ -208,10 +208,7 @@ export async function labelWithChunking(
     await send(chunk, depth)
   }
 
-  async function send(
-    chunk: LabellerInput[],
-    depth: number
-  ): Promise<void> {
+  async function send(chunk: LabellerInput[], depth: number): Promise<void> {
     try {
       const results = await client.labelChunk(chunk)
       await onBatchDone(results)

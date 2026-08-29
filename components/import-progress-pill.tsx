@@ -21,13 +21,17 @@ export function ImportProgressPill() {
   const terminal = batch.status === "completed" || batch.status === "failed"
   const labelProgress =
     batch.labelsTotal > 0
-      ? Math.round(((batch.labelsDone + batch.labelsFailed) / batch.labelsTotal) * 100)
+      ? Math.round(
+          ((batch.labelsDone + batch.labelsFailed) / batch.labelsTotal) * 100
+        )
       : batch.status === "labeling"
         ? 0
         : 100
   const rowProgress =
     batch.rowsTotal > 0
-      ? Math.round(((batch.rowsImported + batch.rowsDuplicate) / batch.rowsTotal) * 100)
+      ? Math.round(
+          ((batch.rowsImported + batch.rowsDuplicate) / batch.rowsTotal) * 100
+        )
       : batch.status === "importing" || batch.status === "parsing"
         ? 0
         : 100
@@ -49,7 +53,12 @@ export function ImportProgressPill() {
             {STAGE_LABELS[batch.status] ?? batch.status}
           </Badge>
           {terminal && (
-            <Button variant="ghost" size="icon" className="size-6" onClick={clearActive}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              onClick={clearActive}
+            >
               <X className="size-4" />
             </Button>
           )}
@@ -74,7 +83,9 @@ export function ImportProgressPill() {
                 <span>Kategorisierung</span>
                 <span>
                   {batch.labelsDone}/{batch.labelsTotal}
-                  {batch.labelsFailed > 0 ? ` (${batch.labelsFailed} fehlgeschlagen)` : ""}
+                  {batch.labelsFailed > 0
+                    ? ` (${batch.labelsFailed} fehlgeschlagen)`
+                    : ""}
                 </span>
               </div>
               <Progress value={labelProgress} />

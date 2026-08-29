@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest"
 import { computeDedupe, hashTransaction } from "@/lib/db/dedupe"
 import type { ParsedTransactionRow } from "@/lib/csv/parser"
 
-function row(overrides: Partial<ParsedTransactionRow> = {}): ParsedTransactionRow {
+function row(
+  overrides: Partial<ParsedTransactionRow> = {}
+): ParsedTransactionRow {
   return {
     bookingDate: "2026-02-03",
     valueDate: "2026-02-03",

@@ -9,9 +9,7 @@ export async function registerNode() {
   g.__dkbInstrumented = true
 
   const { ensureSchema } = await import("@/lib/db")
-  const {
-    resetStuckBatches,
-  } = await import("@/lib/import/pipeline")
+  const { resetStuckBatches } = await import("@/lib/import/pipeline")
   const { runLabeling } = await import("@/lib/labeller/service")
   const { LabellerClient } = await import("@/lib/labeller/client")
 

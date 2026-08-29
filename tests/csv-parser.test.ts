@@ -54,14 +54,16 @@ describe("parseDkbCsv", () => {
       "Betrag (€);Buchungsdatum;Wertstellung;Status;Zahlungspflichtige*r;Zahlungsempfänger*in;Verwendungszweck;Umsatztyp;IBAN;Gläubiger-ID;Mandatsreferenz;Kundenreferenz"
     const reorderedRow =
       "-42,13;03.02.26;03.02.26;Gebucht;MAX MUSTERMANN;REWE SAGT DANKE;Einkauf;Ausgang;DE02100100123456789001;;;"
-    const csv = "\uFEFF" + [
-      "Girokonto;DE02120300000000202051;",
-      "Zeitraum:;x – y;",
-      "Kontostand vom 17.01.2026:;1.234,56;",
-      "",
-      reorderedHeader,
-      reorderedRow,
-    ].join("\n")
+    const csv =
+      "\uFEFF" +
+      [
+        "Girokonto;DE02120300000000202051;",
+        "Zeitraum:;x – y;",
+        "Kontostand vom 17.01.2026:;1.234,56;",
+        "",
+        reorderedHeader,
+        reorderedRow,
+      ].join("\n")
     const parsed = parseDkbCsv(csv)
     expect(parsed.rows[0].amountCents).toBe(-4213)
     expect(parsed.rows[0].bookingDate).toBe("2026-02-03")
@@ -69,14 +71,16 @@ describe("parseDkbCsv", () => {
   })
 
   it("handles quoted multi-line Verwendungszweck", () => {
-    const csv = "\uFEFF" + [
-      "Girokonto;DE02120300000000202051;",
-      "Zeitraum:;x – y;",
-      "Kontostand vom 17.01.2026:;1.234,56;",
-      "",
-      HEADER,
-      '05.02.26;05.02.26;Gebucht;A;B;"SVWZ+Erste Zeile\nZweite Zeile";Ausgang;IBAN123;-10;;;',
-    ].join("\n")
+    const csv =
+      "\uFEFF" +
+      [
+        "Girokonto;DE02120300000000202051;",
+        "Zeitraum:;x – y;",
+        "Kontostand vom 17.01.2026:;1.234,56;",
+        "",
+        HEADER,
+        '05.02.26;05.02.26;Gebucht;A;B;"SVWZ+Erste Zeile\nZweite Zeile";Ausgang;IBAN123;-10;;;',
+      ].join("\n")
     const parsed = parseDkbCsv(csv)
     expect(parsed.rows[0].purpose).toBe("SVWZ+Erste Zeile Zweite Zeile")
   })
@@ -91,12 +95,17 @@ describe("parseDkbCsv", () => {
     const csv = buildCsv({
       dataRows: [validRow, "DD.MM.YY;03.02.26;Gebucht;A;B;C;Ausgang;I;-5;;;"],
     })
-    expect(() => parseDkbCsv(csv)).toThrow(/row 6.*Buchungsdatum|malformed date/)
+    expect(() => parseDkbCsv(csv)).toThrow(
+      /row 6.*Buchungsdatum|malformed date/
+    )
   })
 
   it("fails fast on ambiguous amount", () => {
     const csv = buildCsv({
-      dataRows: [validRow, "03.02.26;03.02.26;Gebucht;A;B;C;Ausgang;I;12.345.6;;;"],
+      dataRows: [
+        validRow,
+        "03.02.26;03.02.26;Gebucht;A;B;C;Ausgang;I;12.345.6;;;",
+      ],
     })
     expect(() => parseDkbCsv(csv)).toThrow(/ambiguous/)
   })

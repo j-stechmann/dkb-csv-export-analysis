@@ -56,9 +56,7 @@ export function parseFilters(sp: URLSearchParams): TransactionFilters {
   const status = sp.get("status") || "Gebucht"
   const sortRaw = sp.get("sort")
   const sort =
-    sortRaw === "amount_cents" || sortRaw === "payee"
-      ? sortRaw
-      : "booking_date"
+    sortRaw === "amount_cents" || sortRaw === "payee" ? sortRaw : "booking_date"
   const dir = sp.get("dir") === "asc" ? "asc" : "desc"
   return {
     q,
@@ -116,10 +114,7 @@ export function buildOrderBy(f: TransactionFilters) {
     case "payee":
       return [dir(transactions.payee), desc(transactions.bookingDate)]
     default:
-      return [
-        dir(transactions.bookingDate),
-        desc(transactions.amountCents),
-      ]
+      return [dir(transactions.bookingDate), desc(transactions.amountCents)]
   }
 }
 
@@ -152,11 +147,12 @@ export function queryTransactions(
   const db = getDb()
   const where = buildWhere(f)
 
-  const total = db
-    .select({ count: sql<number>`count(*)` })
-    .from(transactions)
-    .where(where)
-    .get()?.count ?? 0
+  const total =
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(transactions)
+      .where(where)
+      .get()?.count ?? 0
 
   const rows = db
     .select({
