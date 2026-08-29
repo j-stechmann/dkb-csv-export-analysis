@@ -29,6 +29,7 @@ import {
   YAxis,
 } from "recharts"
 import type { AnalyticsResponse } from "@/components/analytics-kpis"
+import { getCategoryColor } from "@/lib/category-colors"
 
 const cashflowConfig = {
   income: { label: "Einnahmen", color: "var(--chart-2)" },
@@ -230,21 +231,6 @@ export function BalanceChart({
   )
 }
 
-const CATEGORY_COLORS = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-  "#6366f1",
-  "#8b5cf6",
-  "#14b8a6",
-  "#f97316",
-  "#06b6d4",
-  "#84cc16",
-  "#e879f9",
-]
-
 export function TopCategoriesChart({
   data,
   loading,
@@ -253,16 +239,16 @@ export function TopCategoriesChart({
   loading: boolean
 }) {
   const config: ChartConfig = {}
-  const chartData = (data ?? []).map((c, i) => ({
+  const chartData = (data ?? []).map((c) => ({
     name: c.name,
     value: c.totalCents / 100,
     share: c.share,
-    fill: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+    fill: getCategoryColor(c.categoryId),
   }))
-  chartData.forEach((d, i) => {
+  chartData.forEach((d) => {
     config[d.name] = {
       label: d.name,
-      color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+      color: d.fill,
     }
   })
 

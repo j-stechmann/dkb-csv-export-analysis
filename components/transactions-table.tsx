@@ -23,6 +23,7 @@ import {
   Tag,
 } from "lucide-react"
 import { filtersToParams, type DashboardFilters } from "@/lib/filters"
+import { getCategoryColor } from "@/lib/category-colors"
 
 interface TxRow {
   id: string
@@ -78,7 +79,11 @@ function CategoryCell({ row }: { row: TxRow }) {
     )
   }
   return (
-    <Badge variant="secondary" className="font-normal">
+    <Badge
+      variant="outline"
+      className="category-badge font-normal"
+      style={{ "--category-color": getCategoryColor(row.categoryId) } as React.CSSProperties}
+    >
       {row.categoryName}
     </Badge>
   )
