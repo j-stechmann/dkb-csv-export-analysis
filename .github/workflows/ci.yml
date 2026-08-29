@@ -2,24 +2,29 @@ name: CI
 
 on:
   push:
+    branches:
+      - "**"
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: ci-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
 
       - name: Cache bun packages
         uses: actions/cache@v4

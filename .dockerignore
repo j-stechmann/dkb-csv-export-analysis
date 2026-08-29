@@ -1,0 +1,26 @@
+# dependencies / build output (rebuilt inside the image)
+node_modules
+.next
+coverage
+
+# never ship local dev state or repo internals
+.git
+.github
+data
+*.db
+*.db-wal
+*.db-shm
+.env*
+
+# not needed by the build
+tests
+scripts
+template.csv
+labeller-openapi.json
+vitest.config.ts
+eslint.config.mjs
+components.json
+.prettierrc
+.prettierignore
+README.md
+AGENTS.md
