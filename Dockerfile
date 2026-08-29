@@ -44,9 +44,10 @@ USER node
 
 EXPOSE 3000
 
-# /api/labeller/health returns 200 even when the labeller service is down,
-# so this probes app + DB liveness only. --start-period covers the
-# ensureSchema/resetStuckBatches work done during instrumentation boot.
+# HTTP liveness probe only: this route always returns 200 (labeller status
+# is in the body), so an external labeller outage never marks the container
+# unhealthy or triggers restart loops. DB problems surface at boot, since
+# ensureSchema in instrumentation crashes startup; --start-period covers it.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/labeller/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
