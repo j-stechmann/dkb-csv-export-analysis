@@ -60,8 +60,8 @@ function shortMonth(month: string): string {
   return `${names[Number.parseInt(m, 10) - 1]} ${y.slice(2)}`
 }
 
-function euroShort(cents: number): string {
-  return `${Math.round(cents / 100).toLocaleString("de-DE")}`
+function euroShort(euros: number): string {
+  return Math.round(euros).toLocaleString("de-DE")
 }
 
 function ZoomResetButton({
@@ -278,9 +278,9 @@ export function TopCategoriesChart({
                 axisLine={false}
               />
               <ChartTooltipContent
-                formatter={(value, name) => {
-                  const d = chartData.find((c) => c.name === name)
-                  return `${Number(value).toLocaleString("de-DE", { minimumFractionDigits: 2 })} € (${d ? Math.round(d.share * 100) : 0} %)`
+                formatter={(value, _name, item) => {
+                  const share = item?.payload as { share?: number } | undefined
+                  return `${Number(value).toLocaleString("de-DE", { minimumFractionDigits: 2 })} € (${share?.share != null ? Math.round(share.share * 100) : 0} %)`
                 }}
               />
               <Bar dataKey="value" radius={4} />
