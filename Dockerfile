@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # --- Build stage -------------------------------------------------------------
-# node:22 glibc base so better-sqlite3's NAPI prebuild matches the runtime ABI;
-# better-sqlite3 v13 ships prebuilt binaries, so no python/make/g++ needed.
-FROM node:22-bookworm-slim AS builder
+# node:24 glibc (Active LTS) base; better-sqlite3 v13 ships NAPI prebuilds that
+# are ABI-stable across node majors - glibc (bookworm) is what must match.
+FROM node:24-bookworm-slim AS builder
 
 COPY --from=oven/bun:1.4.0 /usr/local/bin/bun /usr/local/bin/bun
 
@@ -23,7 +23,7 @@ RUN bun run build
 RUN test -f .next/standalone/node_modules/better-sqlite3/prebuilds/linux-x64.node
 
 # --- Runtime stage -----------------------------------------------------------
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 
 ENV NODE_ENV=production \
     PORT=3000 \
