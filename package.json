@@ -1,8 +1,9 @@
 {
   "name": "dkb-analytics",
   "version": "0.0.1",
-  "type": "module",
-  "private": true,
+    "type": "module",
+    "private": true,
+    "license": "MIT",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
