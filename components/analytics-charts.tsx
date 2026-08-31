@@ -129,7 +129,7 @@ export function CashflowChart({
                   formatter={(value) =>
                     `${Number(value).toLocaleString("de-DE", { minimumFractionDigits: 2 })} €`
                   }
-                  labelFormatter={(label) => shortMonth(label)}
+                  labelFormatter={(label) => shortMonth(String(label))}
                 />
                 <Bar dataKey="income" fill="var(--color-income)" radius={4} />
                 <Bar
