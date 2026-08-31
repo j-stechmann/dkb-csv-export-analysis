@@ -9,6 +9,7 @@ import {
   TopCategoriesChart,
 } from "@/components/analytics-charts"
 import { TransactionsTable } from "@/components/transactions-table"
+import { ErrorState } from "@/components/error-state"
 import { EMPTY_FILTERS, type DashboardFilters } from "@/lib/filters"
 
 export default function DashboardPage() {
@@ -24,7 +25,13 @@ export default function DashboardPage() {
     return sp.toString()
   }, [filters])
 
-  const { data: analytics, isLoading } = useAnalytics(params)
+  const {
+    data: analytics,
+    isLoading,
+    isFetching,
+    isError,
+    refetch,
+  } = useAnalytics(params)
 
   return (
     <div className="space-y-6">
@@ -39,17 +46,26 @@ export default function DashboardPage() {
 
       <FilterBar filters={filters} onChange={setFilters} />
 
-      <KpiRow analytics={analytics} loading={isLoading} />
+      {isError && <ErrorState onRetry={() => void refetch()} />}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <CashflowChart data={analytics?.monthlyCashflow} loading={isLoading} />
-        <TopCategoriesChart
-          data={analytics?.topCategories}
-          loading={isLoading}
-        />
+      <div
+        className={`space-y-6 transition-opacity ${isFetching && !isLoading ? "opacity-70" : ""}`}
+      >
+        <KpiRow analytics={analytics} loading={isLoading} />
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <CashflowChart
+            data={analytics?.monthlyCashflow}
+            loading={isLoading}
+          />
+          <TopCategoriesChart
+            data={analytics?.topCategories}
+            loading={isLoading}
+          />
+        </div>
+
+        <BalanceChart data={analytics?.balanceTimeline} loading={isLoading} />
       </div>
-
-      <BalanceChart data={analytics?.balanceTimeline} loading={isLoading} />
 
       <div>
         <h2 className="mb-3 font-serif text-lg font-semibold">Transaktionen</h2>

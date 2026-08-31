@@ -9,6 +9,8 @@ export interface ZoomRange {
 
 interface UseChartZoomOpts {
   length: number
+  /** changes when the underlying dataset changed → zoom range resets */
+  resetKey: string
   /** minimum number of visible points when zooming in */
   minWindow?: number
 }
@@ -19,9 +21,20 @@ interface UseChartZoomOpts {
  * - mouse: drag to pan, wheel to pan, ctrl+wheel (or trackpad pinch) to zoom
  * Wheel is registered non-passively on the wrapper so preventDefault works.
  */
-export function useChartZoom({ length, minWindow = 5 }: UseChartZoomOpts) {
+export function useChartZoom({
+  length,
+  resetKey,
+  minWindow = 5,
+}: UseChartZoomOpts) {
   const [range, setRange] = React.useState<ZoomRange | null>(null)
   const [wrapEl, setWrapEl] = React.useState<HTMLDivElement | null>(null)
+
+  // new dataset → the old index window is meaningless, start unzoomed
+  const [lastResetKey, setLastResetKey] = React.useState(resetKey)
+  if (lastResetKey !== resetKey) {
+    setLastResetKey(resetKey)
+    setRange(null)
+  }
 
   const pointers = React.useRef(new Map<number, { x: number; y: number }>())
   const pinchDist = React.useRef<number | null>(null)

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { sql } from "drizzle-orm"
+import { sql, and, eq, gte, lte } from "drizzle-orm"
 import { createTestDb, setTestDb, type Db } from "@/lib/db"
 import { parseDkbCsv } from "@/lib/csv/parser"
 import { computeDedupe } from "@/lib/db/dedupe"
@@ -13,7 +13,6 @@ import {
   importBatches,
   categories,
 } from "@/lib/db/schema"
-import { eq } from "drizzle-orm"
 
 interface Manifest {
   account: { iban: string; name: string }
@@ -305,5 +304,177 @@ describe("fixture end-to-end correctness", () => {
     )
     expect(second.toInsert).toHaveLength(0)
     expect(second.duplicateCount).toBe(parsed.rows.length)
+  })
+})
+
+describe("date-filtered analytics", () => {
+  const filters = (q: string) => parseFilters(new URLSearchParams(q))
+  const today = "2026-08-28"
+  const WINDOW = "dateFrom=2024-03-01&dateTo=2024-06-30"
+
+  it("counts only booked transactions inside the window", () => {
+    const r = computeAnalytics(filters(WINDOW), today)
+    // hand-derived from fixture.csv: 10 + 9 + 9 + 10 booked rows
+    expect(r.kpis.transactionCount).toBe(38)
+    // independent oracle: direct SQL against the in-memory db
+    const oracle =
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.status, "Gebucht"),
+            gte(transactions.bookingDate, "2024-03-01"),
+            lte(transactions.bookingDate, "2024-06-30")
+          )
+        )
+        .get()?.count ?? 0
+    expect(oracle).toBe(38)
+    expect(r.kpis.transactionCount).toBe(oracle)
+  })
+
+  it("monthly cashflow is sliced to the window", () => {
+    const r = computeAnalytics(filters(WINDOW), today)
+    expect(r.monthlyCashflow).toHaveLength(4)
+    expect(r.monthlyCashflow.map((m) => m.month)).toEqual([
+      "2024-03",
+      "2024-04",
+      "2024-05",
+      "2024-06",
+    ])
+    expect(r.monthlyCashflow[0].incomeCents).toBe(350000)
+    expect(r.monthlyCashflow[0].expensesCents).toBe(140357)
+    const m06 = manifest.expected.monthlyCashflow.find(
+      (m) => m.month === "2024-06"
+    )!
+    expect(r.monthlyCashflow[3].expensesCents).toBe(m06.expensesCents)
+    expect(r.kpis.monthsCounted).toBe(4)
+    // (140357 + 139273 + 144189 + 137105) / 4
+    expect(r.kpis.avgMonthlyExpensesCents).toBe(Math.round(560924 / 4))
+  })
+
+  it("top categories are window-scoped", () => {
+    const r = computeAnalytics(filters(WINDOW), today)
+    const oracle = db
+      .select({
+        name: categories.name,
+        total: sql<number>`SUM(-${transactions.amountCents})`,
+      })
+      .from(transactions)
+      .innerJoin(categories, eq(transactions.categoryId, categories.id))
+      .where(
+        and(
+          eq(transactions.status, "Gebucht"),
+          gte(transactions.bookingDate, "2024-03-01"),
+          lte(transactions.bookingDate, "2024-06-30"),
+          sql`${transactions.amountCents} < 0`
+        )
+      )
+      .groupBy(categories.name)
+      .orderBy(sql`SUM(-${transactions.amountCents}) DESC`)
+      .all()
+    // no Langtext GmbH inside the window
+    expect(r.topCategories).toHaveLength(4)
+    expect(r.topCategories[0]).toMatchObject({
+      name: "Vermieter GmbH",
+      totalCents: 480000,
+      txCount: 4,
+    })
+    const byName = new Map(r.topCategories.map((c) => [c.name, c.totalCents]))
+    expect(byName.get("Supermarkt")).toBe(72928)
+    expect(byName.get("Streaming AG")).toBe(5196)
+    expect(byName.get("Cafe Mittelmeer")).toBe(2800)
+    for (const row of oracle) {
+      expect(byName.get(row.name)).toBe(Number(row.total))
+    }
+  })
+
+  it("balance ignores content filters (q/type/categoryId/labelStatus)", () => {
+    const cat = db
+      .select()
+      .from(categories)
+      .where(eq(categories.nameKey, "supermarkt"))
+      .get()
+    expect(cat).toBeDefined()
+
+    const plain = computeAnalytics(filters(WINDOW), today)
+    const filtered = computeAnalytics(
+      filters(
+        `${WINDOW}&q=Supermarkt&type=Ausgang&categoryId=${cat!.id}&labelStatus=labeled`
+      ),
+      today
+    )
+    expect(filtered.kpis.currentBalanceCents).toBe(
+      plain.kpis.currentBalanceCents
+    )
+    expect(filtered.balanceTimeline).toEqual(plain.balanceTimeline)
+
+    // q matching NOTHING still yields a balance (flow aggregates empty out)
+    const none = computeAnalytics(filters("q=EDEKA"), today)
+    expect(
+      none.monthlyCashflow.every(
+        (m) => m.incomeCents === 0 && m.expensesCents === 0
+      )
+    ).toBe(true)
+    expect(none.kpis.transactionCount).toBe(0)
+    expect(none.kpis.currentBalanceCents).toBe(
+      manifest.expected.currentBalanceCents
+    )
+    expect(none.kpis.balanceWithoutSnapshot).toBe(false)
+  })
+
+  it("balance KPI = balance as of dateTo (dateTo ≥ anchor)", () => {
+    const r = computeAnalytics(filters("dateTo=2024-01-08"), today)
+    // next booking after the anchor (2024-01-05, 5.000,00 €) is 2024-01-10
+    expect(r.kpis.currentBalanceCents).toBe(500000)
+    expect(r.balanceTimeline[r.balanceTimeline.length - 1]).toEqual({
+      date: "2024-01-05",
+      balanceCents: 500000,
+    })
+  })
+
+  it("balance KPI as of dateTo BEFORE the anchor uses backward math", () => {
+    const r = computeAnalytics(filters("dateTo=2024-01-03"), today)
+    // anchor 500000 − Σ(booked in (2024-01-03, 2024-01-05]) = 500000 + 6753
+    expect(r.kpis.currentBalanceCents).toBe(506753)
+    expect(r.balanceTimeline).toEqual([
+      { date: "2024-01-01", balanceCents: 626753 },
+      { date: "2024-01-03", balanceCents: 506753 },
+    ])
+  })
+
+  it("balance timeline is the full timeline sliced to [dateFrom, dateTo]", () => {
+    const un = computeAnalytics(filters(""), today)
+    const byDate = new Map(
+      un.balanceTimeline.map((p) => [p.date, p.balanceCents])
+    )
+    const r = computeAnalytics(
+      filters("dateFrom=2024-02-01&dateTo=2024-02-29"),
+      today
+    )
+    expect(r.balanceTimeline).toHaveLength(6)
+    expect(r.balanceTimeline[0]).toEqual({
+      date: "2024-02-01",
+      balanceCents: 834228,
+    })
+    expect(r.balanceTimeline[5]).toEqual({
+      date: "2024-02-20",
+      balanceCents: 692787,
+    })
+    for (const p of r.balanceTimeline) {
+      expect(p.date >= "2024-02-01" && p.date <= "2024-02-29").toBe(true)
+      // slice-not-recompute oracle: values match the unfiltered timeline
+      expect(p.balanceCents).toBe(byDate.get(p.date))
+    }
+    expect(r.kpis.currentBalanceCents).toBe(692787)
+  })
+
+  it("dateTo covering everything is equivalent to no filter", () => {
+    const un = computeAnalytics(filters(""), today)
+    const r = computeAnalytics(filters("dateTo=2025-12-31"), today)
+    expect(r).toEqual(un)
+    expect(r.kpis.currentBalanceCents).toBe(
+      manifest.expected.currentBalanceCents
+    )
   })
 })

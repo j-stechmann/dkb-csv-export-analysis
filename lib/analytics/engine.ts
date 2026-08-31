@@ -1,4 +1,4 @@
-import { and, eq, gt, sql, type SQL } from "drizzle-orm"
+import { and, eq, gt, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { importBatches, transactions } from "@/lib/db/schema"
 import { buildWhere, type TransactionFilters } from "@/lib/analytics/queries"
@@ -96,37 +96,28 @@ function monthsBetween(fromIso: string, toIso: string): string[] {
   return months
 }
 
+/** day-of-month of the last calendar day of the month containing iso */
+function lastDayOfMonth(iso: string): string {
+  const [y, m] = iso.split("-").map(Number)
+  return String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")
+}
+
+/**
+ * Flow analytics (cashflow, categories, KPIs) react to every filter and share
+ * buildWhere with the transactions table. Balance (KPI + timeline) is
+ * time-scoped only by design: snapshots anchor an absolute account balance,
+ * so content filters (q/type/category) are ignored and full history up to
+ * the anchor date is required for the back-calculation.
+ */
 export function computeAnalytics(
   f: TransactionFilters,
   today: string
 ): AnalyticsResult {
   const db = getDb()
-  const base: SQL[] = []
-  if (f.status !== "all") {
-    base.push(eq(transactions.status, f.status ?? "Gebucht"))
-  }
-  if (f.q) {
-    // q is a table-filter only (applies in queryTransactions); aggregates
-    // intentionally operate on the same filtered set — implement via LIKE
-    const escaped = `%${f.q.replace(/([\\%_])/g, "\\$1")}%`
-    base.push(
-      sql`(${transactions.payee} LIKE ${escaped} OR ${transactions.payer} LIKE ${escaped} OR ${transactions.purpose} LIKE ${escaped})`
-    )
-  }
-  if (f.type) base.push(eq(transactions.type, f.type))
-  if (f.categoryIds && f.categoryIds.length > 0) {
-    base.push(
-      sql`${transactions.categoryId} IN (${sql.join(
-        f.categoryIds.map((id) => sql`${id}`),
-        sql`, `
-      )})`
-    )
-  }
-  if (f.accountId !== undefined) {
-    base.push(eq(transactions.accountId, f.accountId))
-  }
 
-  // ── monthly aggregation over the filtered set ──────────────────────
+  // ── flow aggregates: single filter source, shared with the table ──
+  const flowWhere = buildWhere(f)
+
   const monthlyRows = db
     .select({
       month: sql<string>`substr(${transactions.bookingDate}, 1, 7)`,
@@ -134,127 +125,157 @@ export function computeAnalytics(
       expenses: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} < 0 THEN -${transactions.amountCents} ELSE 0 END), 0)`,
     })
     .from(transactions)
-    .where(and(...base))
+    .where(flowWhere)
     .groupBy(sql`substr(${transactions.bookingDate}, 1, 7)`)
     .all()
+    .map((r) => ({
+      month: r.month,
+      income: Number(r.income),
+      expenses: Number(r.expenses),
+    }))
 
-  if (monthlyRows.length === 0) {
-    return {
-      kpis: {
-        currentBalanceCents: null,
-        balanceWithoutSnapshot: true,
-        avgMonthlyIncomeCents: null,
-        avgMonthlyExpensesCents: null,
-        savingsRate: null,
-        transactionCount: 0,
-        monthsCounted: 0,
-      },
-      monthlyCashflow: [],
-      balanceTimeline: [],
-      topCategories: [],
-    }
-  }
+  const monthlyCashflow: MonthlyCashflowPoint[] = []
+  let monthsCounted = 0
+  let avgIncome: number | null = null
+  let avgExpenses: number | null = null
+  let savingsRate: number | null = null
 
-  // determine span (respect explicit date filters for the span)
-  const bounds = db
-    .select({
-      min: sql<string>`MIN(${transactions.bookingDate})`,
-      max: sql<string>`MAX(${transactions.bookingDate})`,
-    })
-    .from(transactions)
-    .where(and(...base))
-    .get()
-  const minDate = f.dateFrom ?? bounds?.min ?? today
-  const maxDateExclusive = f.dateTo ?? bounds?.max ?? today
-
-  // partial current month: include in series, exclude from averages
-  const currentMonth = monthOf(today)
-  const lastFullMonth =
-    monthOf(maxDateExclusive) >= currentMonth
-      ? prevMonth(currentMonth)
-      : monthOf(maxDateExclusive)
-
-  const spanStartMonth = monthOf(minDate)
-  const allMonths = monthsBetween(spanStartMonth, monthOf(maxDateExclusive))
-
-  const byMonth = new Map(monthlyRows.map((r) => [r.month, r]))
-  const monthlyCashflow: MonthlyCashflowPoint[] = allMonths.map((m) => {
-    const row = byMonth.get(m)
-    const income = row?.income ?? 0
-    const expenses = row?.expenses ?? 0
-    return {
-      month: m,
-      incomeCents: income,
-      expensesCents: expenses,
-      netCents: income - expenses,
-    }
-  })
-
-  // averages over full months only (excludes partial current month)
-  const fullMonths = allMonths.filter(
-    (m) => m <= lastFullMonth && m >= spanStartMonth
-  )
-  const monthsCounted = fullMonths.length
-  const sumIncome = fullMonths.reduce(
-    (acc, m) => acc + (byMonth.get(m)?.income ?? 0),
-    0
-  )
-  const sumExpenses = fullMonths.reduce(
-    (acc, m) => acc + (byMonth.get(m)?.expenses ?? 0),
-    0
-  )
-  const avgIncome =
-    monthsCounted > 0 ? Math.round(sumIncome / monthsCounted) : null
-  const avgExpenses =
-    monthsCounted > 0 ? Math.round(sumExpenses / monthsCounted) : null
-  const savingsRate =
-    avgIncome !== null && avgIncome > 0
-      ? (avgIncome - (avgExpenses ?? 0)) / avgIncome
-      : null
-
-  // ── balance: latest snapshot anchor + subsequent bookings ─────────
-  const anchor = latestAnchor(f.accountId)
-  const totalSum =
-    db
+  if (monthlyRows.length > 0) {
+    const bounds = db
       .select({
-        sum: sql<number>`COALESCE(SUM(${transactions.amountCents}), 0)`,
+        min: sql<string>`MIN(${transactions.bookingDate})`,
+        max: sql<string>`MAX(${transactions.bookingDate})`,
       })
       .from(transactions)
-      .where(and(...base))
-      .get()?.sum ?? 0
+      .where(flowWhere)
+      .get()
+    // bounds are inclusive (the DB predicates are gte/lte on booking_date)
+    const minDate = f.dateFrom ?? bounds?.min ?? today
+    const maxDate = f.dateTo ?? bounds?.max ?? today
 
-  let currentBalanceCents: number | null
-  let balanceWithoutSnapshot: boolean
+    // partial current month: include in series, exclude from averages
+    const currentMonth = monthOf(today)
+    let lastFullMonth = monthOf(maxDate)
+    if (lastFullMonth >= currentMonth) {
+      lastFullMonth = prevMonth(currentMonth)
+    } else if (
+      f.dateTo !== undefined &&
+      f.dateTo.slice(8, 10) !== lastDayOfMonth(f.dateTo)
+    ) {
+      // mid-month dateTo in a past month: that month is partial, not full
+      lastFullMonth = prevMonth(lastFullMonth)
+    }
 
-  if (anchor) {
-    const afterSnapshot =
-      db
-        .select({
-          sum: sql<number>`COALESCE(SUM(${transactions.amountCents}), 0)`,
-        })
-        .from(transactions)
-        .where(and(...base, gt(transactions.bookingDate, anchor.snapshotDate)))
-        .get()?.sum ?? 0
-    currentBalanceCents = anchor.snapshotAmountCents + afterSnapshot
-    balanceWithoutSnapshot = false
-  } else {
-    currentBalanceCents = totalSum
-    balanceWithoutSnapshot = true
+    const spanStartMonth = monthOf(minDate)
+    const allMonths = monthsBetween(spanStartMonth, monthOf(maxDate))
+
+    const byMonth = new Map(monthlyRows.map((r) => [r.month, r]))
+    for (const m of allMonths) {
+      const row = byMonth.get(m)
+      const income = row?.income ?? 0
+      const expenses = row?.expenses ?? 0
+      monthlyCashflow.push({
+        month: m,
+        incomeCents: income,
+        expensesCents: expenses,
+        netCents: income - expenses,
+      })
+    }
+
+    // averages over full months only (excludes partial current month)
+    const fullMonths = allMonths.filter(
+      (m) => m <= lastFullMonth && m >= spanStartMonth
+    )
+    monthsCounted = fullMonths.length
+    const sumIncome = fullMonths.reduce(
+      (acc, m) => acc + (byMonth.get(m)?.income ?? 0),
+      0
+    )
+    const sumExpenses = fullMonths.reduce(
+      (acc, m) => acc + (byMonth.get(m)?.expenses ?? 0),
+      0
+    )
+    avgIncome = monthsCounted > 0 ? Math.round(sumIncome / monthsCounted) : null
+    avgExpenses =
+      monthsCounted > 0 ? Math.round(sumExpenses / monthsCounted) : null
+    savingsRate =
+      avgIncome !== null && avgIncome > 0
+        ? (avgIncome - (avgExpenses ?? 0)) / avgIncome
+        : null
   }
 
-  // ── balance timeline: daily sums, back/forward from the anchor ────
+  // ── transaction count + top categories (flow scope) ───────────────
+  const txCount =
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(transactions)
+      .where(flowWhere)
+      .get()?.count ?? 0
+
+  const catRows = db
+    .select({
+      categoryId: transactions.categoryId,
+      name: sql<string>`COALESCE(categories.name, '')`,
+      total: sql<number>`COALESCE(SUM(-${transactions.amountCents}), 0)`,
+      count: sql<number>`COUNT(*)`,
+    })
+    .from(transactions)
+    .leftJoin(sql`categories`, sql`${transactions.categoryId} = categories.id`)
+    .where(and(flowWhere, sql`${transactions.amountCents} < 0`))
+    .groupBy(transactions.categoryId)
+    .orderBy(sql`SUM(-${transactions.amountCents}) DESC`)
+    .all()
+    .map((r) => ({
+      ...r,
+      total: Number(r.total),
+      count: Number(r.count),
+    }))
+
+  const totalExpenses = catRows.reduce((acc, r) => acc + r.total, 0)
+  const topCategories: TopCategoryPoint[] = catRows
+    .map((r) => ({
+      categoryId: r.categoryId,
+      name: r.categoryId === null ? "Unlabeled" : r.name,
+      totalCents: r.total,
+      share: totalExpenses > 0 ? r.total / totalExpenses : 0,
+      txCount: r.count,
+    }))
+    .slice(0, 12)
+
+  // ── balance: snapshot anchor math, time-scoped only ───────────────
+  const anchor = latestAnchor(f.accountId)
+  const { dateFrom, dateTo } = f
+
+  const balanceScope: TransactionFilters = {
+    ...f,
+    q: undefined,
+    type: undefined,
+    categoryIds: undefined,
+    labelStatus: undefined,
+    dateFrom: undefined,
+  }
+  // The backward reconstruction subtracts everything between a day and the
+  // anchor, so it must see bookings up to max(dateTo, anchorDate) — clipping
+  // at dateTo would mislabel the (dateTo, anchorDate] segment as zero.
+  const reconDateTo =
+    anchor !== null && dateTo !== undefined && dateTo < anchor.snapshotDate
+      ? anchor.snapshotDate
+      : dateTo
+  const reconWhere = buildWhere({ ...balanceScope, dateTo: reconDateTo })
+
   const dailyRows = db
     .select({
       date: transactions.bookingDate,
       sum: sql<number>`SUM(${transactions.amountCents})`,
     })
     .from(transactions)
-    .where(and(...base))
+    .where(reconWhere)
     .groupBy(transactions.bookingDate)
     .orderBy(transactions.bookingDate)
     .all()
+    .map((r) => ({ date: r.date, sum: Number(r.sum) }))
 
-  const balanceTimeline: BalancePoint[] = []
+  const series: BalancePoint[] = []
 
   if (anchor) {
     // DKB snapshots sit at the END of the export period, so earlier balances
@@ -277,64 +298,73 @@ export function computeAnalytics(
     }
     backward.reverse()
 
-    const anchorPoint: BalancePoint = {
+    series.push(...backward, {
       date: anchor.snapshotDate,
       balanceCents: anchor.snapshotAmountCents,
-    }
+    })
 
     let running = anchor.snapshotAmountCents
-    const forward: BalancePoint[] = []
     for (
       let i = firstAfter === -1 ? dailyRows.length : firstAfter;
       i < dailyRows.length;
       i++
     ) {
       running += dailyRows[i].sum
-      forward.push({ date: dailyRows[i].date, balanceCents: running })
+      series.push({ date: dailyRows[i].date, balanceCents: running })
     }
-
-    balanceTimeline.push(...backward, anchorPoint, ...forward)
   } else {
     // no snapshot: cumulative sum from zero (best-effort pseudo balance)
     let running = 0
     for (const row of dailyRows) {
       running += row.sum
-      balanceTimeline.push({ date: row.date, balanceCents: running })
+      series.push({ date: row.date, balanceCents: running })
     }
   }
 
-  // ── top categories (expenses only) ────────────────────────────────
-  const catRows = db
-    .select({
-      categoryId: transactions.categoryId,
-      name: sql<string>`COALESCE(categories.name, '')`,
-      total: sql<number>`COALESCE(SUM(-${transactions.amountCents}), 0)`,
-      count: sql<number>`COUNT(*)`,
-    })
-    .from(transactions)
-    .leftJoin(sql`categories`, sql`${transactions.categoryId} = categories.id`)
-    .where(and(...base, sql`${transactions.amountCents} < 0`))
-    .groupBy(transactions.categoryId)
-    .orderBy(sql`SUM(-${transactions.amountCents}) DESC`)
-    .all()
+  // visible timeline = full series clipped to the requested [from, to] window
+  let balanceTimeline = series
+  if (dateFrom !== undefined) {
+    const i = balanceTimeline.findIndex((p) => p.date >= dateFrom)
+    balanceTimeline = i === -1 ? [] : balanceTimeline.slice(i)
+  }
+  if (dateTo !== undefined) {
+    balanceTimeline = balanceTimeline.filter((p) => p.date <= dateTo)
+  }
 
-  const totalExpenses = catRows.reduce((acc, r) => acc + r.total, 0)
-  const topCategories: TopCategoryPoint[] = catRows
-    .map((r) => ({
-      categoryId: r.categoryId,
-      name: r.categoryId === null ? "Unlabeled" : r.name,
-      totalCents: r.total,
-      share: totalExpenses > 0 ? r.total / totalExpenses : 0,
-      txCount: r.count,
-    }))
-    .slice(0, 12)
+  // KPI: balance as of dateTo (or the latest known day), read from the
+  // UNSLICED series so it survives an empty visible window
+  let currentBalanceCents: number | null = null
+  let balanceWithoutSnapshot: boolean
+  let lastUpToDate: BalancePoint | null = null
+  for (const p of series) {
+    if (dateTo === undefined || p.date <= dateTo) lastUpToDate = p
+    else break
+  }
 
-  const txCount =
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(transactions)
-      .where(and(...base))
-      .get()?.count ?? 0
+  if (anchor) {
+    balanceWithoutSnapshot = false
+    if (lastUpToDate !== null) {
+      currentBalanceCents = lastUpToDate.balanceCents
+    } else if (dateTo !== undefined) {
+      // dateTo precedes every booking and the anchor: balance(dateTo) =
+      // anchor − Σ(bookings in (dateTo, anchorDate]); reconWhere is already
+      // clipped at the anchor here
+      const gap =
+        db
+          .select({
+            sum: sql<number>`COALESCE(SUM(${transactions.amountCents}), 0)`,
+          })
+          .from(transactions)
+          .where(and(reconWhere, gt(transactions.bookingDate, dateTo)))
+          .get()?.sum ?? 0
+      currentBalanceCents = anchor.snapshotAmountCents - Number(gap)
+    }
+  } else {
+    balanceWithoutSnapshot = true
+    if (lastUpToDate !== null) {
+      currentBalanceCents = lastUpToDate.balanceCents
+    }
+  }
 
   return {
     kpis: {

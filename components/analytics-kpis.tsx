@@ -46,6 +46,7 @@ export function useAnalytics(params: string) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },
+    placeholderData: (prev) => prev,
   })
 }
 
