@@ -1,0 +1,62 @@
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  dependabot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.repository == 'j-stechmann/dkb-csv-export-analysis'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      # Defense in depth: never merge majors, even if one slips past the
+      # allow/ignore rules in dependabot.yml (e.g. docker tag edge cases)
+      - name: Check for major version updates
+        id: gate
+        run: |
+          if [[ "${{ steps.metadata.outputs.update-type }}" == *major* ]]; then
+            echo "Major version update detected: ${{ steps.metadata.outputs.update-type }} - auto-merge blocked"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Branch protection is not yet available (private repo), so GitHub-native
+      # auto-merge has no required checks to wait on. Explicitly watch the CI
+      # run to completion before enabling auto-merge. Once branch protection
+      # with required checks is enabled, --auto re-evaluates atomically.
+      - name: Wait for CI checks to pass
+        if: steps.gate.outputs.skip == 'false'
+        run: gh pr checks --watch --fail-fast --interval 30 "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Approve PR
+        if: steps.gate.outputs.skip == 'false'
+        run: gh pr review --approve "$PR_URL" || echo "Already approved, continuing"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge
+        if: steps.gate.outputs.skip == 'false'
+        run: gh pr merge --auto --merge --delete-branch "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
