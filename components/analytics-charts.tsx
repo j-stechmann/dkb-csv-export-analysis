@@ -97,7 +97,12 @@ export function CashflowChart({
       })),
     [data]
   )
-  const zoom = useChartZoom({ length: chartData.length })
+  const zoom = useChartZoom({
+    length: chartData.length,
+    resetKey: chartData.length
+      ? `${chartData[0].month}..${chartData[chartData.length - 1].month}:${chartData.length}`
+      : "0",
+  })
   const { wrapRef, handlers } = zoom
   const visible = zoom.slice(chartData)
 
@@ -167,7 +172,12 @@ export function BalanceChart({
       })),
     [data]
   )
-  const zoom = useChartZoom({ length: chartData.length })
+  const zoom = useChartZoom({
+    length: chartData.length,
+    resetKey: chartData.length
+      ? `${chartData[0].date}..${chartData[chartData.length - 1].date}:${chartData.length}`
+      : "0",
+  })
   const { wrapRef, handlers } = zoom
   const visible = zoom.slice(chartData)
 
@@ -238,19 +248,23 @@ export function TopCategoriesChart({
   data: AnalyticsResponse["topCategories"] | undefined
   loading: boolean
 }) {
-  const config: ChartConfig = {}
-  const chartData = (data ?? []).map((c) => ({
-    name: c.name,
-    value: c.totalCents / 100,
-    share: c.share,
-    fill: getCategoryColor(c.categoryId),
-  }))
-  chartData.forEach((d) => {
-    config[d.name] = {
-      label: d.name,
-      color: d.fill,
+  const chartData = React.useMemo(
+    () =>
+      (data ?? []).map((c) => ({
+        name: c.name,
+        value: c.totalCents / 100,
+        share: c.share,
+        fill: getCategoryColor(c.categoryId),
+      })),
+    [data]
+  )
+  const config = React.useMemo<ChartConfig>(() => {
+    const cfg: ChartConfig = {}
+    for (const d of chartData) {
+      cfg[d.name] = { label: d.name, color: d.fill }
     }
-  })
+    return cfg
+  }, [chartData])
 
   return (
     <Card>

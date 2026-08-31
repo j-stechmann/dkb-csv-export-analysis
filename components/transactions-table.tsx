@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import { filtersToParams, type DashboardFilters } from "@/lib/filters"
 import { getCategoryColor } from "@/lib/category-colors"
+import { ErrorState } from "@/components/error-state"
 
 interface TxRow {
   id: string
@@ -140,15 +141,27 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
     return sp
   }, [filters, page, sort])
 
-  const { data, isLoading, isFetching } = useQuery<TransactionsResponse>({
-    queryKey: ["transactions", params.toString()],
-    queryFn: async () => {
-      const res = await fetch(`/api/transactions?${params}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return res.json()
-    },
-    placeholderData: (prev) => prev,
-  })
+  // value-based identity: page/reset must not fire on page changes
+  const filterKey = React.useMemo(
+    () => filtersToParams(filters).toString(),
+    [filters]
+  )
+  const [lastFilterKey, setLastFilterKey] = React.useState(filterKey)
+  if (lastFilterKey !== filterKey) {
+    setLastFilterKey(filterKey)
+    setPage(1)
+  }
+
+  const { data, isLoading, isFetching, isError, refetch } =
+    useQuery<TransactionsResponse>({
+      queryKey: ["transactions", params.toString()],
+      queryFn: async () => {
+        const res = await fetch(`/api/transactions?${params}`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      },
+      placeholderData: (prev) => prev,
+    })
 
   const toggleSort = (key: SortKey) => {
     setSort((prev) =>
@@ -205,6 +218,15 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
                   ))}
                 </TableRow>
               ))
+            ) : isError ? (
+              <TableRow>
+                <TableCell colSpan={4} className="h-32">
+                  <ErrorState
+                    onRetry={() => void refetch()}
+                    className="justify-center border-none bg-transparent"
+                  />
+                </TableCell>
+              </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
