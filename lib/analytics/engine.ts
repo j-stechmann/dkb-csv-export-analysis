@@ -169,6 +169,12 @@ export function computeAnalytics(
     const spanStartMonth = monthOf(minDate)
     const allMonths = monthsBetween(spanStartMonth, monthOf(maxDate))
 
+    // mid-month dateFrom: that month is partial, not full (mirrors dateTo)
+    let firstFullMonth = spanStartMonth
+    if (f.dateFrom !== undefined && f.dateFrom.slice(8, 10) !== "01") {
+      firstFullMonth = nextMonth(firstFullMonth)
+    }
+
     const byMonth = new Map(monthlyRows.map((r) => [r.month, r]))
     for (const m of allMonths) {
       const row = byMonth.get(m)
@@ -182,9 +188,9 @@ export function computeAnalytics(
       })
     }
 
-    // averages over full months only (excludes partial current month)
+    // averages over full months only (partial end months excluded)
     const fullMonths = allMonths.filter(
-      (m) => m <= lastFullMonth && m >= spanStartMonth
+      (m) => m <= lastFullMonth && m >= firstFullMonth
     )
     monthsCounted = fullMonths.length
     const sumIncome = fullMonths.reduce(
@@ -386,5 +392,12 @@ function prevMonth(month: string): string {
   const [y, m] = month.split("-").map(Number)
   const ny = m === 1 ? y - 1 : y
   const nm = m === 1 ? 12 : m - 1
+  return `${String(ny).padStart(4, "0")}-${String(nm).padStart(2, "0")}`
+}
+
+function nextMonth(month: string): string {
+  const [y, m] = month.split("-").map(Number)
+  const ny = m === 12 ? y + 1 : y
+  const nm = m === 12 ? 1 : m + 1
   return `${String(ny).padStart(4, "0")}-${String(nm).padStart(2, "0")}`
 }

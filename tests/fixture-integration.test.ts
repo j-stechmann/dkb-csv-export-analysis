@@ -353,6 +353,37 @@ describe("date-filtered analytics", () => {
     expect(r.kpis.avgMonthlyExpensesCents).toBe(Math.round(560924 / 4))
   })
 
+  it("mid-month dateFrom excludes the partial first month from averages", () => {
+    // March has data only from the 15th on → partial, not counted
+    const r = computeAnalytics(
+      filters("dateFrom=2024-03-15&dateTo=2024-06-30"),
+      today
+    )
+    // full cashflow series still starts at the window start
+    expect(r.monthlyCashflow.map((m) => m.month)).toEqual([
+      "2024-03",
+      "2024-04",
+      "2024-05",
+      "2024-06",
+    ])
+    expect(r.kpis.monthsCounted).toBe(3)
+    // (139273 + 144189 + 137105) / 3 — March's 140357 excluded
+    expect(r.kpis.avgMonthlyExpensesCents).toBe(Math.round(420567 / 3))
+  })
+
+  it("window with no full month yields null averages", () => {
+    // single month, both ends inside it → zero full months
+    const r = computeAnalytics(
+      filters("dateFrom=2024-03-15&dateTo=2024-03-31"),
+      today
+    )
+    expect(r.monthlyCashflow).toHaveLength(1)
+    expect(r.kpis.monthsCounted).toBe(0)
+    expect(r.kpis.avgMonthlyIncomeCents).toBeNull()
+    expect(r.kpis.avgMonthlyExpensesCents).toBeNull()
+    expect(r.kpis.savingsRate).toBeNull()
+  })
+
   it("top categories are window-scoped", () => {
     const r = computeAnalytics(filters(WINDOW), today)
     const oracle = db
