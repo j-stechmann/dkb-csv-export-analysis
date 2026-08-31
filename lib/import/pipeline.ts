@@ -10,7 +10,12 @@ import {
   CsvParseError,
   type ParsedTransactionRow,
 } from "@/lib/csv/parser"
-import { computeDedupe, hashTransaction, HASH_VERSION, lowestFreeIndex } from "@/lib/db/dedupe"
+import {
+  computeDedupe,
+  hashTransaction,
+  HASH_VERSION,
+  lowestFreeIndex,
+} from "@/lib/db/dedupe"
 import {
   findBookedSelfHealPairs,
   findDbSelfHealPairs,
@@ -164,17 +169,8 @@ async function runImportJob(
       .run()
 
     // ── stage: fuzzy reconcile + dedupe + insert ─────────────────────
-    const {
-      imported,
-      duplicateCount,
-      updatedCount,
-      totalRows,
-    } = runReconcileAndDedupeStage(
-      account.iban,
-      account.id,
-      batchId,
-      parsed.rows
-    )
+    const { imported, duplicateCount, updatedCount, totalRows } =
+      runReconcileAndDedupeStage(account.iban, account.id, batchId, parsed.rows)
 
     if (imported + duplicateCount + updatedCount !== totalRows) {
       throw new Error(
@@ -373,15 +369,11 @@ export function runReconcileAndDedupeStage(
 
   db.transaction((tx) => {
     for (const pair of selfHeal) {
-      tx.delete(transactions)
-        .where(eq(transactions.id, pair.pendingId))
-        .run()
+      tx.delete(transactions).where(eq(transactions.id, pair.pendingId)).run()
     }
 
     for (const pair of bookedHeal) {
-      tx.delete(transactions)
-        .where(eq(transactions.id, pair.deleteId))
-        .run()
+      tx.delete(transactions).where(eq(transactions.id, pair.deleteId)).run()
     }
 
     // updated rows keep their id but get a fresh hash + lowest-free

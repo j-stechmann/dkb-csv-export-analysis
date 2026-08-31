@@ -199,7 +199,10 @@ export interface FuzzyMatch {
  * identity = ref + type + amount + exact booking date. Distinct monthly
  * debits never share a booking date and stay distinct.
  */
-export function sameBankIdentity(a: Matchable & { customerRef: string | null }, b: Matchable & { customerRef: string | null }): boolean {
+export function sameBankIdentity(
+  a: Matchable & { customerRef: string | null },
+  b: Matchable & { customerRef: string | null }
+): boolean {
   return (
     !!a.customerRef &&
     !!b.customerRef &&

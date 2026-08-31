@@ -82,7 +82,11 @@ function CategoryCell({ row }: { row: TxRow }) {
     <Badge
       variant="outline"
       className="category-badge font-normal"
-      style={{ "--category-color": getCategoryColor(row.categoryId) } as React.CSSProperties}
+      style={
+        {
+          "--category-color": getCategoryColor(row.categoryId),
+        } as React.CSSProperties
+      }
     >
       {row.categoryName}
     </Badge>

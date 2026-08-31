@@ -6,11 +6,7 @@ import { createTestDb, setTestDb, type Db } from "@/lib/db"
 import { parseDkbCsv } from "@/lib/csv/parser"
 import { runReconcileAndDedupeStage } from "@/lib/import/pipeline"
 import { computeDedupe } from "@/lib/db/dedupe"
-import {
-  transactions,
-  accounts,
-  importBatches,
-} from "@/lib/db/schema"
+import { transactions, accounts, importBatches } from "@/lib/db/schema"
 
 interface ResolveManifest {
   account: { iban: string; name: string }
@@ -44,7 +40,10 @@ const manifest1 = JSON.parse(
   readFileSync(join(fixtureDir, "fixture-manifest.json"), "utf8")
 ) as { rowCount: number; account: { iban: string } }
 const manifest2: ResolveManifest = JSON.parse(
-  readFileSync(join(fixtureDir, "fixture-pending-resolved-manifest.json"), "utf8")
+  readFileSync(
+    join(fixtureDir, "fixture-pending-resolved-manifest.json"),
+    "utf8"
+  )
 )
 
 let db: Db
@@ -213,9 +212,9 @@ describe("fixture two-stage reconcile end-to-end", () => {
     expect(inserted).toHaveLength(manifest2.expected.newBookedCount)
     for (const t of inserted) {
       // Ausgang → payee is the shop, Eingang → payer is the shop
-      expect(
-        t.payee === "Resolved Shop" || t.payer === "Resolved Shop"
-      ).toBe(true)
+      expect(t.payee === "Resolved Shop" || t.payer === "Resolved Shop").toBe(
+        true
+      )
       expect(t.status).toBe("Gebucht")
     }
     const updated = withBatch2.filter((t) => t.payee === "Pending Shop")

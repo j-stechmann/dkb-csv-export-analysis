@@ -99,13 +99,9 @@ describe("window boundaries", () => {
         counterpartyIban: "DE02100100123456789001",
       }),
     ]
-    const inc = [
-      incRow({ bookingDate: "2026-02-08" }),
-    ]
+    const inc = [incRow({ bookingDate: "2026-02-08" })]
     const res = matchIncoming(db, inc)
-    expect(res.upgrades).toEqual([
-      { incomingIndex: 0, dbId: "p1" },
-    ])
+    expect(res.upgrades).toEqual([{ incomingIndex: 0, dbId: "p1" }])
   })
 
   it("matches at exactly -7 days", () => {
@@ -240,9 +236,7 @@ describe("amount/type discipline", () => {
 
   it("does not match different types", () => {
     const db = [dbRow({ id: "p1", type: "Ausgang" })]
-    const inc = [
-      incRow({ type: "Eingang", amountCents: 100 }),
-    ]
+    const inc = [incRow({ type: "Eingang", amountCents: 100 })]
     expect(matchIncoming(db, inc).upgrades).toHaveLength(0)
   })
 })
@@ -315,9 +309,7 @@ describe("greedy 1:1 pairing", () => {
         counterpartyIban: "DE02100100123456789001",
       }),
     ]
-    const inc = [
-      incRow({ status: "Nicht gebucht", bookingDate: "2026-02-06" }),
-    ]
+    const inc = [incRow({ status: "Nicht gebucht", bookingDate: "2026-02-06" })]
     const res = matchIncoming(db, inc)
     expect(res.refreshes).toEqual([{ incomingIndex: 0, dbId: "p2" }])
     expect(res.upgrades).toEqual([])
@@ -352,7 +344,12 @@ describe("greedy 1:1 pairing", () => {
       }),
       dbRow({ id: "p2", bookingDate: "2026-02-01" }),
     ]
-    const inc = [incRow({ bookingDate: "2026-02-03", counterpartyIban: "DE02100100123456789001" })]
+    const inc = [
+      incRow({
+        bookingDate: "2026-02-03",
+        counterpartyIban: "DE02100100123456789001",
+      }),
+    ]
     const res = matchIncoming(db, inc)
     expect(res.upgrades).toEqual([{ incomingIndex: 0, dbId: "p2" }])
   })
@@ -488,9 +485,7 @@ describe("bank identity (Kundenreferenz)", () => {
 
   it("booked↔booked with different refs does not match", () => {
     const db = [dbRow({ id: "b1", status: "Gebucht", customerRef: "ref-1" })]
-    const inc = [
-      incRow({ status: "Gebucht", customerRef: "ref-2" }),
-    ]
+    const inc = [incRow({ status: "Gebucht", customerRef: "ref-2" })]
     const res = matchIncoming(db, inc)
     expect(res.skips).toEqual([])
   })

@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { eq, sql } from "drizzle-orm"
 import { createTestDb, setTestDb, type Db } from "@/lib/db"
-import {
-  accounts,
-  importBatches,
-  transactions,
-} from "@/lib/db/schema"
+import { accounts, importBatches, transactions } from "@/lib/db/schema"
 import { computeDedupe } from "@/lib/db/dedupe"
 import { runReconcileAndDedupeStage } from "@/lib/import/pipeline"
 import type { ParsedTransactionRow } from "@/lib/csv/parser"
@@ -36,10 +32,7 @@ function row(
 let db: Db
 let accountId: number
 
-function seedDbRow(
-  batchId: string,
-  t: ParsedTransactionRow
-): string {
+function seedDbRow(batchId: string, t: ParsedTransactionRow): string {
   const first = computeDedupe(ACC_IBAN, accountId, batchId, [t], new Map())
   expect(first.duplicateCount).toBe(0)
   db.transaction((tx) => {
@@ -89,7 +82,9 @@ describe("import fuzzy reconciliation stages", () => {
       purpose: "Einkauf REWE",
     })
 
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [booked])
+    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
+      booked,
+    ])
 
     expect(res.updatedCount).toBe(1)
     expect(res.insertedCount).toBe(0)
@@ -137,7 +132,9 @@ describe("import fuzzy reconciliation stages", () => {
       bookingDate: "2026-02-03",
     })
 
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [pending])
+    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
+      pending,
+    ])
 
     expect(res.skippedCount).toBe(1)
     expect(res.insertedCount).toBe(0)
@@ -160,7 +157,9 @@ describe("import fuzzy reconciliation stages", () => {
       bookingDate: "2026-02-02",
     })
 
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [pending])
+    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
+      pending,
+    ])
 
     expect(res.updatedCount).toBe(1)
     const updated = db
@@ -350,9 +349,7 @@ describe("booked↔booked re-render dedupe (DKB format change)", () => {
       })
     )
 
-    expect(
-      db.select().from(transactions).all()
-    ).toHaveLength(2)
+    expect(db.select().from(transactions).all()).toHaveLength(2)
 
     // any subsequent import heals the historical duplicate
     const batch3 = startBatch("b3")
