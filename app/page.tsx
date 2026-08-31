@@ -33,6 +33,8 @@ export default function DashboardPage() {
     refetch,
   } = useAnalytics(params)
 
+  const showLoading = isLoading || (isError && !analytics)
+
   return (
     <div className="space-y-6">
       <div>
@@ -51,20 +53,20 @@ export default function DashboardPage() {
       <div
         className={`space-y-6 transition-opacity ${isFetching && !isLoading ? "opacity-70" : ""}`}
       >
-        <KpiRow analytics={analytics} loading={isLoading} />
+        <KpiRow analytics={analytics} loading={showLoading} />
 
         <div className="grid gap-4 lg:grid-cols-3">
           <CashflowChart
             data={analytics?.monthlyCashflow}
-            loading={isLoading}
+            loading={showLoading}
           />
           <TopCategoriesChart
             data={analytics?.topCategories}
-            loading={isLoading}
+            loading={showLoading}
           />
         </div>
 
-        <BalanceChart data={analytics?.balanceTimeline} loading={isLoading} />
+        <BalanceChart data={analytics?.balanceTimeline} loading={showLoading} />
       </div>
 
       <div>
