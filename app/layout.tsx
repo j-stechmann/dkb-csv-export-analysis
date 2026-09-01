@@ -1,6 +1,7 @@
 import { AppNav } from "@/components/app-nav"
 import { Providers } from "@/components/providers"
 import { LabellerHealthBadge } from "@/components/labeller-health-badge"
+import { ThemeToggle } from "@/components/theme-toggle"
 import "./globals.css"
 
 export default function RootLayout({
@@ -21,7 +22,10 @@ export default function RootLayout({
                   </span>
                   <AppNav />
                 </div>
-                <LabellerHealthBadge />
+                <div className="flex items-center gap-2">
+                  <LabellerHealthBadge />
+                  <ThemeToggle />
+                </div>
               </div>
             </header>
             <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
