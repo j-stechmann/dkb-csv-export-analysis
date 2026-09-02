@@ -23,7 +23,7 @@ import {
   toDbMatchRow,
   type DbMatchRow,
 } from "@/lib/db/match"
-import { runLabeling, pruneOrphanCategories } from "@/lib/labeller/service"
+import { hasLabelableRows, pruneOrphanCategories } from "@/lib/labeller/service"
 
 export type ImportStage =
   "parsing" | "importing" | "labeling" | "completed" | "failed"
@@ -87,13 +87,23 @@ export function startImport(
   const tmpFile = path.join(tmpDir, "upload.csv")
   fs.writeFileSync(tmpFile, csvContent, "utf8")
 
-  // fire-and-forget with full error containment
-  void runImportJob(batchId, fileName, tmpFile, tmpDir).catch((err) => {
-    console.error(`[import] unhandled job error batch=${batchId}:`, err)
-  })
-
+  // claim the job slot BEFORE running: the job body executes synchronously
+  // (no awaits), so setting the flag afterwards would leave it stuck on true
   state.running = true
   state.currentBatchId = batchId
+
+  // fire-and-forget with full error containment; the flag reset is chained
+  // onto the promise so it lands in a microtask after startImport returns —
+  // this stays correct even if the job gains awaits later
+  void runImportJob(batchId, fileName, tmpFile, tmpDir)
+    .catch((err) => {
+      console.error(`[import] unhandled job error batch=${batchId}:`, err)
+    })
+    .finally(() => {
+      state.running = false
+      state.currentBatchId = null
+    })
+
   return { batchId }
 }
 
@@ -103,7 +113,6 @@ async function runImportJob(
   tmpFile: string,
   tmpDir: string
 ): Promise<void> {
-  const state = jobState()
   const db = getDb()
   try {
     // ── stage: parsing ──────────────────────────────────────────────
@@ -178,34 +187,27 @@ async function runImportJob(
       )
     }
 
-    // ── stage: labeling ─────────────────────────────────────────────
-    db.update(importBatches)
-      .set({ status: "labeling", updatedAt: new Date().toISOString() })
-      .where(eq(importBatches.id, batchId))
-      .run()
-
-    const summary = await runLabeling(["pending", "failed"])
-
-    const failedLabels = db
-      .select({ count: sql<number>`count(*)` })
-      .from(transactions)
-      .where(
-        sql`${transactions.batchId} = ${batchId} AND ${transactions.labelStatus} = 'failed'`
-      )
-      .get()
-
-    db.update(importBatches)
-      .set({
-        status: "completed",
-        labelsDone: summary.labeled,
-        labelsFailed: failedLabels?.count ?? 0,
-        completedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(importBatches.id, batchId))
-      .run()
-
-    pruneOrphanCategories()
+    // ── stage: labeling (owned by the background worker) ────────────
+    // the import job stops here; the label worker drains the batch and
+    // marks it completed once no labelable pending rows remain. A batch
+    // that owns no labelable rows at all (all Nicht gebucht / deduped to
+    // nothing labelable) completes right away.
+    if (hasLabelableRows(batchId)) {
+      db.update(importBatches)
+        .set({ status: "labeling", updatedAt: new Date().toISOString() })
+        .where(eq(importBatches.id, batchId))
+        .run()
+    } else {
+      db.update(importBatches)
+        .set({
+          status: "completed",
+          completedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(importBatches.id, batchId))
+        .run()
+      pruneOrphanCategories()
+    }
   } catch (err) {
     db.update(importBatches)
       .set({
@@ -221,12 +223,15 @@ async function runImportJob(
     } catch {
       // best effort
     }
-    state.running = false
-    state.currentBatchId = null
+    // job-state flags are reset in startImport's .finally() on the promise
   }
 }
 
-/** Mark batches stuck in non-terminal states as failed (startup recovery). */
+/**
+ * Mark batches stuck in non-terminal states as failed (startup recovery).
+ * 'labeling' is intentionally excluded: the label worker resumes those
+ * batches after a restart (rows persist; drain detection re-completes them).
+ */
 export function resetStuckBatches(): number {
   const db = getDb()
   const result = db
@@ -236,20 +241,31 @@ export function resetStuckBatches(): number {
       error: "interrupted by server restart",
       updatedAt: new Date().toISOString(),
     })
-    .where(inArray(importBatches.status, ["parsing", "importing", "labeling"]))
+    .where(inArray(importBatches.status, ["parsing", "importing"]))
     .returning({ id: importBatches.id })
     .all()
   return result.length
 }
 
-/** enqueue relabeling for pending/failed transactions (attempts < cap). */
+/**
+ * Manual retry (retry endpoint): give stuck rows a fresh attempt budget.
+ * The worker re-claims failed rows below the cap on its own, so resetting
+ * those would be a no-op — the rows that actually need this are the ones
+ * that exhausted their attempts (failed or crash-left pending): claim filters
+ * attempts < cap, so without an attempt reset they are unclaimable forever.
+ * Returns the number of revived rows.
+ */
 export function resetFailedLabels(maxAttempts: number): number {
   const db = getDb()
   const result = db
     .update(transactions)
-    .set({ labelStatus: "pending", updatedAt: new Date().toISOString() })
+    .set({
+      labelStatus: "pending",
+      labelAttempts: 0,
+      updatedAt: new Date().toISOString(),
+    })
     .where(
-      sql`${transactions.labelStatus} = 'failed' AND ${transactions.labelAttempts} < ${maxAttempts}`
+      sql`${transactions.labelStatus} IN ('failed', 'pending') AND ${transactions.labelAttempts} >= ${maxAttempts}`
     )
     .returning({ id: transactions.id })
     .all()

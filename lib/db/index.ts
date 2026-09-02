@@ -144,6 +144,9 @@ export function createSchemaSqlite(db: Db) {
     `CREATE INDEX IF NOT EXISTS transactions_label_status_idx ON transactions (label_status)`
   )
   db.run(
+    `CREATE INDEX IF NOT EXISTS transactions_batch_id_idx ON transactions (batch_id)`
+  )
+  db.run(
     `CREATE INDEX IF NOT EXISTS transactions_category_idx ON transactions (category_id)`
   )
   db.run(

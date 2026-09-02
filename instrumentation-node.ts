@@ -1,5 +1,5 @@
 /**
- * Node.js-only instrumentation (schema init + recovery + relabel sweep).
+ * Node.js-only instrumentation (schema init + recovery + label worker).
  * Imported conditionally from instrumentation.ts so the Edge bundle never
  * touches better-sqlite3.
  */
@@ -10,8 +10,7 @@ export async function registerNode() {
 
   const { ensureSchema } = await import("@/lib/db")
   const { resetStuckBatches } = await import("@/lib/import/pipeline")
-  const { runLabeling } = await import("@/lib/labeller/service")
-  const { LabellerClient } = await import("@/lib/labeller/client")
+  const { startLabelWorker } = await import("@/lib/labeller/worker")
 
   try {
     ensureSchema()
@@ -23,32 +22,7 @@ export async function registerNode() {
     console.error("[startup] schema/recovery failed:", err)
   }
 
-  async function relabelSweep(): Promise<void> {
-    const state = globalThis as unknown as {
-      __dkbImportJob?: { running: boolean }
-    }
-    if (state.__dkbImportJob?.running) return // import owns the DB pipeline
-
-    try {
-      const client = new LabellerClient()
-      const health = await client.health()
-      if (health !== "ok") return
-
-      await runLabeling(["pending", "failed"], 500)
-    } catch (err) {
-      console.error("[relabel sweep] error:", err)
-    }
-  }
-
-  // initial sweep shortly after boot (self-heal after downtime)
-  const initialTimer = setTimeout(() => {
-    void relabelSweep()
-  }, 3000)
-  initialTimer.unref?.()
-
-  // periodic self-heal for late labeller recovery
-  const interval = setInterval(() => {
-    void relabelSweep()
-  }, 60_000)
-  interval.unref?.()
+  // label worker resumes 'labeling' batches after a restart and drains
+  // pending/failed rows; first tick shortly after boot (self-heal)
+  startLabelWorker()
 }

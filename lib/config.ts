@@ -7,8 +7,10 @@ const envSchema = z.object({
     .string()
     .regex(/^[a-z]{2}$/)
     .default("de"),
-  LABELLER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(100),
+  LABELLER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
   LABELLER_MAX_RETRIES: z.coerce.number().int().min(0).default(3),
+  LABELLER_TIMEOUT_MS: z.coerce.number().int().min(1000).default(180_000),
+  LABELLER_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
   LABELLER_RETRY_AFTER_FALLBACK_MS: z.coerce
     .number()
     .int()

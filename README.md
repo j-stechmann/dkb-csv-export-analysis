@@ -19,11 +19,16 @@ Environment (all optional):
 | `DATABASE_PATH` | `./data/dkb.db` | SQLite database file |
 | `LABELLER_BASE_URL` | `http://127.0.0.1:8080` | transaction-labeller service |
 | `LABELLER_LANGUAGE` | `de` | ISO 639-1 label language |
-| `LABELLER_BATCH_SIZE` | `100` | max items per labeller request |
+| `LABELLER_BATCH_SIZE` | `20` | max items per labeller request |
 | `LABELLER_MAX_RETRIES` | `3` | retries when labeller is down |
+| `LABELLER_TIMEOUT_MS` | `180000` | per-request timeout for labeller calls |
+| `LABELLER_MAX_ATTEMPTS` | `5` | per-transaction labeling attempt cap |
 
 Imports: drag any DKB CSV export onto the window. Processing runs in the
 background; progress is shown in the floating pill and on the Imports page.
+Labeling is decoupled from the import: a background worker claims pending
+transactions in small batches, so slow LLM labeling never blocks or fails an
+import — batches stay in "Kategorisierung" until all rows are labeled.
 Re-importing the same or overlapping exports deduplicates automatically —
 transactions are never deleted.
 

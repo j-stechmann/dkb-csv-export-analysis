@@ -137,19 +137,27 @@ function RetryLabelingButton() {
         try {
           const res = await fetch("/api/labels/retry", { method: "POST" })
           const data = (await res.json()) as {
-            labeled?: number
-            failed?: number
+            queued?: number
+            message?: string
           }
-          if (res.ok) {
-            toast.success(
-              `Kategorisierung erneut ausgeführt: ${data.labeled ?? 0} kategorisiert`
-            )
-            void queryClient.invalidateQueries({ queryKey: ["analytics"] })
+          if (res.status === 202) {
+            if ((data.queued ?? 0) > 0) {
+              toast.success(
+                `Kategorisierung erneut eingeplant: ${data.queued} Transaktionen`,
+                { description: "Die Verarbeitung läuft im Hintergrund." }
+              )
+            } else {
+              toast.info("Keine Transaktionen zum erneuten Versuch vorhanden.")
+            }
+            void queryClient.invalidateQueries({ queryKey: ["imports"] })
+            void queryClient.invalidateQueries({ queryKey: ["import"] })
             void queryClient.invalidateQueries({ queryKey: ["transactions"] })
+            void queryClient.invalidateQueries({ queryKey: ["analytics"] })
+            void queryClient.invalidateQueries({ queryKey: ["categories"] })
           } else {
-            toast.error(
-              "Erneuter Versuch fehlgeschlagen (Labeller erreichbar?)"
-            )
+            toast.error("Erneuter Versuch fehlgeschlagen", {
+              description: data.message ?? `HTTP ${res.status}`,
+            })
           }
         } finally {
           setBusy(false)
