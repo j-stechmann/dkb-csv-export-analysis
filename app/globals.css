@@ -94,7 +94,7 @@
     --secondary: oklch(0.274 0.006 286.033);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
+    --muted-foreground: oklch(0.78 0 0);
     --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
@@ -129,19 +129,10 @@
 }
 
 @utility category-badge {
-  border-color: color-mix(in oklab, var(--category-color) 40%, transparent);
-  background-color: color-mix(
-    in oklab,
-    var(--category-color) 12%,
-    transparent
-  );
-  color: color-mix(in oklab, var(--category-color) 90%, var(--foreground));
-  dark\: & {
-    background-color: color-mix(
-      in oklab,
-      var(--category-color) 20%,
-      transparent
-    );
-    color: color-mix(in oklab, var(--category-color) 70%, white);
+  && {
+    border-color: transparent;
+    background-color: var(--category-color);
+    color: oklch(from var(--category-color) 0.985 0.02 h);
+    color: white;
   }
 }

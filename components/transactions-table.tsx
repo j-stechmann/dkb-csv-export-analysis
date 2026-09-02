@@ -82,7 +82,7 @@ function CategoryCell({ row }: { row: TxRow }) {
   return (
     <Badge
       variant="outline"
-      className="category-badge font-normal"
+      className="category-badge"
       style={
         {
           "--category-color": getCategoryColor(row.categoryId),
@@ -268,7 +268,7 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
                       className={`text-right font-medium whitespace-nowrap tabular-nums ${
                         row.amountCents < 0
                           ? "text-foreground"
-                          : "text-emerald-600 dark:text-emerald-400"
+                          : "text-emerald-700 dark:text-emerald-400"
                       }`}
                     >
                       {euro(row.amountCents)}
