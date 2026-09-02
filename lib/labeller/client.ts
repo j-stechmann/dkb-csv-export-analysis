@@ -117,7 +117,7 @@ export class LabellerClient {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(this.cfg.LABELLER_TIMEOUT_MS),
         })
       } catch (err) {
         // network error behaves like backend down

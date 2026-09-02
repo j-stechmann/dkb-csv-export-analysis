@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { importBatches } from "@/lib/db/schema"
+import { withLabelCounters } from "@/lib/import/counters"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -20,5 +21,5 @@ export async function GET(
   if (!batch) {
     return NextResponse.json({ error: "not_found" }, { status: 404 })
   }
-  return NextResponse.json(batch)
+  return NextResponse.json(withLabelCounters(batch))
 }

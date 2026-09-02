@@ -105,6 +105,7 @@ export const transactions = sqliteTable(
     index("transactions_account_booking_idx").on(t.accountId, t.bookingDate),
     index("transactions_booking_date_idx").on(t.bookingDate),
     index("transactions_label_status_idx").on(t.labelStatus),
+    index("transactions_batch_id_idx").on(t.batchId),
     index("transactions_category_idx").on(t.categoryId),
     index("transactions_payee_idx").on(t.payee),
   ]

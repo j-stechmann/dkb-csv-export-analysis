@@ -1,124 +1,112 @@
-import { and, eq, inArray } from "drizzle-orm"
+import { eq, inArray, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
-import { categories, transactions } from "@/lib/db/schema"
-import {
-  LabellerClient,
-  labelWithChunking,
-  type LabellerInput,
-} from "@/lib/labeller/client"
-
-export interface LabelRunSummary {
-  labeled: number
-  failed: number
-}
+import { categories, importBatches, transactions } from "@/lib/db/schema"
+import type { LabelResult } from "@/lib/labeller/client"
 
 /**
- * Label all transactions with label_status in the given states.
- * Processes in bounded chunks so a sweep doesn't starve imports.
- * Returns counts; failures increment label_attempts.
+ * Persist label results: upsert categories, mark rows labeled.
+ * Must run inside one transaction so a chunk is all-or-nothing.
+ * Returns the batch ids affected (for drain-check / progress reads).
  */
-export async function runLabeling(
-  labelStatuses: Array<"pending" | "failed">,
-  maxItems?: number
-): Promise<LabelRunSummary> {
+export function applyLabelResults(results: LabelResult[]): string[] {
   const db = getDb()
-  const client = new LabellerClient()
+  const batchIds = new Set<string>()
 
-  const health = await client.health()
-  if (health !== "ok") {
-    return { labeled: 0, failed: 0 }
-  }
+  db.transaction((tx) => {
+    for (const result of results) {
+      const row = tx
+        .select({ batchId: transactions.batchId })
+        .from(transactions)
+        .where(eq(transactions.id, result.id))
+        .get()
+      if (!row) continue
+      if (row.batchId) batchIds.add(row.batchId)
 
-  const limit = maxItems ?? 5_000
-  const rows = db
-    .select({
-      id: transactions.id,
-      amountCents: transactions.amountCents,
-      payer: transactions.payer,
-      payee: transactions.payee,
-      purpose: transactions.purpose,
-      bookingDate: transactions.bookingDate,
-      type: transactions.type,
-    })
-    .from(transactions)
-    .where(
-      and(
-        inArray(transactions.labelStatus, labelStatuses),
-        eq(transactions.status, "Gebucht")
-      )
-    )
-    .limit(limit)
-    .all()
-
-  if (rows.length === 0) {
-    return { labeled: 0, failed: 0 }
-  }
-
-  const inputs: LabellerInput[] = rows.map((r) => ({
-    id: r.id,
-    amountCents: r.amountCents,
-    counterparty: r.type === "Ausgang" ? (r.payee ?? "") : (r.payer ?? ""),
-    purpose: r.purpose ?? "",
-    bookingDate: r.bookingDate,
-  }))
-
-  let labeled = 0
-  let failed = 0
-
-  await labelWithChunking(client, inputs, async (results) => {
-    const byId = new Map(results.map((r) => [r.id, r.label]))
-
-    db.transaction((tx) => {
-      for (const [id, label] of byId) {
-        const nameKey = normalizeCategoryKey(label)
-        let cat = tx
-          .select({ id: categories.id })
-          .from(categories)
-          .where(eq(categories.nameKey, nameKey))
-          .get()
-        if (!cat) {
-          const inserted = tx
-            .insert(categories)
-            .values({
-              name: label,
-              nameKey,
-              language: "de",
-            })
-            .onConflictDoNothing()
-            .returning({ id: categories.id })
-            .get()
-          cat =
-            inserted ??
-            tx
-              .select({ id: categories.id })
-              .from(categories)
-              .where(eq(categories.nameKey, nameKey))
-              .get()
-        }
-        if (!cat) {
-          failed++
-          continue
-        }
-        tx.update(transactions)
-          .set({
-            categoryId: cat.id,
-            labelStatus: "labeled",
-            labelAttempts: 0,
-            updatedAt: new Date().toISOString(),
+      const nameKey = normalizeCategoryKey(result.label)
+      let cat = tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(eq(categories.nameKey, nameKey))
+        .get()
+      if (!cat) {
+        const inserted = tx
+          .insert(categories)
+          .values({
+            name: result.label,
+            nameKey,
+            language: "de",
           })
-          .where(eq(transactions.id, id))
-          .run()
-        labeled++
+          .onConflictDoNothing()
+          .returning({ id: categories.id })
+          .get()
+        cat =
+          inserted ??
+          tx
+            .select({ id: categories.id })
+            .from(categories)
+            .where(eq(categories.nameKey, nameKey))
+            .get()
       }
-    })
+      if (!cat) continue
+      tx.update(transactions)
+        .set({
+          categoryId: cat.id,
+          labelStatus: "labeled",
+          labelAttempts: 0,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(transactions.id, result.id))
+        .run()
+    }
   })
 
-  return { labeled, failed }
+  return [...batchIds]
+}
+
+/** Mark claimed rows as failed (chunk error path); attempts stay incremented. */
+export function markRowsFailed(ids: string[]): void {
+  if (ids.length === 0) return
+  const db = getDb()
+  db.update(transactions)
+    .set({ labelStatus: "failed", updatedAt: new Date().toISOString() })
+    .where(inArray(transactions.id, ids))
+    .run()
 }
 
 /** upsert helper shared with pipeline; normalizes label names */
 export function normalizeCategoryKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+/**
+ * A batch in 'labeling' is complete when it owns no labelable pending rows.
+ * 'Gebucht' filter prevents deadlock for batches whose rows are all
+ * 'Nicht gebucht' (never labelable). 'failed' rows never block; they are
+ * retried via the retry endpoint or picked up on their next claimable tick.
+ */
+export function completeDrainedBatches(): number {
+  const db = getDb()
+  const done = db
+    .update(importBatches)
+    .set({
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    .where(
+      sql`
+      status = 'labeling' AND NOT EXISTS (
+        SELECT 1 FROM transactions t
+        WHERE t.batch_id = import_batches.id
+          AND t.status = 'Gebucht'
+          AND t.label_status = 'pending'
+      )
+    `
+    )
+    .returning({ id: importBatches.id })
+    .all()
+  if (done.length > 0) pruneOrphanCategories()
+  return done.length
 }
 
 /** prune categories that no transaction references */

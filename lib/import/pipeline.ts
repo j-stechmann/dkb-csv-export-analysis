@@ -23,7 +23,7 @@ import {
   toDbMatchRow,
   type DbMatchRow,
 } from "@/lib/db/match"
-import { runLabeling, pruneOrphanCategories } from "@/lib/labeller/service"
+import { pruneOrphanCategories } from "@/lib/labeller/service"
 
 export type ImportStage =
   "parsing" | "importing" | "labeling" | "completed" | "failed"
@@ -178,34 +178,25 @@ async function runImportJob(
       )
     }
 
-    // ── stage: labeling ─────────────────────────────────────────────
-    db.update(importBatches)
-      .set({ status: "labeling", updatedAt: new Date().toISOString() })
-      .where(eq(importBatches.id, batchId))
-      .run()
-
-    const summary = await runLabeling(["pending", "failed"])
-
-    const failedLabels = db
-      .select({ count: sql<number>`count(*)` })
-      .from(transactions)
-      .where(
-        sql`${transactions.batchId} = ${batchId} AND ${transactions.labelStatus} = 'failed'`
-      )
-      .get()
-
-    db.update(importBatches)
-      .set({
-        status: "completed",
-        labelsDone: summary.labeled,
-        labelsFailed: failedLabels?.count ?? 0,
-        completedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(importBatches.id, batchId))
-      .run()
-
-    pruneOrphanCategories()
+    // ── stage: labeling (owned by the background worker) ────────────
+    // the import job stops here; the label worker drains the batch and
+    // marks it completed once no labelable pending rows remain
+    if (imported > 0) {
+      db.update(importBatches)
+        .set({ status: "labeling", updatedAt: new Date().toISOString() })
+        .where(eq(importBatches.id, batchId))
+        .run()
+    } else {
+      db.update(importBatches)
+        .set({
+          status: "completed",
+          completedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(importBatches.id, batchId))
+        .run()
+      pruneOrphanCategories()
+    }
   } catch (err) {
     db.update(importBatches)
       .set({
@@ -226,7 +217,11 @@ async function runImportJob(
   }
 }
 
-/** Mark batches stuck in non-terminal states as failed (startup recovery). */
+/**
+ * Mark batches stuck in non-terminal states as failed (startup recovery).
+ * 'labeling' is intentionally excluded: the label worker resumes those
+ * batches after a restart (rows persist; drain detection re-completes them).
+ */
 export function resetStuckBatches(): number {
   const db = getDb()
   const result = db
@@ -236,13 +231,13 @@ export function resetStuckBatches(): number {
       error: "interrupted by server restart",
       updatedAt: new Date().toISOString(),
     })
-    .where(inArray(importBatches.status, ["parsing", "importing", "labeling"]))
+    .where(inArray(importBatches.status, ["parsing", "importing"]))
     .returning({ id: importBatches.id })
     .all()
   return result.length
 }
 
-/** enqueue relabeling for pending/failed transactions (attempts < cap). */
+/** enqueue relabeling for failed transactions (attempts < cap). */
 export function resetFailedLabels(maxAttempts: number): number {
   const db = getDb()
   const result = db
