@@ -99,9 +99,13 @@ export function ImportProgressPill() {
         <p className="text-xs text-muted-foreground">
           {batch.rowsImported} neu importiert · {batch.rowsDuplicate} Duplikate
           {batch.rowsUpdated > 0 ? ` · ${batch.rowsUpdated} aktualisiert` : ""}
-          {batch.labelsFailed > 0
-            ? ` · ${batch.labelsFailed} ohne Kategorie (erneut versuchen auf der Imports-Seite)`
-            : ""}
+          {batch.labelsTotal - batch.labelsDone - batch.labelsFailed > 0
+            ? ` · ${
+                batch.labelsTotal - batch.labelsDone - batch.labelsFailed
+              } ohne Kategorie (erneut versuchen auf der Imports-Seite)`
+            : batch.labelsFailed > 0
+              ? ` · ${batch.labelsFailed} ohne Kategorie (erneut versuchen auf der Imports-Seite)`
+              : ""}
         </p>
       ) : (
         <p className="text-xs text-destructive">{batch.error}</p>

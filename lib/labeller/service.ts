@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from "drizzle-orm"
+import { and, eq, inArray, ne, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories, importBatches, transactions } from "@/lib/db/schema"
 import type { LabelResult } from "@/lib/labeller/client"
@@ -63,13 +63,23 @@ export function applyLabelResults(results: LabelResult[]): string[] {
   return [...batchIds]
 }
 
-/** Mark claimed rows as failed (chunk error path); attempts stay incremented. */
+/**
+ * Mark claimed rows as failed (chunk error path); attempts stay incremented.
+ * Rows that a previously-applied chunk already labeled are excluded so a
+ * later chunk failure cannot flip them back to failed (they'd be re-claimed
+ * and re-sent to the LLM, wasting calls and temporarily showing no category).
+ */
 export function markRowsFailed(ids: string[]): void {
   if (ids.length === 0) return
   const db = getDb()
   db.update(transactions)
     .set({ labelStatus: "failed", updatedAt: new Date().toISOString() })
-    .where(inArray(transactions.id, ids))
+    .where(
+      and(
+        inArray(transactions.id, ids),
+        ne(transactions.labelStatus, "labeled")
+      )
+    )
     .run()
 }
 
@@ -83,8 +93,11 @@ export function normalizeCategoryKey(name: string): string {
  * 'Gebucht' filter prevents deadlock for batches whose rows are all
  * 'Nicht gebucht' (never labelable). 'failed' rows never block; they are
  * retried via the retry endpoint or picked up on their next claimable tick.
+ * Pending rows that exhausted their attempts also don't block: they are
+ * unclaimable forever (claim filters attempts < cap) and would wedge the
+ * batch otherwise — the retry endpoint can revive them with a fresh budget.
  */
-export function completeDrainedBatches(): number {
+export function completeDrainedBatches(maxAttempts: number): number {
   const db = getDb()
   const done = db
     .update(importBatches)
@@ -100,6 +113,7 @@ export function completeDrainedBatches(): number {
         WHERE t.batch_id = import_batches.id
           AND t.status = 'Gebucht'
           AND t.label_status = 'pending'
+          AND t.label_attempts < ${maxAttempts}
       )
     `
     )
@@ -116,4 +130,25 @@ export function pruneOrphanCategories(): number {
     `DELETE FROM categories WHERE id NOT IN (SELECT DISTINCT category_id FROM transactions WHERE category_id IS NOT NULL)`
   )
   return result.changes
+}
+
+/**
+ * Batch owns pending 'Gebucht' rows the worker can claim. Used by the
+ * pipeline right after insert/update (fresh rows always have attempts 0),
+ * so no attempts filter is needed here. A false positive is harmless: the
+ * batch transiently sits in 'labeling' until the next drain tick completes it.
+ */
+export function hasLabelableRows(batchId: string): boolean {
+  const db = getDb()
+  const row = db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(
+      sql`${transactions.batchId} = ${batchId}
+        AND ${transactions.status} = 'Gebucht'
+        AND ${transactions.labelStatus} = 'pending'`
+    )
+    .limit(1)
+    .get()
+  return row !== undefined
 }

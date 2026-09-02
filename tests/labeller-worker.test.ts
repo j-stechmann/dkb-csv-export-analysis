@@ -250,22 +250,34 @@ describe("tick", () => {
 })
 
 describe("retry requeue", () => {
-  it("resetFailedLabels resets failed rows below the cap", () => {
+  it("resetFailedLabels revives rows that exhausted their attempts", () => {
     const batchId = seedBatch()
-    const ok = seedTx(batchId, { labelStatus: "failed", labelAttempts: 2 })
-    seedTx(batchId, { labelStatus: "failed", labelAttempts: 9 })
+    const capped = seedTx(batchId, { labelStatus: "failed", labelAttempts: 5 })
+    const cappedPending = seedTx(batchId, {
+      labelStatus: "pending",
+      labelAttempts: 6,
+    })
+    // below the cap: worker self-heals these, retry leaves them alone
+    seedTx(batchId, { labelStatus: "failed", labelAttempts: 2 })
 
     const queued = resetFailedLabels(5)
 
-    expect(queued).toBe(1)
-    expect(getTx(ok)!.labelStatus).toBe("pending")
+    expect(queued).toBe(2)
+    expect(getTx(capped)!.labelStatus).toBe("pending")
+    expect(getTx(capped)!.labelAttempts).toBe(0)
+    expect(getTx(cappedPending)!.labelStatus).toBe("pending")
+    expect(getTx(cappedPending)!.labelAttempts).toBe(0)
   })
 
-  it("resetFailedLabels ignores pending rows", () => {
+  it("resetFailedLabels ignores rows below the cap", () => {
     const batchId = seedBatch()
-    seedTx(batchId, { labelStatus: "pending" })
+    const belowCap = seedTx(batchId, {
+      labelStatus: "failed",
+      labelAttempts: 2,
+    })
 
     expect(resetFailedLabels(5)).toBe(0)
+    expect(getTx(belowCap)!.labelStatus).toBe("failed")
   })
 })
 

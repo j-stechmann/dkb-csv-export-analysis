@@ -101,11 +101,13 @@ export async function tick(): Promise<void> {
     }
     if (importState.__dkbImportJob?.running) return
 
-    // drain check first: completing a batch needs no labeller — only the
-    // absence of labelable pending rows (also covers all-Nicht-gebucht batches)
-    completeDrainedBatches()
-
     const cfg = getConfig()
+
+    // drain check first: completing a batch needs no labeller — only the
+    // absence of labelable pending rows (also covers all-Nicht-gebucht
+    // batches and rows that exhausted their attempts)
+    completeDrainedBatches(cfg.LABELLER_MAX_ATTEMPTS)
+
     const client = new LabellerClient()
     const health = await client.health()
     if (health !== "ok") return
@@ -129,7 +131,7 @@ export async function tick(): Promise<void> {
       markRowsFailed(claimed.map((r) => r.id))
     }
 
-    completeDrainedBatches()
+    completeDrainedBatches(cfg.LABELLER_MAX_ATTEMPTS)
   } finally {
     state.ticking = false
   }
