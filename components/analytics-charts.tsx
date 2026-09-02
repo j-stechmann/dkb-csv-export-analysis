@@ -217,15 +217,19 @@ export function SavingsChart({
     ]
   }, [data])
 
-  const last = data?.lastMonth
-  const lastNetCents = data?.lastMonthNetCents
   const headline = React.useMemo(() => {
+    const last = data?.lastMonth
+    const lastNetCents = data?.lastMonthNetCents
     if (last === undefined || lastNetCents === undefined) return null
+    const windowEmpty =
+      lastNetCents === 0 &&
+      (data?.months ?? []).every((m) => m.netCents === 0)
+    if (windowEmpty) return null
     const amount = formatCentsAsGerman(Math.abs(lastNetCents))
     if (lastNetCents > 0) return `${fullMonth(last)}: +${amount} € gespart`
     if (lastNetCents < 0) return `${fullMonth(last)}: −${amount} € überzogen`
     return `${fullMonth(last)}: ±0,00 € ausgeglichen`
-  }, [last, lastNetCents])
+  }, [data])
 
   return (
     <Card>
@@ -237,7 +241,7 @@ export function SavingsChart({
           ) : headline ? (
             headline
           ) : (
-            "Gespargt oder überzogen pro Monat"
+            "Gespart oder überzogen pro Monat"
           )}
         </CardDescription>
       </CardHeader>
@@ -327,10 +331,9 @@ export function SavingsChart({
                 }
               />
               <Bar dataKey="net" radius={4}>
-                {chartData.map((d, i) => {
+                {chartData.map((d) => {
                   const isLastComplete =
-                    !d.isCurrent &&
-                    i === chartData.length - 1 - (data?.currentMonth ? 1 : 0)
+                    !d.isCurrent && d.month === data?.lastMonth
                   return (
                     <Cell
                       key={d.month}
