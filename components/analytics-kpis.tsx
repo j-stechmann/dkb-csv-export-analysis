@@ -39,6 +39,7 @@ export interface AnalyticsResponse {
   savingsHistory: {
     lastMonth: string
     lastMonthNetCents: number
+    lastMonthIsStale: boolean
     months: Array<{
       month: string
       incomeCents: number

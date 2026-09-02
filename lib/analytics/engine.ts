@@ -1,4 +1,4 @@
-import { and, eq, gt, sql } from "drizzle-orm"
+import { and, eq, gt, gte, lt, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { importBatches, transactions } from "@/lib/db/schema"
 import { buildWhere, type TransactionFilters } from "@/lib/analytics/queries"
@@ -27,6 +27,11 @@ export interface SavingsHistory {
   /** last COMPLETE month (YYYY-MM) the series ends at */
   lastMonth: string
   lastMonthNetCents: number
+  /**
+   * true when lastMonth is not the previous calendar month, i.e. imports
+   * stopped after lastMonth — the UI can mark the headline as stale
+   */
+  lastMonthIsStale: boolean
   /** zero-filled window of the 6 months ending at lastMonth */
   months: MonthlyCashflowPoint[]
   /**
@@ -275,33 +280,29 @@ export function computeAnalytics(
     dateFrom: undefined,
     dateTo: undefined,
   }
-
-  const savingsRows = db
-    .select({
-      month: sql<string>`substr(${transactions.bookingDate}, 1, 7)`,
-      income: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} > 0 THEN ${transactions.amountCents} ELSE 0 END), 0)`,
-      expenses: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} < 0 THEN -${transactions.amountCents} ELSE 0 END), 0)`,
-    })
-    .from(transactions)
-    .where(buildWhere(savingsScope))
-    .groupBy(sql`substr(${transactions.bookingDate}, 1, 7)`)
-    .all()
-    .map((r) => ({
-      month: r.month,
-      income: Number(r.income),
-      expenses: Number(r.expenses),
-    }))
+  const savingsWhere = buildWhere(savingsScope)
 
   let savingsHistory: SavingsHistory | null = null
 
-  if (savingsRows.length > 0) {
-    const latestBookingMonth = savingsRows.reduce(
-      (latest, r) => (r.month > latest ? r.month : latest),
-      savingsRows[0].month
-    )
+  // index seek instead of a full grouped scan: the latest booking month
+  // alone decides whether the window ends at prevOfToday or earlier
+  const latestBookingDate = savingsWhere
+    ? db
+        .select({ max: sql<string | null>`MAX(${transactions.bookingDate})` })
+        .from(transactions)
+        .where(savingsWhere)
+        .get()?.max
+    : db
+        .select({ max: sql<string | null>`MAX(${transactions.bookingDate})` })
+        .from(transactions)
+        .get()?.max
+
+  if (latestBookingDate != null) {
+    const currentMonthKey = monthOf(today)
+    const prevOfToday = prevMonth(currentMonthKey)
+    const latestBookingMonth = latestBookingDate.slice(0, 7)
     // never claim a month that has no bookings yet (stale imports) and
     // never claim the still-running current month
-    const prevOfToday = prevMonth(monthOf(today))
     const lastCompleteMonth =
       prevOfToday < latestBookingMonth ? prevOfToday : latestBookingMonth
     const windowStart = (() => {
@@ -310,7 +311,34 @@ export function computeAnalytics(
       return m
     })()
 
-    const byMonth = new Map(savingsRows.map((r) => [r.month, r]))
+    // single bounded scan: the 6-month window plus the running month
+    // (bookings dated after `today` inside later months are irrelevant)
+    const rows = db
+      .select({
+        month: sql<string>`substr(${transactions.bookingDate}, 1, 7)`,
+        income: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} > 0 THEN ${transactions.amountCents} ELSE 0 END), 0)`,
+        expenses: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} < 0 THEN -${transactions.amountCents} ELSE 0 END), 0)`,
+      })
+      .from(transactions)
+      .where(
+        and(
+          savingsWhere,
+          gte(transactions.bookingDate, `${windowStart}-01`),
+          lt(
+            transactions.bookingDate,
+            `${nextMonth(currentMonthKey)}-01`
+          )
+        )
+      )
+      .groupBy(sql`substr(${transactions.bookingDate}, 1, 7)`)
+      .all()
+      .map((r) => ({
+        month: r.month,
+        income: Number(r.income),
+        expenses: Number(r.expenses),
+      }))
+
+    const byMonth = new Map(rows.map((r) => [r.month, r]))
     const months = monthsBetween(windowStart, lastCompleteMonth).map((m) => {
       const row = byMonth.get(m)
       const income = row?.income ?? 0
@@ -325,11 +353,7 @@ export function computeAnalytics(
     const last = months[months.length - 1]
 
     // the running month is appended separately (UI marks it incomplete)
-    const currentMonthKey = monthOf(today)
-    const currentRow =
-      currentMonthKey > lastCompleteMonth
-        ? byMonth.get(currentMonthKey)
-        : undefined
+    const currentRow = byMonth.get(currentMonthKey)
     const currentMonth: MonthlyCashflowPoint | null = currentRow
       ? {
           month: currentMonthKey,
@@ -342,6 +366,8 @@ export function computeAnalytics(
     savingsHistory = {
       lastMonth: lastCompleteMonth,
       lastMonthNetCents: last.netCents,
+      // stale = the series does not reach the previous calendar month
+      lastMonthIsStale: lastCompleteMonth < prevOfToday,
       months,
       currentMonth,
     }

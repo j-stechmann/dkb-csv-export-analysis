@@ -596,4 +596,48 @@ describe("savings history (last 6 complete months)", () => {
     const r = computeAnalytics(filters("accountId=99999"), "2026-01-15")
     expect(r.savingsHistory).toBeNull()
   })
+
+  it("never claims a future-dated booking's month as last complete month", () => {
+    // today mid-Jan 2026, one booking dated in Aug 2026 (future-dated
+    // import): latestBookingMonth (2026-08) > prevOfToday (2025-12), so
+    // the window must still end at 2025-12 — not at the future month
+    const account = db
+      .select()
+      .from(accounts)
+      .all()
+      .find((a) => a.iban === manifest.account.iban)!
+    db.insert(transactions)
+      .values({
+        id: "future-dated",
+        accountId: account.id,
+        batchId: "fixture-batch",
+        bookingDate: "2026-08-10",
+        status: "Gebucht",
+        type: "Eingang",
+        amountCents: 12345,
+        sourceHash: "future-dated-hash",
+        occurrenceIndex: 0,
+      })
+      .run()
+
+    const r = computeAnalytics(filters(""), "2026-01-15")
+    const s = r.savingsHistory!
+    expect(s.lastMonth).toBe("2025-12")
+    expect(s.months).toHaveLength(6)
+    // the running month (2026-01) has no bookings of its own
+    expect(s.currentMonth).toBeNull()
+
+    // cleanup so other tests see the fixture's original state
+    db.delete(transactions).where(eq(transactions.id, "future-dated")).run()
+  })
+
+  it("marks the headline as stale when imports stopped months ago", () => {
+    // stale case: data ends 2025-12, today is Aug 2026
+    const r = computeAnalytics(filters(""), "2026-08-28")
+    expect(r.savingsHistory!.lastMonthIsStale).toBe(true)
+
+    // fresh case: data reaches the previous calendar month
+    const fresh = computeAnalytics(filters(""), "2026-01-15")
+    expect(fresh.savingsHistory!.lastMonthIsStale).toBe(false)
+  })
 })
