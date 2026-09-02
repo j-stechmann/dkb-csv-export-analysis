@@ -6,6 +6,7 @@ import { KpiRow, useAnalytics } from "@/components/analytics-kpis"
 import {
   BalanceChart,
   CashflowChart,
+  SavingsChart,
   TopCategoriesChart,
 } from "@/components/analytics-charts"
 import { TransactionsTable } from "@/components/transactions-table"
@@ -64,9 +65,15 @@ export default function DashboardPage() {
             data={analytics?.topCategories}
             loading={showLoading}
           />
+          <BalanceChart
+            data={analytics?.balanceTimeline}
+            loading={showLoading}
+          />
+          <SavingsChart
+            data={analytics?.savingsHistory}
+            loading={showLoading}
+          />
         </div>
-
-        <BalanceChart data={analytics?.balanceTimeline} loading={showLoading} />
       </div>
 
       <div>
