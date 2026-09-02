@@ -286,16 +286,11 @@ export function computeAnalytics(
 
   // index seek instead of a full grouped scan: the latest booking month
   // alone decides whether the window ends at prevOfToday or earlier
-  const latestBookingDate = savingsWhere
-    ? db
-        .select({ max: sql<string | null>`MAX(${transactions.bookingDate})` })
-        .from(transactions)
-        .where(savingsWhere)
-        .get()?.max
-    : db
-        .select({ max: sql<string | null>`MAX(${transactions.bookingDate})` })
-        .from(transactions)
-        .get()?.max
+  const latestBookingDate = db
+    .select({ max: sql<string | null>`MAX(${transactions.bookingDate})` })
+    .from(transactions)
+    .where(savingsWhere)
+    .get()?.max
 
   if (latestBookingDate != null) {
     const currentMonthKey = monthOf(today)
