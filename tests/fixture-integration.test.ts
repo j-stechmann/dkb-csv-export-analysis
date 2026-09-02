@@ -620,15 +620,17 @@ describe("savings history (last 6 complete months)", () => {
       })
       .run()
 
-    const r = computeAnalytics(filters(""), "2026-01-15")
-    const s = r.savingsHistory!
-    expect(s.lastMonth).toBe("2025-12")
-    expect(s.months).toHaveLength(6)
-    // the running month (2026-01) has no bookings of its own
-    expect(s.currentMonth).toBeNull()
-
-    // cleanup so other tests see the fixture's original state
-    db.delete(transactions).where(eq(transactions.id, "future-dated")).run()
+    try {
+      const r = computeAnalytics(filters(""), "2026-01-15")
+      const s = r.savingsHistory!
+      expect(s.lastMonth).toBe("2025-12")
+      expect(s.months).toHaveLength(6)
+      // the running month (2026-01) has no bookings of its own
+      expect(s.currentMonth).toBeNull()
+    } finally {
+      // cleanup so other tests see the fixture's original state
+      db.delete(transactions).where(eq(transactions.id, "future-dated")).run()
+    }
   })
 
   it("marks the headline as stale when imports stopped months ago", () => {

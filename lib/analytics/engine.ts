@@ -324,10 +324,7 @@ export function computeAnalytics(
         and(
           savingsWhere,
           gte(transactions.bookingDate, `${windowStart}-01`),
-          lt(
-            transactions.bookingDate,
-            `${nextMonth(currentMonthKey)}-01`
-          )
+          lt(transactions.bookingDate, `${nextMonth(currentMonthKey)}-01`)
         )
       )
       .groupBy(sql`substr(${transactions.bookingDate}, 1, 7)`)

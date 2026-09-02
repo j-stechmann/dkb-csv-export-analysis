@@ -217,36 +217,33 @@ export function SavingsChart({
     ]
   }, [data])
 
-  const headline = React.useMemo(() => {
-    const last = data?.lastMonth
+  const headlineMonth = data ? fullMonth(data.lastMonth) : null
+
+  const headlineBody = React.useMemo(() => {
     const lastNetCents = data?.lastMonthNetCents
-    if (last === undefined || lastNetCents === undefined) return null
+    if (headlineMonth === null || lastNetCents === undefined) return null
     const amount = formatCentsAsGerman(Math.abs(lastNetCents))
-    if (lastNetCents > 0) return `${fullMonth(last)}: +${amount} € gespart`
-    if (lastNetCents < 0) return `${fullMonth(last)}: −${amount} € überzogen`
-    return `${fullMonth(last)}: ±0,00 € ausgeglichen`
-  }, [data])
+    if (lastNetCents > 0) return `+${amount} € gespart`
+    if (lastNetCents < 0) return `−${amount} € überzogen`
+    return `±0,00 € ausgeglichen`
+  }, [data, headlineMonth])
 
   const stale = data?.lastMonthIsStale === true
-  const headlineFullMonth = React.useMemo(
-    () => (data ? fullMonth(data.lastMonth) : null),
-    [data]
-  )
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Monatssaldo</CardTitle>
         {stale ? (
-          <CardDescription className="tabular-nums text-muted-foreground/60">
-            Datenstand {headlineFullMonth ?? ""} · {headline ?? "…"}
+          <CardDescription className="text-muted-foreground/60 tabular-nums">
+            Datenstand {headlineMonth ?? ""} · {headlineBody ?? "…"}
           </CardDescription>
         ) : (
           <CardDescription className="tabular-nums">
             {loading ? (
               <Skeleton className="h-4 w-52" />
-            ) : headline ? (
-              headline
+            ) : headlineMonth && headlineBody ? (
+              `${headlineMonth}: ${headlineBody}`
             ) : (
               "Gespart oder überzogen pro Monat"
             )}
