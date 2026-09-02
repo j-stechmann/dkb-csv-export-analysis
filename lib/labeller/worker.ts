@@ -137,7 +137,10 @@ export async function tick(): Promise<void> {
       )
     } catch (err) {
       console.error("[label worker] chunk failed, marking rows failed:", err)
-      markRowsFailed(claimed.map((r) => r.id), claimedAttempts)
+      markRowsFailed(
+        claimed.map((r) => r.id),
+        claimedAttempts
+      )
     }
 
     completeDrainedBatches(cfg.LABELLER_MAX_ATTEMPTS)
