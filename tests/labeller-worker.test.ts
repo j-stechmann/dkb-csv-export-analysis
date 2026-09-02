@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
 import { eq } from "drizzle-orm"
 import { createTestDb, setTestDb, type Db } from "@/lib/db"
 import { accounts, importBatches, transactions } from "@/lib/db/schema"
-import { claimLabelRows, tick } from "@/lib/labeller/worker"
+import { claimLabelRows, isWorkerTicking, tick } from "@/lib/labeller/worker"
 import { computeLabelCounters } from "@/lib/import/counters"
+import { applyLabelResults, markRowsFailed } from "@/lib/labeller/service"
 import { resetFailedLabels } from "@/lib/import/pipeline"
 import { getConfig } from "@/lib/config"
 
@@ -246,6 +247,99 @@ describe("tick", () => {
     await tick()
 
     expect(getBatch(batchId)!.status).toBe("completed")
+  })
+
+  it("contains a sync DB error instead of rejecting", async () => {
+    const batchId = seedBatch()
+    seedTx(batchId)
+
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    // make the first sync DB write throw (e.g. SQLITE_BUSY past timeout)
+    vi.spyOn(db, "update").mockImplementationOnce(() => {
+      throw new Error("SQLITE_BUSY: database is locked")
+    })
+
+    await expect(tick()).resolves.toBeUndefined()
+
+    expect(errSpy).toHaveBeenCalledWith(
+      "[label worker] tick failed:",
+      expect.any(Error)
+    )
+    expect(isWorkerTicking()).toBe(false)
+  })
+})
+
+describe("applyLabelResults", () => {
+  it("applies labels only to rows untouched since claim", () => {
+    const batchId = seedBatch()
+    const stableId = seedTx(batchId)
+    const resetId = seedTx(batchId)
+
+    // claim one batch (attempts → 1), then simulate a concurrent reset of
+    // one row (fuzzy-update / retry) before results arrive
+    const claimed = claimLabelRows(10, 5)
+    expect(claimed).toHaveLength(2)
+    db.update(transactions)
+      .set({ labelStatus: "pending", labelAttempts: 0 })
+      .where(eq(transactions.id, resetId))
+      .run()
+
+    const claimedAttempts = new Map(
+      claimed.map((r): [string, number] => [r.id, r.labelAttempts])
+    )
+    applyLabelResults(
+      [stableId, resetId].map((id) => ({ id, label: "Lebensmittel" })),
+      claimedAttempts
+    )
+
+    expect(getTx(stableId)!.labelStatus).toBe("labeled")
+    expect(getTx(resetId)!.labelStatus).toBe("pending")
+    expect(getTx(resetId)!.labelAttempts).toBe(0)
+  })
+})
+
+describe("markRowsFailed", () => {
+  it("marks claimed rows failed and skips already-labeled ones", () => {
+    const batchId = seedBatch()
+    const failedId = seedTx(batchId)
+    const labeledId = seedTx(batchId)
+
+    const claimed = claimLabelRows(10, 5)
+    expect(claimed).toHaveLength(2)
+    db.update(transactions)
+      .set({ labelStatus: "labeled" })
+      .where(eq(transactions.id, labeledId))
+      .run()
+
+    const claimedAttempts = new Map(
+      claimed.map((r): [string, number] => [r.id, r.labelAttempts])
+    )
+    markRowsFailed([failedId, labeledId], claimedAttempts)
+
+    expect(getTx(failedId)!.labelStatus).toBe("failed")
+    expect(getTx(failedId)!.labelAttempts).toBe(1)
+    expect(getTx(labeledId)!.labelStatus).toBe("labeled")
+  })
+
+  it("leaves rows untouched that were reset since claim", () => {
+    const batchId = seedBatch()
+    const resetId = seedTx(batchId)
+
+    const claimed = claimLabelRows(10, 5)
+    expect(claimed).toHaveLength(1)
+    // concurrent fuzzy-update / retry reset the row before the chunk failed
+    db.update(transactions)
+      .set({ labelStatus: "pending", labelAttempts: 0 })
+      .where(eq(transactions.id, resetId))
+      .run()
+
+    const claimedAttempts = new Map(
+      claimed.map((r): [string, number] => [r.id, r.labelAttempts])
+    )
+    markRowsFailed([resetId], claimedAttempts)
+
+    expect(getTx(resetId)!.labelStatus).toBe("pending")
+    expect(getTx(resetId)!.labelAttempts).toBe(0)
   })
 })
 

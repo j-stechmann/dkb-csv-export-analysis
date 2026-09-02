@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories, importBatches, transactions } from "@/lib/db/schema"
 import type { LabelResult } from "@/lib/labeller/client"
@@ -6,20 +6,30 @@ import type { LabelResult } from "@/lib/labeller/client"
 /**
  * Persist label results: upsert categories, mark rows labeled.
  * Must run inside one transaction so a chunk is all-or-nothing.
+ * `claimedAttempts` maps row id → label_attempts captured at claim time;
+ * a row whose attempts changed since then was reset by a concurrent
+ * fuzzy-update or retry run and is skipped (its label would be stale).
  * Returns the batch ids affected (for drain-check / progress reads).
  */
-export function applyLabelResults(results: LabelResult[]): string[] {
+export function applyLabelResults(
+  results: LabelResult[],
+  claimedAttempts: Map<string, number>
+): string[] {
   const db = getDb()
   const batchIds = new Set<string>()
 
   db.transaction((tx) => {
     for (const result of results) {
       const row = tx
-        .select({ batchId: transactions.batchId })
+        .select({
+          batchId: transactions.batchId,
+          labelAttempts: transactions.labelAttempts,
+        })
         .from(transactions)
         .where(eq(transactions.id, result.id))
         .get()
       if (!row) continue
+      if (row.labelAttempts !== claimedAttempts.get(result.id)) continue
       if (row.batchId) batchIds.add(row.batchId)
 
       const nameKey = normalizeCategoryKey(result.label)
@@ -68,19 +78,35 @@ export function applyLabelResults(results: LabelResult[]): string[] {
  * Rows that a previously-applied chunk already labeled are excluded so a
  * later chunk failure cannot flip them back to failed (they'd be re-claimed
  * and re-sent to the LLM, wasting calls and temporarily showing no category).
+ * Rows whose attempts changed since claim were reset by a concurrent
+ * fuzzy-update or retry run — left untouched so their fresh content gets
+ * labeled instead of being failed without ever being attempted.
  */
-export function markRowsFailed(ids: string[]): void {
+export function markRowsFailed(
+  ids: string[],
+  claimedAttempts: Map<string, number>
+): void {
   if (ids.length === 0) return
   const db = getDb()
-  db.update(transactions)
-    .set({ labelStatus: "failed", updatedAt: new Date().toISOString() })
-    .where(
-      and(
-        inArray(transactions.id, ids),
-        ne(transactions.labelStatus, "labeled")
-      )
-    )
-    .run()
+  db.transaction((tx) => {
+    for (const id of ids) {
+      const row = tx
+        .select({
+          labelStatus: transactions.labelStatus,
+          labelAttempts: transactions.labelAttempts,
+        })
+        .from(transactions)
+        .where(eq(transactions.id, id))
+        .get()
+      if (!row) continue
+      if (row.labelStatus === "labeled") continue
+      if (row.labelAttempts !== claimedAttempts.get(id)) continue
+      tx.update(transactions)
+        .set({ labelStatus: "failed", updatedAt: new Date().toISOString() })
+        .where(eq(transactions.id, id))
+        .run()
+    }
+  })
 }
 
 /** upsert helper shared with pipeline; normalizes label names */

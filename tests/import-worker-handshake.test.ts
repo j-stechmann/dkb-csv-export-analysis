@@ -201,7 +201,13 @@ describe("markRowsFailed partial-chunk safety", () => {
       .where(eq(transactions.id, labeledId))
       .run()
 
-    markRowsFailed([labeledId, pendingId])
+    markRowsFailed(
+      [labeledId, pendingId],
+      new Map([
+        [labeledId, 1],
+        [pendingId, 0],
+      ])
+    )
 
     expect(getTx(labeledId)!.labelStatus).toBe("labeled")
     expect(getTx(pendingId)!.labelStatus).toBe("failed")

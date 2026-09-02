@@ -89,7 +89,9 @@ function toLabellerInput(row: ClaimedRow): LabellerInput {
 /**
  * One worker pass: claim a batch of rows, label them, persist results.
  * Errors are contained per pass — a failing chunk marks its rows failed
- * (attempts already incremented) and never kills the worker loop.
+ * (attempts already incremented), and any other failure (including the
+ * synchronous DB calls) is logged instead of escaping as an unhandled
+ * rejection. Never kills the worker loop.
  */
 export async function tick(): Promise<void> {
   const state = workerState()
@@ -118,20 +120,29 @@ export async function tick(): Promise<void> {
     )
     if (claimed.length === 0) return
 
+    // attempts snapshot at claim time: a mismatch at apply time means the
+    // row was reset meanwhile (concurrent fuzzy-update or retry endpoint),
+    // so its label would be computed from stale content
+    const claimedAttempts = new Map(
+      claimed.map((r): [string, number] => [r.id, r.labelAttempts])
+    )
+
     try {
       await labelWithChunking(
         client,
         claimed.map(toLabellerInput),
         (results) => {
-          applyLabelResults(results)
+          applyLabelResults(results, claimedAttempts)
         }
       )
     } catch (err) {
       console.error("[label worker] chunk failed, marking rows failed:", err)
-      markRowsFailed(claimed.map((r) => r.id))
+      markRowsFailed(claimed.map((r) => r.id), claimedAttempts)
     }
 
     completeDrainedBatches(cfg.LABELLER_MAX_ATTEMPTS)
+  } catch (err) {
+    console.error("[label worker] tick failed:", err)
   } finally {
     state.ticking = false
   }
