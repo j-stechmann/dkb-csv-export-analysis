@@ -573,6 +573,24 @@ describe("savings history (last 6 complete months)", () => {
     expect(r.savingsHistory!.months).toHaveLength(6)
   })
 
+  it("exposes the running month separately from the complete window", () => {
+    // today = mid-Dec 2025: 2025-12 is still running → months window ends
+    // at 2025-11, and 2025-12 (which HAS bookings) is the currentMonth
+    const r = computeAnalytics(filters(""), "2025-12-15")
+    const s = r.savingsHistory!
+    expect(s.lastMonth).toBe("2025-11")
+    expect(s.months.map((m) => m.month)).not.toContain("2025-12")
+    expect(s.currentMonth).not.toBeNull()
+    expect(s.currentMonth!.month).toBe("2025-12")
+    expect(s.currentMonth!.netCents).toBe(netOf("2025-12"))
+  })
+
+  it("currentMonth is null when the running month has no bookings", () => {
+    // today = Aug 2026, fixture data ends 2025-12 (stale import)
+    const r = computeAnalytics(filters(""), "2026-08-28")
+    expect(r.savingsHistory!.currentMonth).toBeNull()
+  })
+
   it("is null when the account has no transactions at all", () => {
     // savings history ignores content filters but respects the account
     const r = computeAnalytics(filters("accountId=99999"), "2026-01-15")

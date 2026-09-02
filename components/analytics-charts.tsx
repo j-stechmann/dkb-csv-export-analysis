@@ -193,17 +193,29 @@ export function SavingsChart({
   data: AnalyticsResponse["savingsHistory"] | undefined
   loading: boolean
 }) {
-  const chartData = React.useMemo(
-    () =>
-      (data?.months ?? []).map((d) => ({
-        month: d.month,
-        net: d.netCents / 100,
-        incomeCents: d.incomeCents,
-        expensesCents: d.expensesCents,
-        netCents: d.netCents,
-      })),
-    [data]
-  )
+  const chartData = React.useMemo(() => {
+    const complete = (data?.months ?? []).map((d) => ({
+      month: d.month,
+      net: d.netCents / 100,
+      incomeCents: d.incomeCents,
+      expensesCents: d.expensesCents,
+      netCents: d.netCents,
+      isCurrent: false,
+    }))
+    const cur = data?.currentMonth
+    if (!cur) return complete
+    return [
+      ...complete,
+      {
+        month: cur.month,
+        net: cur.netCents / 100,
+        incomeCents: cur.incomeCents,
+        expensesCents: cur.expensesCents,
+        netCents: cur.netCents,
+        isCurrent: true,
+      },
+    ]
+  }, [data])
 
   const last = data?.lastMonth
   const lastNetCents = data?.lastMonthNetCents
@@ -260,6 +272,7 @@ export function SavingsChart({
                             incomeCents: number
                             expensesCents: number
                             netCents: number
+                            isCurrent?: boolean
                           }
                         | undefined
                       if (!p) return null
@@ -270,6 +283,11 @@ export function SavingsChart({
                       const net = formatCentsAsGerman(Math.abs(p.netCents))
                       return (
                         <div className="grid gap-1">
+                          {p.isCurrent && (
+                            <div className="text-muted-foreground italic">
+                              laufender Monat
+                            </div>
+                          )}
                           <div className="flex justify-between gap-4">
                             <span className="text-muted-foreground">
                               Einnahmen
@@ -309,15 +327,25 @@ export function SavingsChart({
                 }
               />
               <Bar dataKey="net" radius={4}>
-                {chartData.map((d, i) => (
-                  <Cell
-                    key={d.month}
-                    fill={
-                      d.net >= 0 ? "var(--color-net)" : "var(--destructive)"
-                    }
-                    fillOpacity={i === chartData.length - 1 ? 1 : 0.45}
-                  />
-                ))}
+                {chartData.map((d, i) => {
+                  const isLastComplete =
+                    !d.isCurrent &&
+                    i === chartData.length - 1 - (data?.currentMonth ? 1 : 0)
+                  return (
+                    <Cell
+                      key={d.month}
+                      fill={
+                        d.net >= 0 ? "var(--color-net)" : "var(--destructive)"
+                      }
+                      fillOpacity={
+                        d.isCurrent ? 0.7 : isLastComplete ? 1 : 0.45
+                      }
+                      strokeDasharray={d.isCurrent ? "4 3" : undefined}
+                      stroke={d.isCurrent ? "var(--foreground)" : undefined}
+                      strokeWidth={d.isCurrent ? 1 : undefined}
+                    />
+                  )
+                })}
               </Bar>
             </BarChart>
           </ChartContainer>

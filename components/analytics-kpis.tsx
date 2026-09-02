@@ -45,6 +45,12 @@ export interface AnalyticsResponse {
       expensesCents: number
       netCents: number
     }>
+    currentMonth: {
+      month: string
+      incomeCents: number
+      expensesCents: number
+      netCents: number
+    } | null
   } | null
 }
 

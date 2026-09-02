@@ -29,6 +29,11 @@ export interface SavingsHistory {
   lastMonthNetCents: number
   /** zero-filled window of the 6 months ending at lastMonth */
   months: MonthlyCashflowPoint[]
+  /**
+   * the still-running month, if it has any bookings. Provided separately
+   * so the UI can mark it as incomplete; NOT part of months.
+   */
+  currentMonth: MonthlyCashflowPoint | null
 }
 
 export interface AnalyticsResult {
@@ -318,10 +323,27 @@ export function computeAnalytics(
       }
     })
     const last = months[months.length - 1]
+
+    // the running month is appended separately (UI marks it incomplete)
+    const currentMonthKey = monthOf(today)
+    const currentRow =
+      currentMonthKey > lastCompleteMonth
+        ? byMonth.get(currentMonthKey)
+        : undefined
+    const currentMonth: MonthlyCashflowPoint | null = currentRow
+      ? {
+          month: currentMonthKey,
+          incomeCents: currentRow.income,
+          expensesCents: currentRow.expenses,
+          netCents: currentRow.income - currentRow.expenses,
+        }
+      : null
+
     savingsHistory = {
       lastMonth: lastCompleteMonth,
       lastMonthNetCents: last.netCents,
       months,
+      currentMonth,
     }
   }
 
