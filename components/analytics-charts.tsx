@@ -22,6 +22,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Line,
   LineChart,
@@ -30,6 +31,7 @@ import {
 } from "recharts"
 import type { AnalyticsResponse } from "@/components/analytics-kpis"
 import { getCategoryColor } from "@/lib/category-colors"
+import { formatCentsAsGerman } from "@/lib/money"
 
 const cashflowConfig = {
   income: { label: "Einnahmen", color: "var(--chart-2)" },
@@ -39,6 +41,10 @@ const cashflowConfig = {
 
 const balanceConfig = {
   balance: { label: "Kontostand", color: "var(--chart-2)" },
+} satisfies ChartConfig
+
+const savingsConfig = {
+  net: { label: "Saldo", color: "var(--chart-2)" },
 } satisfies ChartConfig
 
 function shortMonth(month: string): string {
@@ -130,11 +136,15 @@ export function CashflowChart({
                   width={64}
                   tickFormatter={(v: number) => euroShort(v)}
                 />
-                <ChartTooltipContent
-                  formatter={(value) =>
-                    `${Number(value).toLocaleString("de-DE", { minimumFractionDigits: 2 })} €`
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      formatter={(value) =>
+                        `${Number(value).toLocaleString("de-DE", { minimumFractionDigits: 2 })} €`
+                      }
+                      labelFormatter={(label) => shortMonth(String(label))}
+                    />
                   }
-                  labelFormatter={(label) => shortMonth(String(label))}
                 />
                 <Bar dataKey="income" fill="var(--color-income)" radius={4} />
                 <Bar
@@ -151,6 +161,166 @@ export function CashflowChart({
               </ComposedChart>
             </ChartContainer>
           </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function fullMonth(month: string): string {
+  const [y, m] = month.split("-")
+  const names = [
+    "Januar",
+    "Februar",
+    "März",
+    "April",
+    "Mai",
+    "Juni",
+    "Juli",
+    "August",
+    "September",
+    "Oktober",
+    "November",
+    "Dezember",
+  ]
+  return `${names[Number.parseInt(m, 10) - 1]} ${y}`
+}
+
+export function SavingsChart({
+  data,
+  loading,
+}: {
+  data: AnalyticsResponse["savingsHistory"] | undefined
+  loading: boolean
+}) {
+  const chartData = React.useMemo(
+    () =>
+      (data?.months ?? []).map((d) => ({
+        month: d.month,
+        net: d.netCents / 100,
+        incomeCents: d.incomeCents,
+        expensesCents: d.expensesCents,
+        netCents: d.netCents,
+      })),
+    [data]
+  )
+
+  const last = data?.lastMonth
+  const lastNetCents = data?.lastMonthNetCents
+  const headline = React.useMemo(() => {
+    if (last === undefined || lastNetCents === undefined) return null
+    const amount = formatCentsAsGerman(Math.abs(lastNetCents))
+    if (lastNetCents > 0) return `${fullMonth(last)}: +${amount} € gespart`
+    if (lastNetCents < 0) return `${fullMonth(last)}: −${amount} € überzogen`
+    return `${fullMonth(last)}: ±0,00 € ausgeglichen`
+  }, [last, lastNetCents])
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Monatssaldo</CardTitle>
+        <CardDescription className="tabular-nums">
+          {loading ? (
+            <Skeleton className="h-4 w-52" />
+          ) : headline ? (
+            headline
+          ) : (
+            "Gespargt oder überzogen pro Monat"
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Skeleton className="h-72 w-full" />
+        ) : chartData.length === 0 ? (
+          <p className="py-16 text-center text-sm text-muted-foreground">
+            Keine Transaktionen vorhanden.
+          </p>
+        ) : (
+          <ChartContainer config={savingsConfig} className="h-72 w-full">
+            <BarChart data={chartData} accessibilityLayer>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="month" tickLine={false} axisLine={false} />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                width={64}
+                tickFormatter={(v: number) => euroShort(v)}
+              />
+              <ChartTooltip
+                cursor={{
+                  fill: "var(--muted)",
+                  fillOpacity: 0.15,
+                }}
+                content={
+                  <ChartTooltipContent
+                    formatter={(_value, _name, item) => {
+                      const p = item?.payload as
+                        | {
+                            incomeCents: number
+                            expensesCents: number
+                            netCents: number
+                          }
+                        | undefined
+                      if (!p) return null
+                      const income = formatCentsAsGerman(p.incomeCents)
+                      const expenses = formatCentsAsGerman(p.expensesCents)
+                      const saved = p.netCents > 0
+                      const overspent = p.netCents < 0
+                      const net = formatCentsAsGerman(Math.abs(p.netCents))
+                      return (
+                        <div className="grid gap-1">
+                          <div className="flex justify-between gap-4">
+                            <span className="text-muted-foreground">
+                              Einnahmen
+                            </span>
+                            <span className="font-mono font-medium tabular-nums">
+                              {income} €
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-muted-foreground">
+                              Ausgaben
+                            </span>
+                            <span className="font-mono font-medium tabular-nums">
+                              −{expenses} €
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-4 border-t border-border/50 pt-1">
+                            <span className="font-medium">
+                              {saved
+                                ? "Gespart"
+                                : overspent
+                                  ? "Überzogen"
+                                  : "Ausgeglichen"}
+                            </span>
+                            <span
+                              className={`font-mono font-medium tabular-nums ${overspent ? "text-destructive" : ""}`}
+                            >
+                              {saved ? "+" : overspent ? "−" : "±"}
+                              {net} €
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    }}
+                    labelFormatter={(label) => fullMonth(String(label))}
+                  />
+                }
+              />
+              <Bar dataKey="net" radius={4}>
+                {chartData.map((d, i) => (
+                  <Cell
+                    key={d.month}
+                    fill={
+                      d.net >= 0 ? "var(--color-net)" : "var(--destructive)"
+                    }
+                    fillOpacity={i === chartData.length - 1 ? 1 : 0.45}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ChartContainer>
         )}
       </CardContent>
     </Card>
@@ -182,7 +352,7 @@ export function BalanceChart({
   const visible = zoom.slice(chartData)
 
   return (
-    <Card className="lg:col-span-3">
+    <Card className="lg:col-span-2">
       <CardHeader>
         <CardTitle>Kontostand über Zeit</CardTitle>
         <CardDescription>
@@ -291,11 +461,16 @@ export function TopCategoriesChart({
                 tickLine={false}
                 axisLine={false}
               />
-              <ChartTooltipContent
-                formatter={(value, _name, item) => {
-                  const share = item?.payload as { share?: number } | undefined
-                  return `${Number(value).toLocaleString("de-DE", { minimumFractionDigits: 2 })} € (${share?.share != null ? Math.round(share.share * 100) : 0} %)`
-                }}
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    formatter={(value, _name, item) => {
+                      const share = item?.payload as
+                        { share?: number } | undefined
+                      return `${Number(value).toLocaleString("de-DE", { minimumFractionDigits: 2 })} € (${share?.share != null ? Math.round(share.share * 100) : 0} %)`
+                    }}
+                  />
+                }
               />
               <Bar dataKey="value" radius={4} />
             </BarChart>

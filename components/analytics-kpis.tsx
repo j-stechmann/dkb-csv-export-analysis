@@ -36,6 +36,16 @@ export interface AnalyticsResponse {
     share: number
     txCount: number
   }>
+  savingsHistory: {
+    lastMonth: string
+    lastMonthNetCents: number
+    months: Array<{
+      month: string
+      incomeCents: number
+      expensesCents: number
+      netCents: number
+    }>
+  } | null
 }
 
 export function useAnalytics(params: string) {

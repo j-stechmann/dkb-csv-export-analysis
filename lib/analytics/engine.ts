@@ -23,6 +23,14 @@ export interface TopCategoryPoint {
   txCount: number
 }
 
+export interface SavingsHistory {
+  /** last COMPLETE month (YYYY-MM) the series ends at */
+  lastMonth: string
+  lastMonthNetCents: number
+  /** zero-filled window of the 6 months ending at lastMonth */
+  months: MonthlyCashflowPoint[]
+}
+
 export interface AnalyticsResult {
   kpis: {
     currentBalanceCents: number | null
@@ -37,6 +45,7 @@ export interface AnalyticsResult {
   monthlyCashflow: MonthlyCashflowPoint[]
   balanceTimeline: BalancePoint[]
   topCategories: TopCategoryPoint[]
+  savingsHistory: SavingsHistory | null
 }
 
 interface BalanceAnchor {
@@ -248,6 +257,74 @@ export function computeAnalytics(
     }))
     .slice(0, 12)
 
+  // ── savings history: last 6 complete months, time-scoped only ─────
+  // Mirror of the balance scope: content filters (q/type/category/dates)
+  // are ignored so the card always shows the previous calendar month,
+  // but it must respect the account filter.
+  const savingsScope: TransactionFilters = {
+    ...f,
+    q: undefined,
+    type: undefined,
+    categoryIds: undefined,
+    labelStatus: undefined,
+    dateFrom: undefined,
+    dateTo: undefined,
+  }
+
+  const savingsRows = db
+    .select({
+      month: sql<string>`substr(${transactions.bookingDate}, 1, 7)`,
+      income: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} > 0 THEN ${transactions.amountCents} ELSE 0 END), 0)`,
+      expenses: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} < 0 THEN -${transactions.amountCents} ELSE 0 END), 0)`,
+    })
+    .from(transactions)
+    .where(buildWhere(savingsScope))
+    .groupBy(sql`substr(${transactions.bookingDate}, 1, 7)`)
+    .all()
+    .map((r) => ({
+      month: r.month,
+      income: Number(r.income),
+      expenses: Number(r.expenses),
+    }))
+
+  let savingsHistory: SavingsHistory | null = null
+
+  if (savingsRows.length > 0) {
+    const latestBookingMonth = savingsRows.reduce(
+      (latest, r) => (r.month > latest ? r.month : latest),
+      savingsRows[0].month
+    )
+    // never claim a month that has no bookings yet (stale imports) and
+    // never claim the still-running current month
+    const prevOfToday = prevMonth(monthOf(today))
+    const lastCompleteMonth =
+      prevOfToday < latestBookingMonth ? prevOfToday : latestBookingMonth
+    const windowStart = (() => {
+      let m = lastCompleteMonth
+      for (let i = 0; i < 5; i++) m = prevMonth(m)
+      return m
+    })()
+
+    const byMonth = new Map(savingsRows.map((r) => [r.month, r]))
+    const months = monthsBetween(windowStart, lastCompleteMonth).map((m) => {
+      const row = byMonth.get(m)
+      const income = row?.income ?? 0
+      const expenses = row?.expenses ?? 0
+      return {
+        month: m,
+        incomeCents: income,
+        expensesCents: expenses,
+        netCents: income - expenses,
+      }
+    })
+    const last = months[months.length - 1]
+    savingsHistory = {
+      lastMonth: lastCompleteMonth,
+      lastMonthNetCents: last.netCents,
+      months,
+    }
+  }
+
   // ── balance: snapshot anchor math, time-scoped only ───────────────
   const anchor = latestAnchor(f.accountId)
   const { dateFrom, dateTo } = f
@@ -385,6 +462,7 @@ export function computeAnalytics(
     monthlyCashflow,
     balanceTimeline,
     topCategories,
+    savingsHistory,
   }
 }
 

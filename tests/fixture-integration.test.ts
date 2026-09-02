@@ -509,3 +509,73 @@ describe("date-filtered analytics", () => {
     )
   })
 })
+
+describe("savings history (last 6 complete months)", () => {
+  const filters = (q: string) => parseFilters(new URLSearchParams(q))
+
+  /** net per month, derived from the manifest's income/expenses */
+  const netOf = (month: string) => {
+    const m = manifest.expected.monthlyCashflow.find((x) => x.month === month)!
+    return m.incomeCents - m.expensesCents
+  }
+
+  it("ends at the previous calendar month with a zero-filled 6-month window", () => {
+    const r = computeAnalytics(filters(""), "2026-01-15")
+    expect(r.savingsHistory).not.toBeNull()
+    const s = r.savingsHistory!
+    expect(s.lastMonth).toBe("2025-12")
+    expect(s.lastMonthNetCents).toBe(netOf("2025-12"))
+    expect(s.months.map((m) => m.month)).toEqual([
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+    ])
+    for (const m of s.months) {
+      expect(m.netCents).toBe(netOf(m.month))
+    }
+  })
+
+  it("falls back to the latest booking month for stale imports", () => {
+    // fixture data ends 2025-12, "today" is Aug 2026 → no zero-filled gap
+    const r = computeAnalytics(filters(""), "2026-08-28")
+    const s = r.savingsHistory!
+    expect(s.lastMonth).toBe("2025-12")
+    expect(s.months.map((m) => m.month)).toEqual([
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+    ])
+  })
+
+  it("ignores content and date filters entirely", () => {
+    const un = computeAnalytics(filters(""), "2026-01-15")
+    const filtered = computeAnalytics(
+      filters(
+        "dateFrom=2024-03-01&dateTo=2024-06-30&q=Supermarkt&type=Ausgang"
+      ),
+      "2026-01-15"
+    )
+    expect(filtered.savingsHistory).toEqual(un.savingsHistory)
+  })
+
+  it("never claims the running month as last complete month", () => {
+    // fixture data ends 2025-12 but today is Jan 2026: prevOfToday (2025-12)
+    // equals latestBookingMonth → series must end there either way
+    const r = computeAnalytics(filters(""), "2026-01-31")
+    expect(r.savingsHistory!.lastMonth).toBe("2025-12")
+    // window is always exactly 6 months
+    expect(r.savingsHistory!.months).toHaveLength(6)
+  })
+
+  it("is null when the account has no transactions at all", () => {
+    // savings history ignores content filters but respects the account
+    const r = computeAnalytics(filters("accountId=99999"), "2026-01-15")
+    expect(r.savingsHistory).toBeNull()
+  })
+})
