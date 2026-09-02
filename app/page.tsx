@@ -65,15 +65,12 @@ export default function DashboardPage() {
             data={analytics?.topCategories}
             loading={showLoading}
           />
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          <SavingsChart
-            data={analytics?.savingsHistory}
-            loading={showLoading}
-          />
           <BalanceChart
             data={analytics?.balanceTimeline}
+            loading={showLoading}
+          />
+          <SavingsChart
+            data={analytics?.savingsHistory}
             loading={showLoading}
           />
         </div>
