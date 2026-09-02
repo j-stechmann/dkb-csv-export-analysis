@@ -222,8 +222,7 @@ export function SavingsChart({
     const lastNetCents = data?.lastMonthNetCents
     if (last === undefined || lastNetCents === undefined) return null
     const windowEmpty =
-      lastNetCents === 0 &&
-      (data?.months ?? []).every((m) => m.netCents === 0)
+      lastNetCents === 0 && (data?.months ?? []).every((m) => m.netCents === 0)
     if (windowEmpty) return null
     const amount = formatCentsAsGerman(Math.abs(lastNetCents))
     if (lastNetCents > 0) return `${fullMonth(last)}: +${amount} € gespart`
