@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { eq, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
-import { categories, labelRules } from "@/lib/db/schema"
+import { categories } from "@/lib/db/schema"
 import { normalizeCategoryKey } from "@/lib/labeller/service"
 
 export const runtime = "nodejs"

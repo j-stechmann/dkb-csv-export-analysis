@@ -56,11 +56,24 @@ export async function PATCH(
     }
   }
 
-  // renaming is user approval of the wording → flips origin to manual
-  db.update(categories)
-    .set({ name, nameKey, origin: "manual" })
-    .where(eq(categories.id, labelId))
-    .run()
+  // renaming is user approval of the wording → flips origin to manual.
+  // The pre-check above is advisory only: a concurrent rename/create onto
+  // the same nameKey would violate the unique index and surface as a 500,
+  // so the violation is caught and reported as 409 instead.
+  try {
+    db.update(categories)
+      .set({ name, nameKey, origin: "manual" })
+      .where(eq(categories.id, labelId))
+      .run()
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("UNIQUE constraint")) {
+      return NextResponse.json(
+        { error: "name_conflict", message: "label name already exists" },
+        { status: 409 }
+      )
+    }
+    throw err
+  }
 
   return NextResponse.json({ id: labelId, name })
 }

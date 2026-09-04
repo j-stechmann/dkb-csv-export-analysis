@@ -31,6 +31,10 @@ interrupted transfer. A different quant/repo can be selected via override:
 make model MODEL_HF_REPO=unsloth/Qwen3.8-27B-GGUF MODEL_HF_FILE=Qwen3.8-27B-UD-Q4_K_M.gguf MODEL_HF_REVISION=
 ```
 
+An empty `MODEL_HF_REVISION` tracks the repo's default branch; omitting the
+override keeps the pinned `ggml-org` revision (a different repo's history
+usually doesn't contain it — pass `MODEL_HF_REVISION=` when switching repos).
+
 Gated repos need a token: `HF_TOKEN=hf_xxx make model`. Any local GGUF works
 too: `make llm MODEL=/path/to/model.gguf`.
 
@@ -68,9 +72,13 @@ Environment (all optional):
 | `LLM_MAX_RETRIES` | `2` | retries for transient LLM failures |
 | `LLM_TIMEOUT_MS` | `300000` | per-request timeout (hybrid models are slow) |
 | `LLM_MAX_ATTEMPTS` | `5` | per-transaction labeling attempt cap |
-| `LLM_NUM_CTX` | `8192` | advisory context size (server-side `-c` is authoritative) |
 | `LLM_MAX_LABELS_PROMPT` | `200` | max existing labels injected into the prompt |
 | `LLM_MAX_SUGGESTIONS` | `3` | max rule-based suggestions per transaction |
+
+Raising `LLM_BATCH_SIZE` substantially (> ~40) can make the completion
+budget exceed the server's context window (`-c` in `make llm`, 8192 by
+default) once prompt + completion are summed — output gets clamped and
+JSON truncates. Keep batch size moderate or raise `LLM_CTX` alongside it.
 
 ## Labelling
 

@@ -275,7 +275,7 @@ describe("LlmClient.labelBatch", () => {
 
     const items = Array.from({ length: 100 }, (_, i) => tx({ id: `t${i}` }))
     await new LlmClient("http://test").labelBatch(items)
-    expect((captured as { max_tokens: number }).max_tokens).toBe(2400)
+    expect((captured as { max_tokens: number }).max_tokens).toBe(9600)
   })
 })
 

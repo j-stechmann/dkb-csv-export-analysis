@@ -175,6 +175,30 @@ describe("PATCH /api/labels/[id]", () => {
     expect(out.status).toBe(409)
   })
 
+  it("maps a unique-constraint violation on rename to 409", async () => {
+    const created = await createLabel(
+      jsonReq("http://test/api/labels", { name: "Alpha" })
+    )
+    const { id } = (await created.json()) as { id: number }
+    // simulate the concurrent-write window: the advisory pre-check passes,
+    // then the UPDATE itself hits the unique index (as a racing rename or
+    // manual create would). The trigger reproduces the exact violation
+    // message better-sqlite3 raises on a real constraint failure.
+    db.run(
+      `CREATE TRIGGER simulate_rename_race BEFORE UPDATE ON categories
+       WHEN NEW.name_key = 'alpha'
+       BEGIN
+         SELECT RAISE(ABORT, 'UNIQUE constraint failed: categories.name_key');
+       END`
+    )
+
+    const out = await patchLabel(
+      jsonReq(`http://test/api/labels/${id}`, { name: "Alpha" }, "PATCH"),
+      { params: Promise.resolve({ id: String(id) }) }
+    )
+    expect(out.status).toBe(409)
+  })
+
   it("returns 404 for unknown labels", async () => {
     const out = await patchLabel(
       jsonReq("http://test/api/labels/999", { name: "X" }, "PATCH"),

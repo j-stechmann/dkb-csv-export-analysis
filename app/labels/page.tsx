@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import {
   Card,
@@ -22,7 +22,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { getCategoryColor } from "@/lib/category-colors"
-import { cn } from "@/lib/utils"
 
 interface LabelRow {
   id: number
@@ -39,11 +38,6 @@ interface LabelRuleRow {
   nameKey: string
   name: string
   createdAt: string
-}
-
-interface LabelDetail {
-  label: LabelRow
-  rules: LabelRuleRow[]
 }
 
 function invalidateAll(queryClient: ReturnType<typeof useQueryClient>) {
@@ -228,9 +222,9 @@ function DeleteLabelDialog({
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
           Das Label &quot;{label.name}&quot; wird entfernt ({label.ruleCount}{" "}
-          gelernte {label.ruleCount === 1 ? "Regel" : "Regeln"} inklusive).{" "}
-          {label.usageCount} Transaktionen verlieren ihre Kategorie und werden
-          vom LLM neu kategorisiert.
+          gelernte {label.ruleCount === 1 ? "Regel" : "Regeln"} inklusive). Alle
+          Transaktionen mit diesem Label verlieren ihre Kategorie und werden vom
+          LLM neu kategorisiert.
         </p>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

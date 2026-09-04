@@ -100,7 +100,10 @@ export class LlmClient {
         { role: "user", content: userPrompt(items) },
       ],
       temperature: 0,
-      max_tokens: Math.max(1024, items.length * 24),
+      // 96 tokens/item: labels cap at 64 UTF-8 bytes (sanitizeLabel) plus
+      // index overhead — the old 24/item truncated large batches mid-JSON,
+      // and at temperature 0 a deterministic truncation burns every attempt
+      max_tokens: Math.max(1024, items.length * 96),
       response_format: {
         type: "json_schema",
         json_schema: { schema: responseSchema() },

@@ -13,8 +13,8 @@
 # revision. `make model` downloads it into $(MODEL_DIR) and records the path
 # in $(MODEL_FILE). No Ollama involved anywhere.
 # Alternative quant, e.g. unsloth's slightly smaller imatrix build:
-#   make model MODEL_HF_REPO=unsloth/Qwen3.8-27B-GGUF MODEL_HF_FILE=Qwen3.8-27B-UD-Q4_K_M.gguf
-#   (omit MODEL_HF_REVISION to pin nothing / track the repo default)
+#   make model MODEL_HF_REPO=unsloth/Qwen3.8-27B-GGUF MODEL_HF_FILE=Qwen3.8-27B-UD-Q4_K_M.gguf MODEL_HF_REVISION=
+#   (MODEL_HF_REVISION= pins nothing / tracks the repo default branch)
 MODEL_HF_REPO     ?= ggml-org/Qwen3.8-27B-GGUF
 MODEL_HF_FILE     ?= Qwen3.8-27B-Q4_K_M.gguf
 MODEL_HF_REVISION ?= 0669b98607d47046c7c2b3f801011d54a08cfccf
@@ -25,7 +25,9 @@ LLM_HOST          ?= 127.0.0.1
 LLM_PORT          ?= 8080
 LLM_CTX           ?= 8192
 
-MODEL_URL = https://huggingface.co/$(MODEL_HF_REPO)/resolve/$(MODEL_HF_REVISION)/$(MODEL_HF_FILE)
+# an empty MODEL_HF_REVISION means "track the repo default branch"
+MODEL_REV = $(if $(MODEL_HF_REVISION),$(MODEL_HF_REVISION),main)
+MODEL_URL = https://huggingface.co/$(MODEL_HF_REPO)/resolve/$(MODEL_REV)/$(MODEL_HF_FILE)
 MODEL_PATH = $(MODEL_DIR)/$(MODEL_HF_FILE)
 
 # Local overrides (LLAMA_SERVER, LLAMA_ENV, MODEL_FILE, …)
@@ -40,6 +42,10 @@ MODEL_PATH = $(MODEL_DIR)/$(MODEL_HF_FILE)
 #   LLAMA_ENV = GGML_BACKEND_PATH=/usr/lib/ollama/cuda_v13/libggml-cuda.so \
 #               LD_LIBRARY_PATH=/usr/lib/ollama/cuda_v13
 LLAMA_SERVER ?= $(shell command -v llama-server 2>/dev/null)
+
+# recipes use bash-only syntax (arrays, ${auth[@]}) — don't rely on /bin/sh
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
 
 .PHONY: help dev app model llm stop llm-status test check format build start
 
@@ -156,7 +162,7 @@ model:
 	fi; \
 	mkdir -p $(MODEL_DIR); \
 	url="$(MODEL_URL)"; \
-	if [ -n "$$HF_TOKEN" ]; then auth=(-H "Authorization: Bearer $$HF_TOKEN"); \
+	if [ -n "$${HF_TOKEN:-}" ]; then auth=(-H "Authorization: Bearer $$HF_TOKEN"); \
 	else auth=(); fi; \
 	echo "Downloading $(MODEL_HF_REPO)/$(MODEL_HF_FILE) (~$$(($(MODEL_SIZE) / 1000000000)) GB)…"; \
 	echo "  $$url"; \
@@ -187,14 +193,14 @@ llm-wait:
 	done; \
 	echo; echo "timeout waiting for llama-server — see /tmp/llama-server.log"; exit 1
 
-# pkill -x matches the process name only (never this recipe's own cmdline)
+# pidfile-targeted kill only: never touch llama-server processes this
+# project didn't start (the health check below reports leftovers)
 stop:
-	@if [ -f /tmp/llama-server.pid ]; then \
-		kill -9 $$(cat /tmp/llama-server.pid) 2>/dev/null; \
-		rm -f /tmp/llama-server.pid; \
+	@if [ -s /tmp/llama-server.pid ]; then \
+		kill -9 $$(cat /tmp/llama-server.pid) 2>/dev/null || true; \
 	fi; \
+	rm -f /tmp/llama-server.pid; \
 	rm -f /tmp/llama-server.managed; \
-	pkill -9 -x llama-server 2>/dev/null; \
 	sleep 1; \
 	if curl -s -m 2 http://$(LLM_HOST):$(LLM_PORT)/health >/dev/null 2>&1; then \
 		echo "llama-server still running on :$(LLM_PORT) — kill it manually"; \

@@ -57,7 +57,7 @@ export const categories = sqliteTable(
     language: text("language").notNull(),
     /** manual (user-created/renamed/assigned) | llm (invented by the model) */
     origin: text("origin").notNull().default("llm"),
-    /** how many transactions carry this label (LLM + manual assigns) */
+    /** how often the label was applied/assigned (apply + assign events, not a live transaction count) */
     usageCount: integer("usage_count").notNull().default(0),
     createdAt: text("created_at")
       .notNull()

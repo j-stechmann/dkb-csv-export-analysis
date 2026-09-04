@@ -28,7 +28,6 @@ import {
   ArrowUp,
   ArrowDown,
   CircleDashed,
-  Pencil,
   Plus,
   Tag,
 } from "lucide-react"
