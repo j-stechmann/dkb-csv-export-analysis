@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
-import { labelRules } from "@/lib/db/schema"
+import { categories, labelRules } from "@/lib/db/schema"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -17,6 +17,15 @@ export async function GET(
   }
 
   const db = getDb()
+  const label = db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(eq(categories.id, labelId))
+    .get()
+  if (!label) {
+    return NextResponse.json({ error: "not_found" }, { status: 404 })
+  }
+
   const rules = db
     .select({
       id: labelRules.id,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { eq, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories, transactions } from "@/lib/db/schema"
-import { normalizeCategoryKey } from "@/lib/labeller/service"
+import { normalizeCategoryKey, isValidLabelName } from "@/lib/labeller/service"
 import { learnRule } from "@/lib/labels/matching"
 
 export const runtime = "nodejs"
@@ -67,11 +67,11 @@ export async function POST(
     categoryId = cat.id
   } else {
     const nameKey = normalizeCategoryKey(labelName)
-    if (!nameKey || labelName.trim().length > 64) {
+    if (!nameKey || !isValidLabelName(labelName.trim())) {
       return NextResponse.json(
         {
           error: "invalid_label",
-          message: "label name must be 1–64 characters",
+          message: "label name must be 1–64 UTF-8 bytes",
         },
         { status: 400 }
       )

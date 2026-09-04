@@ -133,6 +133,17 @@ export function normalizeCategoryKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ")
 }
 
+const textEncoder = new TextEncoder()
+
+/**
+ * Manual label names follow the same cap as LLM-produced labels
+ * (sanitizeLabel): non-empty and at most 64 UTF-8 bytes, so every label a
+ * user creates is reproducible verbatim by the model.
+ */
+export function isValidLabelName(name: string): boolean {
+  return name.length > 0 && textEncoder.encode(name).length <= 64
+}
+
 /**
  * A batch in 'labeling' is complete when it owns no labelable pending rows.
  * 'Gebucht' filter prevents deadlock for batches whose rows are all

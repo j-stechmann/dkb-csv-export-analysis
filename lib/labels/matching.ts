@@ -19,12 +19,6 @@ export interface LearnedRuleInput {
   labelId: number
 }
 
-/** Transaction-like row the worker passes for suggestion lookup. */
-export interface TxLike {
-  id: string
-  counterpartyIban: string | null
-}
-
 /**
  * Looks up suggestions for one transaction: ALL rules whose normalized IBAN
  * key matches, deduped by label, ranked usageCount desc → manual before

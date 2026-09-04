@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { eq, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories } from "@/lib/db/schema"
-import { normalizeCategoryKey } from "@/lib/labeller/service"
+import { normalizeCategoryKey, isValidLabelName } from "@/lib/labeller/service"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -28,9 +28,9 @@ export async function POST(request: NextRequest) {
     name?: unknown
   } | null
   const name = typeof body?.name === "string" ? body.name.trim() : ""
-  if (!name || name.length > 64) {
+  if (!isValidLabelName(name)) {
     return NextResponse.json(
-      { error: "invalid_name", message: "name must be 1–64 characters" },
+      { error: "invalid_name", message: "name must be 1–64 UTF-8 bytes" },
       { status: 400 }
     )
   }

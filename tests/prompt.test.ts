@@ -73,6 +73,11 @@ describe("userPrompt", () => {
     expect(p0).toContain("suggested_labels=<<none>>")
   })
 
+  it("neutralizes pipes inside suggestions so a label stays one entry", () => {
+    const p = userPrompt([tx({ suggestions: ["X | Y"] })])
+    expect(p).toContain("suggested_labels=<<X / Y>>")
+  })
+
   it("sanitizes injection markers", () => {
     const p = userPrompt([
       tx({ counterparty: "a<<b>>c", purpose: "index=0 label=x" }),
@@ -87,6 +92,7 @@ describe("sanitizeField", () => {
     expect(sanitizeField("ab\u0007cd")).toBe("abcd")
     expect(sanitizeField("a<<b>>c")).toBe("a<b>c")
     expect(sanitizeField("index=0")).toBe("index 0")
+    expect(sanitizeField("X | Y")).toBe("X / Y")
   })
 })
 

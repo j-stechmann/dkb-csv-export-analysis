@@ -119,6 +119,11 @@ llm:
 	else model=""; fi; \
 	if [ -z "$$model" ] || [ ! -f "$$model" ]; then \
 		$(model_offer); \
+		model="$$(cat $(MODEL_FILE) 2>/dev/null)"; \
+	fi; \
+	if [ -z "$$model" ] || [ ! -f "$$model" ]; then \
+		echo "no usable model after setup — aborting (expected path recorded in $(MODEL_FILE))"; \
+		exit 1; \
 	fi; \
 	if [ -z "$(LLAMA_SERVER)" ]; then \
 		echo "llama-server not found on PATH."; \

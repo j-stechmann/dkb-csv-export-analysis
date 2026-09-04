@@ -80,7 +80,11 @@ export function systemPrompt(lang: string, existingLabels: string[]): string {
   return s
 }
 
-/** Strips control chars and prompt-structure markers from model input fields. */
+/**
+ * Strips control chars and prompt-structure markers from model input fields.
+ * `<<`/`>>`/`index=`/`|` are neutralized: the suggestions list is joined with
+ * ` | `, so a literal pipe in a label would render as two suggestions.
+ */
 export function sanitizeField(raw: string): string {
   return raw
     .split("")
@@ -93,6 +97,7 @@ export function sanitizeField(raw: string): string {
     .replaceAll("<<", "<")
     .replaceAll(">>", ">")
     .replaceAll("index=", "index ")
+    .replaceAll("|", "/")
 }
 
 export function formatAmount(cents: number): string {

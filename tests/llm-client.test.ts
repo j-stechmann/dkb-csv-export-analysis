@@ -276,6 +276,34 @@ describe("LlmClient.labelBatch", () => {
     ).rejects.toBeInstanceOf(LlmHttpError)
   })
 
+  it("retries malformed JSON responses then succeeds", async () => {
+    let calls = 0
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls++
+        return calls === 1
+          ? chatResponse("prose without json")
+          : chatResponse({ results: [{ index: 0, label: "Miete" }] })
+      })
+    )
+
+    const out = await new LlmClient("http://test").labelBatch([tx({ id: "a" })])
+    expect(out).toEqual([{ id: "a", label: "Miete" }])
+    expect(calls).toBe(2)
+  })
+
+  it("fails after exhausting retries on malformed JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => chatResponse("prose without json"))
+    )
+
+    await expect(
+      new LlmClient("http://test").labelBatch([tx()])
+    ).rejects.toBeInstanceOf(LlmHttpError)
+  })
+
   it("does NOT retry timeouts (no fallback labels)", async () => {
     let calls = 0
     vi.stubGlobal(

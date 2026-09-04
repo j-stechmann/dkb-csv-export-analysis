@@ -9,6 +9,7 @@ import {
   DELETE as deleteLabel,
 } from "@/app/api/labels/[id]/route"
 import { DELETE as deleteRule } from "@/app/api/label-rules/[id]/route"
+import { GET as listRules } from "@/app/api/labels/[id]/rules/route"
 import { POST as assignLabel } from "@/app/api/transactions/[id]/label/route"
 
 const IBAN = "DE02120300000000202051"
@@ -135,6 +136,50 @@ describe("POST /api/labels", () => {
         )
       ).status
     ).toBe(400)
+    // byte cap matches the LLM-side sanitizeLabel limit
+    expect(
+      (
+        await createLabel(
+          jsonReq("http://test/api/labels", { name: "ä".repeat(64) })
+        )
+      ).status
+    ).toBe(400)
+  })
+})
+
+describe("GET /api/labels/[id]/rules", () => {
+  it("returns 404 for an unknown label id", async () => {
+    const res = await listRules(
+      new NextRequest(new Request("http://x/api/labels/999/rules")),
+      { params: Promise.resolve({ id: "999" }) }
+    )
+    expect(res.status).toBe(404)
+  })
+
+  it("returns rules for an existing label", async () => {
+    const created = await createLabel(
+      jsonReq("http://test/api/labels", { name: "Miete" })
+    )
+    const { id } = (await created.json()) as { id: number }
+    db.insert(labelRules)
+      .values({
+        labelId: id,
+        iban: IBAN,
+        nameKey: "vermieter",
+        name: "Vermieter GmbH",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .run()
+
+    const res = await listRules(
+      new NextRequest(new Request(`http://x/api/labels/${id}/rules`)),
+      { params: Promise.resolve({ id: String(id) }) }
+    )
+    expect(res.status).toBe(200)
+    const data = (await res.json()) as { rules: Array<{ labelId: number }> }
+    expect(data.rules).toHaveLength(1)
+    expect(data.rules[0].labelId).toBe(id)
   })
 })
 
@@ -302,6 +347,17 @@ describe("POST /api/transactions/[id]/label", () => {
     const cat = db.select().from(categories).all()[0]
     expect(cat.name).toBe("Sonstiges")
     expect(cat.origin).toBe("manual")
+  })
+
+  it("rejects labelName over 64 UTF-8 bytes with 400", async () => {
+    const txId = seedTx()
+    const out = await assignLabel(
+      jsonReq(`http://test/api/transactions/${txId}/label`, {
+        labelName: "ä".repeat(64),
+      }),
+      { params: Promise.resolve({ id: txId }) }
+    )
+    expect(out.status).toBe(400)
   })
 
   it("returns 404 for unknown transactions and labels", async () => {

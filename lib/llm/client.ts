@@ -138,7 +138,24 @@ export class LlmClient {
       }
 
       if (res.ok) {
-        return this.parseChatResponse(res, items)
+        // Malformed payloads (missing content, unparseable JSON, missing
+        // results array) are transient like 5xx: retry with backoff instead
+        // of failing the batch on the first bad response. At the retry cap
+        // the error propagates and the caller marks the rows failed (no
+        // fallback labels).
+        try {
+          // `return await` is required: a bare `return promise` would let a
+          // rejection escape the try block and skip the retry below
+          return await this.parseChatResponse(res, items)
+        } catch (err) {
+          if (retriesLeft > 0) {
+            retriesLeft--
+            attempt++
+            await sleep(backoffMs(attempt))
+            continue
+          }
+          throw err
+        }
       }
 
       if (res.status === 429 || res.status >= 500) {
