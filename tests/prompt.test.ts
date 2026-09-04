@@ -113,10 +113,24 @@ describe("truncateField", () => {
 
 describe("responseSchema", () => {
   it("has no enum and bounds label length", () => {
-    const s = JSON.stringify(responseSchema())
+    const s = JSON.stringify(responseSchema(3))
     expect(s).not.toContain('"enum"')
     expect(s).toContain("maxLength")
     expect(s).not.toContain("rationale")
+  })
+
+  it("bounds index and array length to the batch size", () => {
+    const s = JSON.stringify(responseSchema(3))
+    expect(s).toContain('"maximum":2')
+    expect(s).toContain('"maxItems":3')
+    expect(s).toContain('"minItems":3')
+    expect(s).toContain('"minimum":0')
+  })
+
+  it("keeps a valid single-item schema", () => {
+    const s = JSON.stringify(responseSchema(1))
+    expect(s).toContain('"maximum":0')
+    expect(s).toContain('"maxItems":1')
   })
 })
 

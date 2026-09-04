@@ -166,7 +166,7 @@ model:
 	else auth=(); fi; \
 	echo "Downloading $(MODEL_HF_REPO)/$(MODEL_HF_FILE) (~$$(($(MODEL_SIZE) / 1000000000)) GB)…"; \
 	echo "  $$url"; \
-	curl -L -C - --fail --progress-bar "$${auth[@]}" -o "$(MODEL_PATH).part" "$$url" || { \
+	curl -L -C - --fail --progress-bar $${auth[@]+"$${auth[@]}"} -o "$(MODEL_PATH).part" "$$url" || { \
 		echo "download failed (resumable — re-run 'make model' to continue)"; exit 1; }; \
 	if [ "$$(stat -c %s "$(MODEL_PATH).part")" -lt 1000000000 ]; then \
 		echo "downloaded file suspiciously small — aborting"; exit 1; \

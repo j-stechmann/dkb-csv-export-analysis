@@ -184,6 +184,76 @@ describe("resetTransactionsForLabelDeletion", () => {
     expect(getBatch(completed)!.status).toBe("labeling")
     expect(getBatch(failed)!.status).toBe("failed")
   })
+
+  it("runs inside the caller's transaction when passed (atomic delete path)", () => {
+    const batchId = seedBatch("completed")
+    const a = seedTx(batchId, { labelStatus: "labeled" })
+
+    const catId = db
+      .insert(categories)
+      .values({ name: "Alt", nameKey: "alt", language: "de" })
+      .returning()
+      .get().id
+    db.update(transactions)
+      .set({ categoryId: catId })
+      .where(eq(transactions.id, a))
+      .run()
+
+    // mirrors the DELETE route: reset + category delete commit atomically
+    db.transaction((tx) => {
+      const affected = resetTransactionsForLabelDeletion(catId, tx)
+      expect(affected).toEqual([a])
+      tx.delete(categories).where(eq(categories.id, catId)).run()
+    })
+
+    expect(getTx(a)!.categoryId).toBeNull()
+    expect(getTx(a)!.labelStatus).toBe("pending")
+    expect(getBatch(batchId)!.status).toBe("labeling")
+    expect(db.select().from(categories).all()).toHaveLength(0)
+  })
+
+  it("rolls back reset + delete together when the delete fails", () => {
+    const batchId = seedBatch("completed")
+    const a = seedTx(batchId, { labelStatus: "labeled" })
+
+    const catId = db
+      .insert(categories)
+      .values({ name: "Alt", nameKey: "alt", language: "de" })
+      .returning()
+      .get().id
+    db.update(transactions)
+      .set({ categoryId: catId })
+      .where(eq(transactions.id, a))
+      .run()
+
+    // block the category delete → the whole transaction must roll back,
+    // leaving the transaction attached to the label (FK window closed)
+    expect(() =>
+      db.transaction((tx) => {
+        resetTransactionsForLabelDeletion(catId, tx)
+        tx.delete(categories).where(eq(categories.id, catId)).run()
+        // simulate a racing write that makes the delete impossible
+        tx.insert(transactions)
+          .values({
+            id: "fk-blocker",
+            accountId,
+            batchId,
+            bookingDate: "2026-02-03",
+            status: "Gebucht",
+            type: "Ausgang",
+            amountCents: -1,
+            sourceHash: "hash-fk-blocker",
+            categoryId: catId,
+          })
+          .run()
+      })
+    ).toThrow(/FOREIGN KEY/)
+
+    const row = getTx(a)!
+    expect(row.categoryId).toBe(catId)
+    expect(row.labelStatus).toBe("labeled")
+    expect(db.select().from(categories).all()).toHaveLength(1)
+  })
 })
 
 describe("delete cascade", () => {

@@ -208,16 +208,21 @@ export function hasLabelableRows(batchId: string): boolean {
 
 /**
  * Resets every transaction currently carrying `categoryId` to unlabeled so
- * the label worker re-labels them after the label is deleted. Also
- * re-points completed owning batches to 'labeling' (only 'completed' —
- * parsing/importing/failed keep their stage semantics) and refreshes their
- * stale labels_total. Returns the affected transaction ids.
+ * the label worker re-labels them after the label is deleted. Also re-points
+ * completed owning batches to 'labeling' (only 'completed' — parsing/
+ * importing/failed keep their stage semantics) and refreshes their stale
+ * labels_total. Returns the affected transaction ids.
+ * Passing `existingTx` runs the reset inside that caller's transaction so the
+ * reset and the subsequent category delete commit atomically (the DELETE
+ * route wraps both to avoid a FK window for concurrent LLM applies).
  */
 export function resetTransactionsForLabelDeletion(
-  categoryId: number
+  categoryId: number,
+  existingTx?: DbTx
 ): string[] {
   const db = getDb()
-  const affected = db
+  const handle = existingTx ?? db
+  const affected = handle
     .select({
       id: transactions.id,
       batchId: transactions.batchId,
@@ -226,7 +231,7 @@ export function resetTransactionsForLabelDeletion(
     .where(eq(transactions.categoryId, categoryId))
     .all()
 
-  db.transaction((tx) => {
+  const run = (tx: DbTx) => {
     const batchIds = new Set<string>()
     for (const row of affected) {
       tx.update(transactions)
@@ -256,7 +261,13 @@ export function resetTransactionsForLabelDeletion(
         )
         .run()
     }
-  })
+  }
+
+  if (existingTx) {
+    run(existingTx)
+  } else {
+    db.transaction(run)
+  }
 
   return affected.map((r) => r.id)
 }

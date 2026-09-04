@@ -118,18 +118,22 @@ export function userPrompt(txs: PromptTransaction[]): string {
 /**
  * JSON schema for llama-server grammar-constrained decoding. The label is a
  * free string (no enum — the model may invent); length bounds are advisory,
- * the client re-sanitizes/caps at runtime.
+ * the client re-sanitizes/caps at runtime. `itemCount` bounds the echoed
+ * index (and the array length) to the batch, so the grammar itself can't
+ * produce out-of-range indices.
  */
-export function responseSchema(): Record<string, unknown> {
+export function responseSchema(itemCount: number): Record<string, unknown> {
   return {
     type: "object",
     properties: {
       results: {
         type: "array",
+        minItems: itemCount,
+        maxItems: itemCount,
         items: {
           type: "object",
           properties: {
-            index: { type: "integer", minimum: 0 },
+            index: { type: "integer", minimum: 0, maximum: itemCount - 1 },
             label: { type: "string", minLength: 1, maxLength: 64 },
           },
           required: ["index", "label"],

@@ -78,8 +78,11 @@ export class LlmClient {
   }
 
   /**
-   * Label one batch against llama-server. Returns results positionally
-   * (results[k] ↔ items[k], missing slots omitted). Transient failures
+   * Label one batch against llama-server. Returns one result per successfully
+   * labelled item: model-echoed indices inside [0, items.length) are honored
+   * (first valid label per slot wins), entries without a usable index fill
+   * the next open slot, unfilled slots are omitted — the caller decides
+   * (mark failed), keeping "no fallback labels". Transient failures
    * (network, 429, 5xx) are retried with exponential backoff; a timeout is
    * NOT retried — it throws LlmTimeoutError so the caller marks claimed rows
    * failed (there are no fallback labels).
@@ -106,11 +109,12 @@ export class LlmClient {
       max_tokens: Math.max(1024, items.length * 96),
       response_format: {
         type: "json_schema",
-        json_schema: { schema: responseSchema() },
+        json_schema: { schema: responseSchema(items.length) },
       },
     }
 
     let retriesLeft = cfg.LLM_MAX_RETRIES
+    let attempt = 0
     for (;;) {
       let res: Response
       try {
@@ -126,7 +130,8 @@ export class LlmClient {
         // network error behaves like backend down (transient)
         if (retriesLeft > 0) {
           retriesLeft--
-          await sleep(backoffMs(retriesLeft))
+          attempt++
+          await sleep(backoffMs(attempt))
           continue
         }
         throw new LlmUnreachableError((err as Error).message)
@@ -139,7 +144,8 @@ export class LlmClient {
       if (res.status === 429 || res.status >= 500) {
         if (retriesLeft > 0) {
           retriesLeft--
-          await sleep(backoffMs(retriesLeft))
+          attempt++
+          await sleep(backoffMs(attempt))
           continue
         }
         throw new LlmHttpError(res.status, await safeBody(res))
@@ -159,10 +165,13 @@ export class LlmClient {
   }
 
   /**
-   * Positional association: results[k] ↔ items[k]. The model-echoed index is
-   * never trusted; first valid label per slot wins, duplicate/empty labels
-   * skipped, extra results dropped. Missing slots are simply absent from the
-   * output — the caller decides (mark failed), keeping "no fallback labels".
+   * Index-aware association: a model-echoed `index` within
+   * [0, items.length) pins the label to that item; entries without an
+   * integer index fill the next open slot; out-of-range indices are dropped
+   * (not shifted). First valid label per
+   * slot wins, duplicate/empty labels skipped, extra results dropped.
+   * Unfilled slots are absent from the output — the caller decides (mark
+   * failed), keeping "no fallback labels".
    */
   private async parseChatResponse(
     res: Response,
@@ -184,17 +193,30 @@ export class LlmClient {
       throw new LlmHttpError(res.status, "missing results array")
     }
 
-    const out: LabelResult[] = []
+    const out: (LabelResult | null)[] = new Array(items.length).fill(null)
+    let fallbackSlot = 0
     for (const entry of results) {
-      if (out.length >= items.length) break
       if (!entry || typeof entry !== "object") continue
       const label = (entry as { label?: unknown }).label
       if (typeof label !== "string") continue
       const cleaned = sanitizeLabel(label)
       if (!cleaned) continue
-      out.push({ id: items[out.length].id, label: cleaned })
+      const index = (entry as { index?: unknown }).index
+      let slot = -1
+      if (typeof index === "number" && Number.isInteger(index)) {
+        if (index < 0 || index >= items.length) continue
+        slot = index
+      } else {
+        while (fallbackSlot < items.length && out[fallbackSlot] !== null) {
+          fallbackSlot++
+        }
+        if (fallbackSlot >= items.length) break
+        slot = fallbackSlot
+      }
+      if (out[slot] !== null) continue
+      out[slot] = { id: items[slot].id, label: cleaned }
     }
-    return out
+    return out.filter((r): r is LabelResult => r !== null)
   }
 }
 

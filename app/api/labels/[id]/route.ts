@@ -102,8 +102,15 @@ export async function DELETE(
   //    (also re-points completed batches + refreshes labels_total)
   // 2. delete: rules cascade (FK ON DELETE CASCADE), FK satisfied since no
   //    transaction references the label anymore
-  const affectedIds = resetTransactionsForLabelDeletion(labelId)
-  db.delete(categories).where(eq(categories.id, labelId)).run()
+  // Both steps run in ONE transaction: a concurrent LLM apply landing between
+  // them would otherwise hit the transactions.category_id FK and 500. The
+  // reset sets labelAttempts to 0, invalidating any in-flight claim, but the
+  // single commit removes that window entirely.
+  const affectedIds = db.transaction((tx) => {
+    const ids = resetTransactionsForLabelDeletion(labelId, tx)
+    tx.delete(categories).where(eq(categories.id, labelId)).run()
+    return ids
+  })
 
   return NextResponse.json({ affected: affectedIds.length })
 }

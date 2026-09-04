@@ -72,7 +72,30 @@ describe("LlmClient.labelBatch", () => {
     ])
   })
 
-  it("maps results positionally, ignoring echoed indices", async () => {
+  it("honors echoed indices, ignoring order", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        chatResponse({
+          results: [
+            { index: 1, label: "Miete" },
+            { index: 0, label: "Lebensmittel" },
+          ],
+        })
+      )
+    )
+
+    const out = await new LlmClient("http://test").labelBatch([
+      tx({ id: "a" }),
+      tx({ id: "b" }),
+    ])
+    expect(out).toEqual([
+      { id: "a", label: "Lebensmittel" },
+      { id: "b", label: "Miete" },
+    ])
+  })
+
+  it("drops out-of-range indices instead of shifting", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -89,7 +112,33 @@ describe("LlmClient.labelBatch", () => {
       tx({ id: "a" }),
       tx({ id: "b" }),
     ])
-    expect(out.map((r) => r.label)).toEqual(["Lebensmittel", "Miete"])
+    expect(out).toEqual([])
+  })
+
+  it("omits slots the model left empty (no neighbor shift)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        chatResponse({
+          results: [
+            { index: 0, label: "Lebensmittel" },
+            { index: 1, label: "   " },
+            { index: 2, label: "Miete" },
+          ],
+        })
+      )
+    )
+
+    const out = await new LlmClient("http://test").labelBatch([
+      tx({ id: "a" }),
+      tx({ id: "b" }),
+      tx({ id: "c" }),
+    ])
+    // slot 1 stays empty — "Miete" stays pinned to slot 2 (item c), not b
+    expect(out).toEqual([
+      { id: "a", label: "Lebensmittel" },
+      { id: "c", label: "Miete" },
+    ])
   })
 
   it("drops invalid/empty labels and extra results", async () => {
@@ -111,11 +160,50 @@ describe("LlmClient.labelBatch", () => {
       tx({ id: "a" }),
       tx({ id: "b" }),
     ])
-    // positional first-valid-wins: "Miete" fills slot 0, "Extra" slot 1;
-    // empty labels and non-string entries are skipped
+    // "Miete" pins to slot 1; the empty label skips slot 0; the out-of-range
+    // and non-string entries are skipped
+    expect(out).toEqual([{ id: "b", label: "Miete" }])
+  })
+
+  it("fills unlabeled slots when the model omits indices", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        chatResponse({
+          results: [{ label: "Lebensmittel" }, { label: "Miete" }],
+        })
+      )
+    )
+
+    const out = await new LlmClient("http://test").labelBatch([
+      tx({ id: "a" }),
+      tx({ id: "b" }),
+    ])
     expect(out).toEqual([
-      { id: "a", label: "Miete" },
-      { id: "b", label: "Extra" },
+      { id: "a", label: "Lebensmittel" },
+      { id: "b", label: "Miete" },
+    ])
+  })
+
+  it("fills open slots around pinned indices", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        chatResponse({
+          results: [{ index: 1, label: "Miete" }, { label: "Lebensmittel" }],
+        })
+      )
+    )
+
+    const out = await new LlmClient("http://test").labelBatch([
+      tx({ id: "a" }),
+      tx({ id: "b" }),
+      tx({ id: "c" }),
+    ])
+    // no-index entry fills slot 0 (first open), pinned "Miete" stays slot 1
+    expect(out).toEqual([
+      { id: "a", label: "Lebensmittel" },
+      { id: "b", label: "Miete" },
     ])
   })
 
