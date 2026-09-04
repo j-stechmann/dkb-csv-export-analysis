@@ -6,6 +6,8 @@ import * as schema from "./schema"
 import { getConfig } from "@/lib/config"
 
 export type Db = ReturnType<typeof createDb>
+/** Transaction callback parameter type (for helpers receiving `tx`). */
+export type DbTx = Parameters<Parameters<Db["transaction"]>[0]>[0]
 
 function createDb() {
   const dbPath = getConfig().DATABASE_PATH
@@ -98,11 +100,33 @@ export function createSchemaSqlite(db: Db) {
       name TEXT NOT NULL,
       name_key TEXT NOT NULL,
       language TEXT NOT NULL,
+      origin TEXT NOT NULL DEFAULT 'llm',
+      usage_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     )
   `)
   db.run(
     `CREATE UNIQUE INDEX IF NOT EXISTS categories_name_key_unique ON categories (name_key)`
+  )
+  db.run(`
+    CREATE TABLE IF NOT EXISTS label_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+      iban TEXT NOT NULL,
+      name_key TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+  db.run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS label_rules_iban_name_key_unique ON label_rules (iban, name_key)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS label_rules_iban_idx ON label_rules (iban)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS label_rules_label_idx ON label_rules (label_id)`
   )
   db.run(`
     CREATE TABLE IF NOT EXISTS transactions (
@@ -174,4 +198,36 @@ export function migrateSchema(db: Db) {
       `ALTER TABLE import_batches ADD COLUMN rows_updated INTEGER NOT NULL DEFAULT 0`
     )
   }
+  if (!cols("categories").includes("origin")) {
+    db.run(
+      `ALTER TABLE categories ADD COLUMN origin TEXT NOT NULL DEFAULT 'llm'`
+    )
+  }
+  if (!cols("categories").includes("usage_count")) {
+    db.run(
+      `ALTER TABLE categories ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0`
+    )
+  }
+  // label_rules: CREATE TABLE IF NOT EXISTS handles fresh files; older DBs
+  // created before this feature also get the table here (idempotent).
+  db.run(`
+    CREATE TABLE IF NOT EXISTS label_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      label_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+      iban TEXT NOT NULL,
+      name_key TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+  db.run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS label_rules_iban_name_key_unique ON label_rules (iban, name_key)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS label_rules_iban_idx ON label_rules (iban)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS label_rules_label_idx ON label_rules (label_id)`
+  )
 }

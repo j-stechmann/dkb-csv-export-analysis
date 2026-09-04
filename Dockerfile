@@ -44,12 +44,12 @@ USER node
 
 EXPOSE 3000
 
-# HTTP liveness probe only: this route always returns 200 (labeller status
-# is in the body, DB status is not checked), so an external labeller outage
-# or a misconfigured DATABASE_PATH never marks the container unhealthy.
+# HTTP liveness probe only: this route always returns 200 (LLM status
+# is in the body, DB status is not checked), so an external llama-server
+# outage or a misconfigured DATABASE_PATH never marks the container unhealthy.
 # Schema setup in instrumentation only logs failures instead of crashing
 # startup, so DB readiness is not covered by probes or --start-period.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/labeller/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/llm/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.js"]

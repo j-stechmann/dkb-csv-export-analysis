@@ -16,7 +16,6 @@ data
 tests
 scripts
 template.csv
-labeller-openapi.json
 vitest.config.ts
 eslint.config.mjs
 components.json

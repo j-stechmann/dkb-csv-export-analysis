@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Table,
   TableBody,
@@ -13,6 +13,14 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   ChevronLeft,
   ChevronRight,
@@ -20,11 +28,14 @@ import {
   ArrowUp,
   ArrowDown,
   CircleDashed,
+  Plus,
   Tag,
 } from "lucide-react"
+import { toast } from "sonner"
 import { filtersToParams, type DashboardFilters } from "@/lib/filters"
 import { getCategoryColor } from "@/lib/category-colors"
 import { ErrorState } from "@/components/error-state"
+import { cn } from "@/lib/utils"
 
 interface TxRow {
   id: string
@@ -94,6 +105,167 @@ function CategoryCell({ row }: { row: TxRow }) {
   )
 }
 
+interface LabelOption {
+  id: number
+  name: string
+  origin: string
+}
+
+function AssignLabelDialog({
+  row,
+  onClose,
+}: {
+  row: TxRow
+  onClose: () => void
+}) {
+  const [search, setSearch] = React.useState("")
+  const [selectedId, setSelectedId] = React.useState<number | null>(
+    row.categoryId
+  )
+  const [busy, setBusy] = React.useState(false)
+  const queryClient = useQueryClient()
+
+  const { data } = useQuery<{ labels: LabelOption[] }>({
+    queryKey: ["labels"],
+    queryFn: async () => {
+      const res = await fetch("/api/labels")
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    },
+  })
+
+  const labels = (data?.labels ?? []).filter((l) =>
+    l.name.toLowerCase().includes(search.toLowerCase())
+  )
+  const exactMatch = (data?.labels ?? []).find(
+    (l) => l.name.toLowerCase() === search.trim().toLowerCase()
+  )
+  const selected = (data?.labels ?? []).find((l) => l.id === selectedId)
+
+  const assign = async () => {
+    if (!selectedId) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/transactions/${row.id}/label`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labelId: selectedId }),
+      })
+      const data2 = (await res.json()) as { error?: string; message?: string }
+      if (res.ok) {
+        toast.success("Kategorie zugewiesen", {
+          description: `Regel für ${row.type === "Ausgang" ? (row.payee ?? "Vertragspartner") : (row.payer ?? "Vertragspartner")} gelernt.`,
+        })
+        void queryClient.invalidateQueries({ queryKey: ["transactions"] })
+        void queryClient.invalidateQueries({ queryKey: ["analytics"] })
+        void queryClient.invalidateQueries({ queryKey: ["categories"] })
+        void queryClient.invalidateQueries({ queryKey: ["labels"] })
+        onClose()
+      } else {
+        toast.error("Zuweisung fehlgeschlagen", {
+          description: data2.message ?? data2.error ?? `HTTP ${res.status}`,
+        })
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const createAndAssign = async () => {
+    if (!search.trim() || exactMatch) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/transactions/${row.id}/label`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labelName: search.trim() }),
+      })
+      const data2 = (await res.json()) as { error?: string; message?: string }
+      if (res.ok) {
+        toast.success(`Label "${search.trim()}" erstellt und zugewiesen`)
+        void queryClient.invalidateQueries({ queryKey: ["transactions"] })
+        void queryClient.invalidateQueries({ queryKey: ["analytics"] })
+        void queryClient.invalidateQueries({ queryKey: ["categories"] })
+        void queryClient.invalidateQueries({ queryKey: ["labels"] })
+        onClose()
+      } else {
+        toast.error("Erstellen fehlgeschlagen", {
+          description: data2.message ?? data2.error ?? `HTTP ${res.status}`,
+        })
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Kategorie zuweisen</DialogTitle>
+        </DialogHeader>
+        <Input
+          placeholder="Label suchen oder neu erstellen…"
+          value={search}
+          autoFocus
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <div className="max-h-56 space-y-1 overflow-y-auto">
+          {labels.map((label) => (
+            <button
+              key={label.id}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent",
+                selectedId === label.id && "border-primary bg-accent"
+              )}
+              onClick={() => setSelectedId(label.id)}
+            >
+              <span
+                className="size-2.5 shrink-0 rounded-full"
+                style={
+                  {
+                    "--category-color": getCategoryColor(label.id),
+                  } as React.CSSProperties
+                }
+              />
+              <span className="truncate">{label.name}</span>
+              {label.origin === "llm" && (
+                <span className="ml-auto text-xs text-muted-foreground">
+                  erfunden
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+          {search.trim() && !exactMatch && (
+            <Button
+              variant="outline"
+              className="w-full"
+              disabled={busy}
+              onClick={() => void createAndAssign()}
+            >
+              <Plus className="size-4" /> &quot;{search.trim()}&quot; neu
+              erstellen und zuweisen
+            </Button>
+          )}
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Abbrechen
+            </Button>
+            <Button
+              disabled={busy || !selectedId}
+              onClick={() => void assign()}
+            >
+              {selected ? `Zuweisen: ${selected.name}` : "Zuweisen"}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function SortHeader({
   label,
   sortKey,
@@ -131,6 +303,7 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
     key: "bookingDate",
     desc: true,
   })
+  const [assignTarget, setAssignTarget] = React.useState<TxRow | null>(null)
 
   const params = React.useMemo(() => {
     const sp = filtersToParams(filters)
@@ -262,7 +435,13 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <CategoryCell row={row} />
+                      <button
+                        className="inline-flex cursor-pointer items-center rounded-md transition-colors hover:bg-accent/60"
+                        onClick={() => setAssignTarget(row)}
+                        title="Kategorie zuweisen"
+                      >
+                        <CategoryCell row={row} />
+                      </button>
                     </TableCell>
                     <TableCell
                       className={`text-right font-medium whitespace-nowrap tabular-nums ${
@@ -307,6 +486,13 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
           </Button>
         </div>
       </div>
+
+      {assignTarget && (
+        <AssignLabelDialog
+          row={assignTarget}
+          onClose={() => setAssignTarget(null)}
+        />
+      )}
     </div>
   )
 }

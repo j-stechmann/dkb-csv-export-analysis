@@ -5,9 +5,9 @@ import { Badge } from "@/components/ui/badge"
 
 export function LabellerHealthBadge() {
   const { data } = useQuery<{ status: "ok" | "degraded" | "unreachable" }>({
-    queryKey: ["labeller-health"],
+    queryKey: ["llm-health"],
     queryFn: async () => {
-      const res = await fetch("/api/labeller/health")
+      const res = await fetch("/api/llm/health")
       if (!res.ok) return { status: "unreachable" as const }
       return res.json()
     },
@@ -17,10 +17,10 @@ export function LabellerHealthBadge() {
   const status = data?.status ?? "unreachable"
   const label =
     status === "ok"
-      ? "Labeller: verbunden"
+      ? "LLM: verbunden"
       : status === "degraded"
-        ? "Labeller: eingeschränkt"
-        : "Labeller: nicht erreichbar"
+        ? "LLM: eingeschränkt"
+        : "LLM: nicht erreichbar"
   const variant =
     status === "ok"
       ? "default"

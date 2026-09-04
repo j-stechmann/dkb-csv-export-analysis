@@ -1,14 +1,57 @@
-import { eq, sql } from "drizzle-orm"
-import { getDb } from "@/lib/db"
+import { and, eq, inArray, sql } from "drizzle-orm"
+import { getDb, type DbTx } from "@/lib/db"
 import { categories, importBatches, transactions } from "@/lib/db/schema"
-import type { LabelResult } from "@/lib/labeller/client"
+import type { LabelResult } from "@/lib/llm/client"
+import { sanitizeField } from "@/lib/llm/prompt"
 
 /**
- * Persist label results: upsert categories, mark rows labeled.
+ * Resolve-or-create a category by name and bump its usageCount.
+ * The single choke point for category writes (LLM apply + manual assign).
+ * Runs inside the caller's transaction. Returns the category id.
+ */
+export function resolveAndUseCategory(tx: DbTx, name: string): number | null {
+  const nameKey = normalizeCategoryKey(name)
+  let cat = tx
+    .select({ id: categories.id })
+    .from(categories)
+    .where(eq(categories.nameKey, nameKey))
+    .get()
+  if (!cat) {
+    const inserted = tx
+      .insert(categories)
+      .values({
+        name: name.trim(),
+        nameKey,
+        language: "de",
+        origin: "llm",
+        usageCount: 0,
+      })
+      .onConflictDoNothing()
+      .returning({ id: categories.id })
+      .get()
+    cat =
+      inserted ??
+      tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(eq(categories.nameKey, nameKey))
+        .get()
+  }
+  if (!cat) return null
+  tx.update(categories)
+    .set({ usageCount: sql`${categories.usageCount} + 1` })
+    .where(eq(categories.id, cat.id))
+    .run()
+  return cat.id
+}
+
+/**
+ * Persist label results: upsert categories (usageCount++), mark rows labeled.
  * Must run inside one transaction so a chunk is all-or-nothing.
  * `claimedAttempts` maps row id → label_attempts captured at claim time;
  * a row whose attempts changed since then was reset by a concurrent
- * fuzzy-update or retry run and is skipped (its label would be stale).
+ * fuzzy-update, retry run, or manual assignment and is skipped (its label
+ * would be stale — the manual label wins over in-flight LLM results).
  * Returns the batch ids affected (for drain-check / progress reads).
  */
 export function applyLabelResults(
@@ -32,35 +75,11 @@ export function applyLabelResults(
       if (row.labelAttempts !== claimedAttempts.get(result.id)) continue
       if (row.batchId) batchIds.add(row.batchId)
 
-      const nameKey = normalizeCategoryKey(result.label)
-      let cat = tx
-        .select({ id: categories.id })
-        .from(categories)
-        .where(eq(categories.nameKey, nameKey))
-        .get()
-      if (!cat) {
-        const inserted = tx
-          .insert(categories)
-          .values({
-            name: result.label,
-            nameKey,
-            language: "de",
-          })
-          .onConflictDoNothing()
-          .returning({ id: categories.id })
-          .get()
-        cat =
-          inserted ??
-          tx
-            .select({ id: categories.id })
-            .from(categories)
-            .where(eq(categories.nameKey, nameKey))
-            .get()
-      }
-      if (!cat) continue
+      const catId = resolveAndUseCategory(tx, result.label)
+      if (!catId) continue
       tx.update(transactions)
         .set({
-          categoryId: cat.id,
+          categoryId: catId,
           labelStatus: "labeled",
           labelAttempts: 0,
           updatedAt: new Date().toISOString(),
@@ -74,10 +93,11 @@ export function applyLabelResults(
 }
 
 /**
- * Mark claimed rows as failed (chunk error path); attempts stay incremented.
- * Rows that a previously-applied chunk already labeled are excluded so a
- * later chunk failure cannot flip them back to failed (they'd be re-claimed
- * and re-sent to the LLM, wasting calls and temporarily showing no category).
+ * Mark claimed rows as failed (chunk error path or empty model output);
+ * attempts stay incremented. Rows that a previously-applied chunk already
+ * labeled are excluded so a later chunk failure cannot flip them back to
+ * failed (they'd be re-claimed and re-sent to the LLM, wasting calls and
+ * temporarily showing no category).
  * Rows whose attempts changed since claim were reset by a concurrent
  * fuzzy-update or retry run — left untouched so their fresh content gets
  * labeled instead of being failed without ever being attempted.
@@ -112,6 +132,29 @@ export function markRowsFailed(
 /** upsert helper shared with pipeline; normalizes label names */
 export function normalizeCategoryKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+const textEncoder = new TextEncoder()
+
+/**
+ * Manual label names must be non-empty, at most 64 UTF-8 bytes, free of
+ * control characters, and must survive sanitizeField (the prompt renderer)
+ * unchanged. sanitizeLabel strips controls and neutralizes markers from
+ * model output, and sanitizeField rewrites `|`/`<<`/`>>`/`index=` in the
+ * suggestions list — so a stored name containing one could never normalize
+ * back to its own nameKey and would instead create a phantom duplicate
+ * category on every reuse ("Miete | Nebenkosten" renders as
+ * "Miete / Nebenkosten"). Such names are rejected outright rather than
+ * silently rewritten. The round-trip check subsumes the marker list, so it
+ * cannot drift if sanitizeField's rewrite set ever changes.
+ */
+export function isValidLabelName(name: string): boolean {
+  if (name.length === 0 || textEncoder.encode(name).length > 64) return false
+  for (const c of name) {
+    const code = c.codePointAt(0) ?? 0
+    if (code < 0x20 || code === 0x7f) return false
+  }
+  return sanitizeField(name) === name
 }
 
 /**
@@ -149,11 +192,19 @@ export function completeDrainedBatches(maxAttempts: number): number {
   return done.length
 }
 
-/** prune categories that no transaction references */
+/**
+ * Prune categories that no transaction references AND that carry no learned
+ * rules — and only LLM-invented ones. Manual labels and any label still
+ * referenced by a learned rule survive so user intent and suggestion
+ * history are never silently destroyed.
+ */
 export function pruneOrphanCategories(): number {
   const db = getDb()
   const result = db.run(
-    `DELETE FROM categories WHERE id NOT IN (SELECT DISTINCT category_id FROM transactions WHERE category_id IS NOT NULL)`
+    `DELETE FROM categories
+     WHERE origin = 'llm'
+       AND id NOT IN (SELECT DISTINCT category_id FROM transactions WHERE category_id IS NOT NULL)
+       AND id NOT IN (SELECT DISTINCT label_id FROM label_rules)`
   )
   return result.changes
 }
@@ -177,4 +228,70 @@ export function hasLabelableRows(batchId: string): boolean {
     .limit(1)
     .get()
   return row !== undefined
+}
+
+/**
+ * Resets every transaction currently carrying `categoryId` to unlabeled so
+ * the label worker re-labels them after the label is deleted. Also re-points
+ * completed owning batches to 'labeling' (only 'completed' — parsing/
+ * importing/failed keep their stage semantics) and refreshes their stale
+ * labels_total. Returns the affected transaction ids.
+ * Passing `existingTx` runs the reset inside that caller's transaction so the
+ * reset and the subsequent category delete commit atomically (the DELETE
+ * route wraps both to avoid a FK window for concurrent LLM applies).
+ */
+export function resetTransactionsForLabelDeletion(
+  categoryId: number,
+  existingTx?: DbTx
+): string[] {
+  const db = getDb()
+  const handle = existingTx ?? db
+  const affected = handle
+    .select({
+      id: transactions.id,
+      batchId: transactions.batchId,
+    })
+    .from(transactions)
+    .where(eq(transactions.categoryId, categoryId))
+    .all()
+
+  const run = (tx: DbTx) => {
+    const batchIds = new Set<string>()
+    for (const row of affected) {
+      tx.update(transactions)
+        .set({
+          categoryId: null,
+          labelStatus: "pending",
+          labelAttempts: 0,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(transactions.id, row.id))
+        .run()
+      if (row.batchId) batchIds.add(row.batchId)
+    }
+    if (batchIds.size > 0) {
+      const now = new Date().toISOString()
+      tx.update(importBatches)
+        .set({
+          status: "labeling",
+          labelsTotal: sql`(SELECT COUNT(*) FROM transactions t WHERE t.batch_id = import_batches.id AND t.status = 'Gebucht')`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            inArray(importBatches.id, [...batchIds]),
+            eq(importBatches.status, "completed")
+          )
+        )
+        .run()
+    }
+  }
+
+  if (existingTx) {
+    run(existingTx)
+  } else {
+    db.transaction(run)
+  }
+
+  return affected.map((r) => r.id)
 }

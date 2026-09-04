@@ -76,6 +76,7 @@ export function ActiveImportProvider({
       void queryClient.invalidateQueries({ queryKey: ["analytics"] })
       void queryClient.invalidateQueries({ queryKey: ["transactions"] })
       void queryClient.invalidateQueries({ queryKey: ["categories"] })
+      void queryClient.invalidateQueries({ queryKey: ["labels"] })
     }
     if (batch.status === "failed" && prevStatus.current !== "failed") {
       toast.error("Import fehlgeschlagen", {
