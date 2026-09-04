@@ -144,6 +144,15 @@ describe("POST /api/labels", () => {
         )
       ).status
     ).toBe(400)
+    // control characters would break the model-echo round-trip
+    // (sanitizeLabel strips them from model output)
+    expect(
+      (
+        await createLabel(
+          jsonReq("http://test/api/labels", { name: "a\u0007b" })
+        )
+      ).status
+    ).toBe(400)
   })
 })
 
@@ -354,6 +363,17 @@ describe("POST /api/transactions/[id]/label", () => {
     const out = await assignLabel(
       jsonReq(`http://test/api/transactions/${txId}/label`, {
         labelName: "ä".repeat(64),
+      }),
+      { params: Promise.resolve({ id: txId }) }
+    )
+    expect(out.status).toBe(400)
+  })
+
+  it("rejects labelName with control characters with 400", async () => {
+    const txId = seedTx()
+    const out = await assignLabel(
+      jsonReq(`http://test/api/transactions/${txId}/label`, {
+        labelName: "a\u0007b",
       }),
       { params: Promise.resolve({ id: txId }) }
     )

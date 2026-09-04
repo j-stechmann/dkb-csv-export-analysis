@@ -123,7 +123,7 @@ export class LlmClient {
         // AbortSignal.timeout() rejects fetch with a DOMException named
         // "TimeoutError" — timeouts are NOT retried (no fallback labels:
         // the caller marks the claimed rows failed)
-        if (err instanceof DOMException && err.name === "TimeoutError") {
+        if (isTimeoutError(err)) {
           throw new LlmTimeoutError(this.cfg.LLM_TIMEOUT_MS)
         }
         if (err instanceof LlmTimeoutError) throw err
@@ -142,12 +142,17 @@ export class LlmClient {
         // results array) are transient like 5xx: retry with backoff instead
         // of failing the batch on the first bad response. At the retry cap
         // the error propagates and the caller marks the rows failed (no
-        // fallback labels).
+        // fallback labels). A timeout while reading the body is NOT retried
+        // (same DOMException TimeoutError as the fetch itself — see
+        // isTimeoutError).
         try {
           // `return await` is required: a bare `return promise` would let a
           // rejection escape the try block and skip the retry below
           return await this.parseChatResponse(res, items)
         } catch (err) {
+          if (isTimeoutError(err)) {
+            throw new LlmTimeoutError(this.cfg.LLM_TIMEOUT_MS)
+          }
           if (retriesLeft > 0) {
             retriesLeft--
             attempt++
@@ -194,7 +199,13 @@ export class LlmClient {
     res: Response,
     items: PromptTransaction[]
   ): Promise<LabelResult[]> {
-    const payload = (await res.json().catch(() => null)) as {
+    // A body read that stalls past the deadline rejects with the same
+    // TimeoutError DOMException as fetch itself — rethrow so labelBatch
+    // classifies it as a timeout instead of a malformed "transient" body.
+    const payload = (await res.json().catch((err) => {
+      if (isTimeoutError(err)) throw err
+      return null
+    })) as {
       choices?: Array<{ message?: { content?: string } }>
     } | null
     const content = payload?.choices?.[0]?.message?.content
@@ -239,6 +250,18 @@ export class LlmClient {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * AbortSignal.timeout() rejects with a DOMException named "TimeoutError"
+ * (Node ≥17.3 and Bun). Also matches a pre-rejected LlmTimeoutError so a
+ * rethrown body-read timeout keeps its classification through labelBatch.
+ */
+function isTimeoutError(err: unknown): boolean {
+  return (
+    (err instanceof DOMException && err.name === "TimeoutError") ||
+    err instanceof LlmTimeoutError
+  )
 }
 
 /** 200ms · 4^(attempt-1) + jitter [0, base/4] — ported from the Rust client. */

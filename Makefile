@@ -114,7 +114,11 @@ endef
 
 # ── llama-server ────────────────────────────────────────────────────────────
 llm:
-	@if [ -n "$(MODEL)" ]; then model="$(MODEL)"; \
+	@if curl -s -m 2 http://$(LLM_HOST):$(LLM_PORT)/health >/dev/null 2>&1; then \
+		echo "llama-server already running on :$(LLM_PORT)"; \
+		exit 0; \
+	fi; \
+	if [ -n "$(MODEL)" ]; then model="$(MODEL)"; \
 	elif [ -f "$(MODEL_FILE)" ] && [ -f "$$(cat $(MODEL_FILE) 2>/dev/null)" ]; then model=$$(cat $(MODEL_FILE)); \
 	else model=""; fi; \
 	if [ -z "$$model" ] || [ ! -f "$$model" ]; then \
@@ -129,10 +133,6 @@ llm:
 		echo "llama-server not found on PATH."; \
 		echo "Install llama.cpp (CUDA build for GPU) or set LLAMA_SERVER=/path/to/llama-server"; \
 		exit 1; \
-	fi; \
-	if curl -s -m 2 http://$(LLM_HOST):$(LLM_PORT)/health >/dev/null 2>&1; then \
-		echo "llama-server already running on :$(LLM_PORT)"; \
-		exit 0; \
 	fi; \
 	if $(LLAMA_ENV) $(LLAMA_SERVER) --list-devices 2>/dev/null | grep -qE "CUDA0|Vulkan0|ROCm|SYCL0"; then \
 		gpu_args="-ngl auto --fit on"; \

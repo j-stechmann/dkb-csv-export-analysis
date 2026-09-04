@@ -11,6 +11,7 @@ import {
 import {
   applyLabelResults,
   completeDrainedBatches,
+  isValidLabelName,
   markRowsFailed,
   normalizeCategoryKey,
   pruneOrphanCategories,
@@ -409,6 +410,27 @@ describe("normalizeCategoryKey", () => {
     expect(normalizeCategoryKey("  Lebensmittel   Einkauf ")).toBe(
       "lebensmittel einkauf"
     )
+  })
+})
+
+describe("isValidLabelName", () => {
+  it("accepts normal names within the 64-byte cap", () => {
+    expect(isValidLabelName("Lebensmittel")).toBe(true)
+    expect(isValidLabelName("ä".repeat(32))).toBe(true) // 64 bytes
+  })
+
+  it("rejects empty and oversized names", () => {
+    expect(isValidLabelName("")).toBe(false)
+    expect(isValidLabelName("x".repeat(65))).toBe(false)
+    expect(isValidLabelName("ä".repeat(33))).toBe(false) // 66 bytes
+  })
+
+  it("rejects control characters (model echo could never reproduce them)", () => {
+    expect(isValidLabelName("a\u0007b")).toBe(false)
+    expect(isValidLabelName("a\u001Bb")).toBe(false) // ESC
+    expect(isValidLabelName("a\u007Fb")).toBe(false) // DEL
+    expect(isValidLabelName("a\nb")).toBe(false)
+    expect(isValidLabelName("a\tb")).toBe(false)
   })
 })
 

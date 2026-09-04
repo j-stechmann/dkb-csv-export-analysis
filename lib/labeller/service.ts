@@ -136,12 +136,20 @@ export function normalizeCategoryKey(name: string): string {
 const textEncoder = new TextEncoder()
 
 /**
- * Manual label names follow the same cap as LLM-produced labels
- * (sanitizeLabel): non-empty and at most 64 UTF-8 bytes, so every label a
- * user creates is reproducible verbatim by the model.
+ * Manual label names follow the same constraints as LLM-produced labels
+ * (sanitizeLabel): non-empty, at most 64 UTF-8 bytes, and free of control
+ * characters. sanitizeLabel strips controls from model output, so a stored
+ * name containing one could never normalize back to its own nameKey and
+ * would instead create a phantom duplicate category on every reuse — such
+ * names are rejected outright rather than silently rewritten.
  */
 export function isValidLabelName(name: string): boolean {
-  return name.length > 0 && textEncoder.encode(name).length <= 64
+  if (name.length === 0 || textEncoder.encode(name).length > 64) return false
+  for (const c of name) {
+    const code = c.codePointAt(0) ?? 0
+    if (code < 0x20 || code === 0x7f) return false
+  }
+  return true
 }
 
 /**

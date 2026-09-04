@@ -329,6 +329,33 @@ describe("LlmClient.labelBatch", () => {
     expect(calls).toBe(1)
   })
 
+  it("does NOT retry a timeout during the body read", async () => {
+    let calls = 0
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls++
+        // headers resolve immediately; the body stream fails with the same
+        // TimeoutError DOMException an AbortSignal.timeout body abort raises
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              queueMicrotask(() =>
+                controller.error(new DOMException("timeout", "TimeoutError"))
+              )
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      })
+    )
+
+    await expect(
+      new LlmClient("http://test").labelBatch([tx()])
+    ).rejects.toBeInstanceOf(LlmTimeoutError)
+    expect(calls).toBe(1)
+  })
+
   it("retries network errors then throws unreachable", async () => {
     let calls = 0
     vi.stubGlobal(
