@@ -402,6 +402,7 @@ describe("LlmClient.labelBatch", () => {
   })
 
   it("scales max_tokens with the batch size", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
     let captured: unknown
     vi.stubGlobal(
       "fetch",
@@ -419,6 +420,39 @@ describe("LlmClient.labelBatch", () => {
     const items = Array.from({ length: 100 }, (_, i) => tx({ id: `t${i}` }))
     await new LlmClient("http://test").labelBatch(items)
     expect((captured as { max_tokens: number }).max_tokens).toBe(9600)
+    warnSpy.mockRestore()
+  })
+
+  it("warns when prompt + completion exceed the context window", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        chatResponse({ results: [{ index: 0, label: "Miete" }] })
+      )
+    )
+
+    // 100 items → max_tokens 9600, prompt adds ~3k more → over LLM_CTX 8192
+    const items = Array.from({ length: 100 }, (_, i) => tx({ id: `t${i}` }))
+    await new LlmClient("http://test").labelBatch(items)
+
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain("LLM_CTX")
+    warnSpy.mockRestore()
+  })
+
+  it("does not warn when the budget fits the context window", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        chatResponse({ results: [{ index: 0, label: "Miete" }] })
+      )
+    )
+
+    await new LlmClient("http://test").labelBatch([tx()])
+    expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
   })
 })
 

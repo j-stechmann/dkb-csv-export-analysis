@@ -114,6 +114,26 @@ export class LlmClient {
       },
     }
 
+    // guard: prompt + completion must fit the server context (LLM_CTX, the
+    // `-c` flag llama-server runs with). Exceeding it gets the output
+    // clamped silently and the truncated JSON burns every attempt at
+    // temperature 0. Clamping max_tokens here would truncate deterministically
+    // anyway, so exceeding ctx stays an operator error surfaced by this
+    // warning (chars/4 is a rough token estimate).
+    const promptTokens = Math.ceil(
+      (body.messages[0].content.length + body.messages[1].content.length) / 4
+    )
+    if (body.max_tokens + promptTokens > cfg.LLM_CTX) {
+      console.warn(
+        `[llm] completion budget (${body.max_tokens}) + estimated prompt ` +
+          `(${promptTokens}) exceeds LLM_CTX (${cfg.LLM_CTX}) — output will be ` +
+          `clamped and the JSON may truncate, burning all attempts. Lower ` +
+          `LLM_BATCH_SIZE or raise LLM_CTX on both sides (make llm ` +
+          `LLM_CTX=… for the server; the app reads the same env var and ` +
+          `must be restarted with it).`
+      )
+    }
+
     let retriesLeft = cfg.LLM_MAX_RETRIES
     let attempt = 0
     for (;;) {
@@ -361,8 +381,11 @@ export function sanitizeLabel(raw: string): string {
 export function toPromptTransaction(
   item: PromptTransaction
 ): PromptTransaction {
+  // `id` is a server-generated UUID, never rendered into the prompt (the
+  // user prompt only carries the positional `[i]` index) — passed through
+  // untouched so result→row mapping keeps the original id.
   return {
-    id: truncateField(item.id),
+    id: item.id,
     amountCents: item.amountCents,
     counterparty: truncateField(item.counterparty),
     purpose: truncateField(item.purpose),

@@ -151,7 +151,7 @@ function AssignLabelDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ labelId: selectedId }),
       })
-      const data2 = (await res.json()) as { error?: string }
+      const data2 = (await res.json()) as { error?: string; message?: string }
       if (res.ok) {
         toast.success("Kategorie zugewiesen", {
           description: `Regel für ${row.type === "Ausgang" ? (row.payee ?? "Vertragspartner") : (row.payer ?? "Vertragspartner")} gelernt.`,
@@ -163,7 +163,7 @@ function AssignLabelDialog({
         onClose()
       } else {
         toast.error("Zuweisung fehlgeschlagen", {
-          description: data2.error ?? `HTTP ${res.status}`,
+          description: data2.message ?? data2.error ?? `HTTP ${res.status}`,
         })
       }
     } finally {
@@ -180,7 +180,7 @@ function AssignLabelDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ labelName: search.trim() }),
       })
-      const data2 = (await res.json()) as { error?: string }
+      const data2 = (await res.json()) as { error?: string; message?: string }
       if (res.ok) {
         toast.success(`Label "${search.trim()}" erstellt und zugewiesen`)
         void queryClient.invalidateQueries({ queryKey: ["transactions"] })
@@ -190,7 +190,7 @@ function AssignLabelDialog({
         onClose()
       } else {
         toast.error("Erstellen fehlgeschlagen", {
-          description: data2.error ?? `HTTP ${res.status}`,
+          description: data2.message ?? data2.error ?? `HTTP ${res.status}`,
         })
       }
     } finally {

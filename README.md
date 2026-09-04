@@ -71,6 +71,7 @@ Environment (all optional):
 | `LLM_BATCH_SIZE` | `20` | max items per LLM request |
 | `LLM_MAX_RETRIES` | `2` | retries for transient LLM failures |
 | `LLM_TIMEOUT_MS` | `300000` | per-request timeout (hybrid models are slow) |
+| `LLM_CTX` | `8192` | llama-server context window used by the client-side budget guard |
 | `LLM_MAX_ATTEMPTS` | `5` | per-transaction labeling attempt cap |
 | `LLM_MAX_LABELS_PROMPT` | `200` | max existing labels injected into the prompt |
 | `LLM_MAX_SUGGESTIONS` | `3` | max rule-based suggestions per transaction |
@@ -78,7 +79,10 @@ Environment (all optional):
 Raising `LLM_BATCH_SIZE` substantially (> ~40) can make the completion
 budget exceed the server's context window (`-c` in `make llm`, 8192 by
 default) once prompt + completion are summed — output gets clamped and
-JSON truncates. Keep batch size moderate or raise `LLM_CTX` alongside it.
+JSON truncates. When that happens the client logs a warning once per
+affected request; keep batch size moderate or raise `LLM_CTX` on both
+sides — the server flag (`make llm LLM_CTX=…`) and the app's environment
+(the client-side guard reads the same variable at startup).
 
 ## Labelling
 
