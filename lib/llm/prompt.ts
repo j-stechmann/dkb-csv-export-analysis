@@ -81,23 +81,39 @@ export function systemPrompt(lang: string, existingLabels: string[]): string {
 }
 
 /**
+ * Neutralizes prompt-structure markers so a stored label always survives
+ * rendering unchanged: `<<`/`>>` runs collapse to single `<`/`>`, `index=`
+ * loses its `=`, `|` becomes `/` (the suggestions list is joined with ` | `,
+ * so a literal pipe would render as two suggestions). The angle replacements
+ * iterate to a fixed point — a single pass only halves odd runs (`a<<<b`
+ * → `a<<b` still reads as a marker opener).
+ */
+export function neutralizeMarkers(s: string): string {
+  let out = s
+  for (;;) {
+    const next = out.replaceAll("<<", "<").replaceAll(">>", ">")
+    if (next === out) break
+    out = next
+  }
+  return out.replaceAll("index=", "index ").replaceAll("|", "/")
+}
+
+/**
  * Strips control chars and prompt-structure markers from model input fields.
- * `<<`/`>>`/`index=`/`|` are neutralized: the suggestions list is joined with
- * ` | `, so a literal pipe in a label would render as two suggestions.
+ * Shared by the prompt renderer (sanitizeField) and the model-output path
+ * (sanitizeLabel) so stored labels and their prompt rendering stay identical.
  */
 export function sanitizeField(raw: string): string {
-  return raw
-    .split("")
-    .filter((c) => {
-      const code = c.codePointAt(0) ?? 0
-      // C0 controls + DEL
-      return code >= 0x20 && code !== 0x7f
-    })
-    .join("")
-    .replaceAll("<<", "<")
-    .replaceAll(">>", ">")
-    .replaceAll("index=", "index ")
-    .replaceAll("|", "/")
+  return neutralizeMarkers(
+    raw
+      .split("")
+      .filter((c) => {
+        const code = c.codePointAt(0) ?? 0
+        // C0 controls + DEL
+        return code >= 0x20 && code !== 0x7f
+      })
+      .join("")
+  )
 }
 
 export function formatAmount(cents: number): string {

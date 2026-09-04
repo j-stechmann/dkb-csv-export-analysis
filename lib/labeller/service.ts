@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm"
 import { getDb, type DbTx } from "@/lib/db"
 import { categories, importBatches, transactions } from "@/lib/db/schema"
 import type { LabelResult } from "@/lib/llm/client"
+import { sanitizeField } from "@/lib/llm/prompt"
 
 /**
  * Resolve-or-create a category by name and bump its usageCount.
@@ -136,12 +137,16 @@ export function normalizeCategoryKey(name: string): string {
 const textEncoder = new TextEncoder()
 
 /**
- * Manual label names follow the same constraints as LLM-produced labels
- * (sanitizeLabel): non-empty, at most 64 UTF-8 bytes, and free of control
- * characters. sanitizeLabel strips controls from model output, so a stored
- * name containing one could never normalize back to its own nameKey and
- * would instead create a phantom duplicate category on every reuse — such
- * names are rejected outright rather than silently rewritten.
+ * Manual label names must be non-empty, at most 64 UTF-8 bytes, free of
+ * control characters, and must survive sanitizeField (the prompt renderer)
+ * unchanged. sanitizeLabel strips controls and neutralizes markers from
+ * model output, and sanitizeField rewrites `|`/`<<`/`>>`/`index=` in the
+ * suggestions list — so a stored name containing one could never normalize
+ * back to its own nameKey and would instead create a phantom duplicate
+ * category on every reuse ("Miete | Nebenkosten" renders as
+ * "Miete / Nebenkosten"). Such names are rejected outright rather than
+ * silently rewritten. The round-trip check subsumes the marker list, so it
+ * cannot drift if sanitizeField's rewrite set ever changes.
  */
 export function isValidLabelName(name: string): boolean {
   if (name.length === 0 || textEncoder.encode(name).length > 64) return false
@@ -149,7 +154,7 @@ export function isValidLabelName(name: string): boolean {
     const code = c.codePointAt(0) ?? 0
     if (code < 0x20 || code === 0x7f) return false
   }
-  return true
+  return sanitizeField(name) === name
 }
 
 /**

@@ -1,5 +1,6 @@
 import { getConfig, type AppConfig } from "@/lib/config"
 import {
+  neutralizeMarkers,
   responseSchema,
   systemPrompt,
   truncateField,
@@ -327,7 +328,15 @@ function balancedObject(text: string, start: number): string | null {
   return null
 }
 
-/** trim → collapse whitespace → drop control chars → cap at 64 UTF-8 bytes. */
+/**
+ * trim → collapse whitespace → drop control chars → neutralize prompt
+ * markers (`<<`, `>>`, `|`, `index=`) → cap at 64 UTF-8 bytes. Marker
+ * neutralization mirrors sanitizeField so a label stored via the LLM path
+ * renders back into the prompt byte-for-byte (no phantom duplicates on
+ * reuse). Neutralizing before the byte cap means the stored value is capped
+ * in its final form and truncation can never split a marker run (markers
+ * are already collapsed to single chars at that point).
+ */
 export function sanitizeLabel(raw: string): string {
   const collapsed = raw.replace(/\s+/g, " ").trim()
   const noControls = collapsed
@@ -339,8 +348,10 @@ export function sanitizeLabel(raw: string): string {
     .join("")
     .trim()
   if (!noControls) return ""
-  const bytes = textEncoder.encode(noControls)
-  if (bytes.length <= 64) return noControls
+  const neutralized = neutralizeMarkers(noControls).trim()
+  if (!neutralized) return ""
+  const bytes = textEncoder.encode(neutralized)
+  if (bytes.length <= 64) return neutralized
   let end = 64
   while (end > 0 && (bytes[end] & 0xc0) === 0x80) end--
   return textDecoder.decode(bytes.subarray(0, end)).trim()

@@ -71,7 +71,8 @@ export async function POST(
       return NextResponse.json(
         {
           error: "invalid_label",
-          message: "label name must be 1–64 UTF-8 bytes",
+          message:
+            "label name must be 1–64 UTF-8 bytes and free of | < > index= markers",
         },
         { status: 400 }
       )

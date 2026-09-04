@@ -30,7 +30,11 @@ export async function POST(request: NextRequest) {
   const name = typeof body?.name === "string" ? body.name.trim() : ""
   if (!isValidLabelName(name)) {
     return NextResponse.json(
-      { error: "invalid_name", message: "name must be 1–64 UTF-8 bytes" },
+      {
+        error: "invalid_name",
+        message:
+          "name must be 1–64 UTF-8 bytes and free of | < > index= markers",
+      },
       { status: 400 }
     )
   }

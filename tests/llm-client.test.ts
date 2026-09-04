@@ -9,7 +9,7 @@ import {
   sanitizeLabel,
   toPromptTransaction,
 } from "@/lib/llm/client"
-import type { PromptTransaction } from "@/lib/llm/prompt"
+import { sanitizeField, type PromptTransaction } from "@/lib/llm/prompt"
 
 beforeEach(() => {
   // setup.ts pins LLM_MAX_RETRIES=0 for worker tests; retry tests need 2
@@ -465,6 +465,18 @@ describe("sanitizeLabel", () => {
       64
     )
     expect(sanitizeLabel("   ")).toBe("")
+  })
+
+  it("neutralizes prompt markers so stored labels render back verbatim", () => {
+    expect(sanitizeLabel("Miete | Nebenkosten")).toBe("Miete / Nebenkosten")
+    expect(sanitizeLabel("a<<<b")).toBe("a<b")
+    expect(sanitizeLabel("a<<<<b")).toBe("a<b")
+    expect(sanitizeLabel("index=0")).toBe("index 0")
+    // the sanitized form must survive sanitizeField unchanged
+    for (const input of ["Miete | Nebenkosten", "a<<<b", "a>>>>b", "index=0"]) {
+      const stored = sanitizeLabel(input)
+      expect(sanitizeField(stored)).toBe(stored)
+    }
   })
 })
 

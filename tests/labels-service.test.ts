@@ -432,6 +432,24 @@ describe("isValidLabelName", () => {
     expect(isValidLabelName("a\nb")).toBe(false)
     expect(isValidLabelName("a\tb")).toBe(false)
   })
+
+  it("accepts single < > / characters (survive sanitizeField unchanged)", () => {
+    expect(isValidLabelName("a<b>c")).toBe(true)
+    expect(isValidLabelName("X / Y")).toBe(true)
+    expect(isValidLabelName("index 0")).toBe(true)
+  })
+
+  it("rejects names sanitizeField would rewrite (prompt round-trip)", () => {
+    // the suggestions list joins with " | " — a pipe would render as a
+    // separator and split the label into two suggestions
+    expect(isValidLabelName("Miete | Nebenkosten")).toBe(false)
+    // << >> are field delimiters in the rendered prompt
+    expect(isValidLabelName("a<<b")).toBe(false)
+    expect(isValidLabelName("a>>b")).toBe(false)
+    expect(isValidLabelName("a<<<b")).toBe(false)
+    // index= would render as a field key
+    expect(isValidLabelName("index=0")).toBe(false)
+  })
 })
 
 describe("completeDrainedBatches", () => {

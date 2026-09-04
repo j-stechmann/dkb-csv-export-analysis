@@ -94,6 +94,20 @@ describe("sanitizeField", () => {
     expect(sanitizeField("index=0")).toBe("index 0")
     expect(sanitizeField("X | Y")).toBe("X / Y")
   })
+
+  it("collapses angle-marker runs to a fixed point (no leftover markers)", () => {
+    // single pass only halves odd runs: a<<<b → a<<b → a<b
+    expect(sanitizeField("a<<<b")).toBe("a<b")
+    expect(sanitizeField("a<<<<b")).toBe("a<b")
+    expect(sanitizeField("a>>>>b")).toBe("a>b")
+    expect(sanitizeField("a><><b")).toBe("a><><b")
+  })
+
+  it("is idempotent on already-sanitized input", () => {
+    for (const input of ["Miete / Nebenkosten", "a<b>c", "index 0"]) {
+      expect(sanitizeField(sanitizeField(input))).toBe(sanitizeField(input))
+    }
+  })
 })
 
 describe("formatAmount", () => {

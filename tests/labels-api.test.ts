@@ -154,6 +154,17 @@ describe("POST /api/labels", () => {
       ).status
     ).toBe(400)
   })
+
+  it("rejects names the prompt renderer would rewrite with 400", async () => {
+    // sanitizeField turns these into different strings in suggested_labels,
+    // so the model echo could never map back to the stored nameKey
+    for (const name of ["Miete | Nebenkosten", "a<<b", "a>>b", "index=0"]) {
+      const out = await createLabel(jsonReq("http://test/api/labels", { name }))
+      expect(out.status).toBe(400)
+      const data = (await out.json()) as { message?: string }
+      expect(data.message).toContain("| < > index=")
+    }
+  })
 })
 
 describe("GET /api/labels/[id]/rules", () => {
@@ -378,6 +389,18 @@ describe("POST /api/transactions/[id]/label", () => {
       { params: Promise.resolve({ id: txId }) }
     )
     expect(out.status).toBe(400)
+  })
+
+  it("rejects labelName the prompt renderer would rewrite with 400", async () => {
+    const txId = seedTx()
+    const out = await assignLabel(
+      jsonReq(`http://test/api/transactions/${txId}/label`, {
+        labelName: "Miete | Nebenkosten",
+      }),
+      { params: Promise.resolve({ id: txId }) }
+    )
+    expect(out.status).toBe(400)
+    expect(db.select().from(categories).all()).toHaveLength(0)
   })
 
   it("returns 404 for unknown transactions and labels", async () => {
