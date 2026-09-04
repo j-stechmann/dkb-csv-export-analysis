@@ -243,16 +243,26 @@ describe("drain detection with exhausted attempts", () => {
     vi.stubGlobal(
       "fetch",
       stubFetch((url, body) => {
-        if (url.includes("/v1/health")) {
+        if (url.includes("/health") && !url.includes("chat")) {
           return new Response("{}", { status: 200 })
         }
-        const b = body as { transactions: Array<{ id: string }> }
+        const b = body as { messages: Array<{ role: string; content: string }> }
+        const userMsg = b.messages.find((m) => m.role === "user")!
+        const count = (userMsg.content.match(/^\[\d+\]/gm) ?? []).length
         return new Response(
           JSON.stringify({
-            results: b.transactions.map((t) => ({
-              id: t.id,
-              label: "Lebensmittel",
-            })),
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    results: Array.from({ length: count }, (_, i) => ({
+                      index: i,
+                      label: "Lebensmittel",
+                    })),
+                  }),
+                },
+              },
+            ],
           }),
           { status: 200 }
         )

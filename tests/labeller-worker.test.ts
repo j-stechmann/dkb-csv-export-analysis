@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
 import { eq } from "drizzle-orm"
 import { createTestDb, setTestDb, type Db } from "@/lib/db"
-import { accounts, importBatches, transactions } from "@/lib/db/schema"
+import {
+  accounts,
+  categories,
+  importBatches,
+  labelRules,
+  transactions,
+} from "@/lib/db/schema"
 import { claimLabelRows, isWorkerTicking, tick } from "@/lib/labeller/worker"
 import { computeLabelCounters } from "@/lib/import/counters"
 import { applyLabelResults, markRowsFailed } from "@/lib/labeller/service"
@@ -30,6 +36,7 @@ function seedTx(
     labelStatus: string
     labelAttempts: number
     status: string
+    counterpartyIban: string | null
   }> = {}
 ): string {
   const id = `tx-${crypto.randomUUID()}`
@@ -115,22 +122,55 @@ function stubFetch(handler: (url: string, body: unknown) => Response) {
   })
 }
 
+/**
+ * Stub for the llama-server chat protocol: answers /health with 200 and the
+ * chat completion with one label per message position.
+ */
+function stubLlmFetch(label: string | null) {
+  return stubFetch((url, body) => {
+    if (url.includes("/health") && !url.includes("chat")) {
+      return new Response("{}", { status: 200 })
+    }
+    if (url.includes("/v1/chat/completions")) {
+      if (label === null) {
+        return new Response("{}", { status: 503 })
+      }
+      const b = body as {
+        messages: Array<{ role: string; content: string }>
+      }
+      const userMsg = b.messages.find((m) => m.role === "user")!
+      const count = (userMsg.content.match(/^\[\d+\]/gm) ?? []).length
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  results: Array.from({ length: count }, (_, i) => ({
+                    index: i,
+                    label,
+                  })),
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    }
+    return new Response("{}", { status: 404 })
+  })
+}
+
 describe("tick", () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it("marks rows failed when the labeller errors and completes the batch", async () => {
+  it("marks rows failed when the LLM errors and completes the batch", async () => {
     const batchId = seedBatch()
     const id = seedTx(batchId)
     const cfg = getConfig()
 
-    vi.stubGlobal(
-      "fetch",
-      stubFetch((url) =>
-        url.includes("/v1/health")
-          ? new Response("{}", { status: 200 })
-          : new Response("{}", { status: 503 })
-      )
-    )
+    vi.stubGlobal("fetch", stubLlmFetch(null))
 
     await tick()
 
@@ -145,31 +185,14 @@ describe("tick", () => {
 
     const counters = computeLabelCounters(batchId)
     expect(counters).toEqual({ labelsTotal: 1, labelsDone: 0, labelsFailed: 1 })
-    expect(cfg.LABELLER_MAX_ATTEMPTS).toBeGreaterThan(0)
+    expect(cfg.LLM_MAX_ATTEMPTS).toBeGreaterThan(0)
   })
 
   it("labels rows and completes the batch on success", async () => {
     const batchId = seedBatch()
     const id = seedTx(batchId)
 
-    vi.stubGlobal(
-      "fetch",
-      stubFetch((url, body) => {
-        if (url.includes("/v1/health")) {
-          return new Response("{}", { status: 200 })
-        }
-        const b = body as { transactions: Array<{ id: string }> }
-        return new Response(
-          JSON.stringify({
-            results: b.transactions.map((t) => ({
-              id: t.id,
-              label: "Lebensmittel",
-            })),
-          }),
-          { status: 200 }
-        )
-      })
-    )
+    vi.stubGlobal("fetch", stubLlmFetch("Lebensmittel"))
 
     await tick()
 
@@ -186,34 +209,112 @@ describe("tick", () => {
     })
   })
 
+  it("suggests labels from learned rules and prefers them in the prompt", async () => {
+    const batchId = seedBatch()
+    const id = seedTx(batchId, {
+      counterpartyIban: "de02 1203 0000 0000 2020 51",
+    })
+
+    // learn a rule for this IBAN (normalized key strips spaces + uppercases)
+    const cat = db
+      .insert(categories)
+      .values({
+        name: "Miete",
+        nameKey: "miete",
+        language: "de",
+        origin: "manual",
+      })
+      .returning()
+      .get()
+    db.insert(labelRules)
+      .values({
+        labelId: cat.id,
+        iban: "DE02120300000000202051",
+        nameKey: "vermieter",
+        name: "Vermieter",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .run()
+
+    let promptSuggestion: string | null = null
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/health") && !url.includes("chat")) {
+        return new Response("{}", { status: 200 })
+      }
+      const b = JSON.parse(String(init?.body)) as {
+        messages: Array<{ role: string; content: string }>
+      }
+      const userMsg = b.messages.find((m) => m.role === "user")!
+      const match = userMsg.content.match(/suggested_labels=<<([^>]*)>>/)
+      promptSuggestion = match ? match[1] : null
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  results: [{ index: 0, label: "Miete" }],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await tick()
+
+    expect(promptSuggestion).toBe("Miete")
+    const row = getTx(id)!
+    expect(row.labelStatus).toBe("labeled")
+    expect(row.categoryId).toBe(cat.id)
+  })
+
+  it("marks unapplied rows failed on partial model output", async () => {
+    const batchId = seedBatch()
+    const id = seedTx(batchId)
+
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/health") && !url.includes("chat")) {
+        return new Response("{}", { status: 200 })
+      }
+      // valid JSON but empty results — nothing gets applied
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({ results: [] }),
+              },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await tick()
+
+    const row = getTx(id)!
+    expect(row.labelStatus).toBe("failed")
+    expect(row.categoryId).toBeNull()
+  })
+
   it("does not complete a batch with rows still pending", async () => {
     const batchId = seedBatch()
     seedTx(batchId)
     // a second pending row beyond the claim batch size
     seedTx(batchId)
 
-    vi.stubGlobal(
-      "fetch",
-      stubFetch((url, body) => {
-        if (url.includes("/v1/health")) {
-          return new Response("{}", { status: 200 })
-        }
-        const b = body as { transactions: Array<{ id: string }> }
-        return new Response(
-          JSON.stringify({
-            results: b.transactions.map((t) => ({
-              id: t.id,
-              label: "Miete",
-            })),
-          }),
-          { status: 200 }
-        )
-      })
-    )
+    vi.stubGlobal("fetch", stubLlmFetch("Miete"))
 
     // batch size 1 via env: the worker claims only the first pending row,
     // leaving the second pending → batch must stay 'labeling'
-    process.env.LABELLER_BATCH_SIZE = "1"
+    process.env.LLM_BATCH_SIZE = "1"
     const { resetConfigCache } = await import("@/lib/config")
     resetConfigCache()
 
@@ -227,7 +328,7 @@ describe("tick", () => {
         labelsFailed: 0,
       })
     } finally {
-      process.env.LABELLER_BATCH_SIZE = "100"
+      process.env.LLM_BATCH_SIZE = "100"
       resetConfigCache()
     }
   })

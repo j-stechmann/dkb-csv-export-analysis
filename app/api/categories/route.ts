@@ -12,11 +12,18 @@ export async function GET() {
     .select({
       id: categories.id,
       name: categories.name,
+      origin: categories.origin,
+      usageCount: categories.usageCount,
       count: sql<number>`COUNT(${transactions.id})`,
     })
     .from(categories)
     .leftJoin(transactions, eq(transactions.categoryId, categories.id))
-    .groupBy(categories.id, categories.name)
+    .groupBy(
+      categories.id,
+      categories.name,
+      categories.origin,
+      categories.usageCount
+    )
     .orderBy(categories.name)
     .all()
   return NextResponse.json({ categories: rows })

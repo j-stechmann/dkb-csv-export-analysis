@@ -55,11 +55,42 @@ export const categories = sqliteTable(
     name: text("name").notNull(),
     nameKey: text("name_key").notNull(),
     language: text("language").notNull(),
+    /** manual (user-created/renamed/assigned) | llm (invented by the model) */
+    origin: text("origin").notNull().default("llm"),
+    /** how many transactions carry this label (LLM + manual assigns) */
+    usageCount: integer("usage_count").notNull().default(0),
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
   },
   (t) => [uniqueIndex("categories_name_key_unique").on(t.nameKey)]
+)
+
+export const labelRules = sqliteTable(
+  "label_rules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    labelId: integer("label_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    /** normalized counterparty IBAN (or IBAN-like key) of learned transactions */
+    iban: text("iban").notNull(),
+    /** normalized counterparty name key of learned transactions */
+    nameKey: text("name_key").notNull(),
+    /** counterparty name as learned (display snapshot) */
+    name: text("name").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+    updatedAt: text("updated_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    uniqueIndex("label_rules_iban_name_key_unique").on(t.iban, t.nameKey),
+    index("label_rules_iban_idx").on(t.iban),
+    index("label_rules_label_idx").on(t.labelId),
+  ]
 )
 
 export const transactions = sqliteTable(
@@ -114,5 +145,6 @@ export const transactions = sqliteTable(
 export type Account = typeof accounts.$inferSelect
 export type ImportBatch = typeof importBatches.$inferSelect
 export type Category = typeof categories.$inferSelect
+export type LabelRule = typeof labelRules.$inferSelect
 export type Transaction = typeof transactions.$inferSelect
 export type NewTransaction = typeof transactions.$inferInsert

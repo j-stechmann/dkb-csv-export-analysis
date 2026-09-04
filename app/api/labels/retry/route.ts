@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic"
  */
 export async function POST() {
   try {
-    const queued = resetFailedLabels(getConfig().LABELLER_MAX_ATTEMPTS)
+    const queued = resetFailedLabels(getConfig().LLM_MAX_ATTEMPTS)
     return NextResponse.json({ queued }, { status: 202 })
   } catch (err) {
     console.error("[api/labels/retry] error:", err)

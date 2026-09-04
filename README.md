@@ -1,34 +1,101 @@
 # DKB Analytics
 
 Next.js app for analyzing DKB banking CSV exports: import via drag-and-drop,
-automatic categorization through a local labeller service, and analytics
-(balance, monthly cash flow, savings rate, top categories) that always
-reflect the filtered query results.
+automatic categorization through a local LLM (llama.cpp `llama-server`), manual
+label management with learned counterparty rules, and analytics (balance,
+monthly cash flow, savings rate, top categories) that always reflect the
+filtered query results.
 
 ## Setup
 
 ```bash
 bun install
-bun run build && bun run start   # or: bun run dev
+make dev   # offers the model download on first run, then starts everything
 ```
+
+### LLM backend (llama-server)
+
+The labeller talks OpenAI-compatible chat completions to a local
+[llama.cpp `llama-server`](https://github.com/ggml-org/llama.cpp). `make dev`
+starts it in the background and runs the app in the foreground; when the
+command started llama-server itself, Ctrl-C stops both. `make stop` stops
+llama-server separately; `make llm-status` shows health + GPU usage.
+
+**Model download (no Ollama):** `make model` downloads one exact GGUF file
+from Hugging Face with a pinned revision (`ggml-org/Qwen3.8-27B-GGUF`,
+`Qwen3.8-27B-Q4_K_M.gguf`, ~18 GB) into `models/` and records the path in
+`.llm-model`. The download is resumable — re-run `make model` after an
+interrupted transfer. A different quant/repo can be selected via override:
+
+```bash
+make model MODEL_HF_REPO=unsloth/Qwen3.8-27B-GGUF MODEL_HF_FILE=Qwen3.8-27B-UD-Q4_K_M.gguf MODEL_HF_REVISION=
+```
+
+Gated repos need a token: `HF_TOKEN=hf_xxx make model`. Any local GGUF works
+too: `make llm MODEL=/path/to/model.gguf`.
+
+The Makefile auto-detects GPU support via `--list-devices`: a CUDA/Vulkan/
+ROCm-capable llama-server runs with GPU offload, a CPU-only build runs on
+CPU with a warning (slow but functional). On Arch:
+`pacman -S llama-cpp ggml-cuda ggml-cpu`. To opt into Ollama's vendored
+GPU-capable llama-server instead, create `Makefile.local`:
+
+```make
+LLAMA_SERVER = /usr/lib/ollama/llama-server
+LLAMA_ENV = GGML_BACKEND_PATH=/usr/lib/ollama/cuda_v13/libggml-cuda.so LD_LIBRARY_PATH=/usr/lib/ollama/cuda_v13
+```
+
+Start llama-server by hand instead:
+
+```bash
+llama-server -m <model.gguf> \
+  -c 8192 -np 1 -fa on -ctk q8_0 -ctv q8_0 \
+  -ngl auto --fit on --reasoning off \
+  --host 127.0.0.1 --port 8080 --no-webui
+```
+
+`--reasoning off` disables thinking (mandatory for thinking models —
+otherwise the token budget is burned before any label is produced).
 
 Environment (all optional):
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_PATH` | `./data/dkb.db` | SQLite database file |
-| `LABELLER_BASE_URL` | `http://127.0.0.1:8080` | transaction-labeller service |
-| `LABELLER_LANGUAGE` | `de` | ISO 639-1 label language |
-| `LABELLER_BATCH_SIZE` | `20` | max items per labeller request |
-| `LABELLER_MAX_RETRIES` | `3` | retries when labeller is down |
-| `LABELLER_TIMEOUT_MS` | `180000` | per-request timeout for labeller calls |
-| `LABELLER_MAX_ATTEMPTS` | `5` | per-transaction labeling attempt cap |
+| `LLM_BASE_URL` | `http://127.0.0.1:8080` | llama-server base URL |
+| `LLM_LANGUAGE` | `de` | ISO 639-1 label language |
+| `LLM_BATCH_SIZE` | `20` | max items per LLM request |
+| `LLM_MAX_RETRIES` | `2` | retries for transient LLM failures |
+| `LLM_TIMEOUT_MS` | `300000` | per-request timeout (hybrid models are slow) |
+| `LLM_MAX_ATTEMPTS` | `5` | per-transaction labeling attempt cap |
+| `LLM_NUM_CTX` | `8192` | advisory context size (server-side `-c` is authoritative) |
+| `LLM_MAX_LABELS_PROMPT` | `200` | max existing labels injected into the prompt |
+| `LLM_MAX_SUGGESTIONS` | `3` | max rule-based suggestions per transaction |
 
-Imports: drag any DKB CSV export onto the window. Processing runs in the
-background; progress is shown in the floating pill and on the Imports page.
-Labeling is decoupled from the import: a background worker claims pending
-transactions in small batches, so slow LLM labeling never blocks or fails an
-import — batches stay in "Kategorisierung" until all rows are labeled.
+## Labelling
+
+A background worker claims pending transactions in small batches, asks
+llama-server for labels, and marks the batch completed once every row is
+labeled or exhausted its attempts. A lightweight health gate prevents an LLM
+outage from burning attempt budgets. There are **no fallback labels**: rows
+the model could not label end up `failed` ("ohne Kategorie") and are retried
+on their next claimable tick or via the retry button on the Imports page.
+
+**Label rules (suggestions):** manually assigning a label to a transaction in
+the transactions table learns a rule from its counterparty (IBAN + normalized
+name → label). Future transactions of the same counterparty receive up to
+`LLM_MAX_SUGGESTIONS` label suggestions in the prompt; the LLM decides but
+must reuse a fitting suggestion verbatim. This gives consistent labels for
+recurring counterparties while the LLM stays in the loop for everything else.
+
+**Label management (`/labels` page):**
+
+- Create, rename and delete labels; usage counts and origin are shown
+  (`manuell` = user-created/renamed/assigned, `erfunden` = invented by the LLM)
+- Deleting a label resets its transactions to pending — the worker re-labels
+  them with the LLM — and removes its learned rules
+- Learned rules are listed per label and can be deleted individually
+
 Re-importing the same or overlapping exports deduplicates automatically —
 transactions are never deleted.
 
@@ -42,8 +109,8 @@ ghcr.io/j-stechmann/dkb-analytics:<release-tag>   e.g. ghcr.io/j-stechmann/dkb-a
 ```
 
 All configuration is read from the environment at runtime, so no rebuild is
-needed to point the app at your labeller or database. Use a named volume for
-the database directory (bind mounts don't pick up the image's directory
+needed to point the app at your llama-server or database. Use a named volume
+for the database directory (bind mounts don't pick up the image's directory
 ownership and will hit permission errors unless host uid matches):
 
 ```yaml
@@ -54,20 +121,33 @@ services:
       - "3000:3000"
     environment:
       DATABASE_PATH: /app/data/dkb.db
-      LABELLER_BASE_URL: http://labeller:8080 # labeller service on the compose network
-      # LABELLER_LANGUAGE: de                 # optional, defaults in lib/config.ts
-      # LABELLER_BATCH_SIZE: "100"
-      # LABELLER_MAX_RETRIES: "3"
+      LLM_BASE_URL: http://llama-server:8080 # llama-server on the compose network
+      # LLM_LANGUAGE: de                    # optional, defaults in lib/config.ts
+      # LLM_BATCH_SIZE: "100"
+      # LLM_MAX_RETRIES: "2"
     volumes:
       - dkb-data:/app/data # required: SQLite db + WAL are written at runtime
 
+  llama-server:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    environment:
+      LLAMA_ARG_HF_REPO: <user>/<model>-GGUF:Q4_K_M
+      LLAMA_ARG_CTX_SIZE: "8192"
+      LLAMA_ARG_N_PARALLEL: "1"
+      LLAMA_ARG_FLASH_ATTN: "on"
+      LLAMA_ARG_CACHE_TYPE_K: q8_0
+      LLAMA_ARG_CACHE_TYPE_V: q8_0
+      LLAMA_ARG_HOST: 0.0.0.0
+      LLAMA_ARG_PORT: "8080"
+    volumes:
+      - llama-models:/models
+
 volumes:
   dkb-data:
+  llama-models:
 ```
 
-The database schema is created automatically on first boot. To run the
-labeller alongside the app, add it as another service and set
-`LABELLER_BASE_URL` to its service name.
+The database schema is created automatically on first boot.
 
 ## Correctness
 

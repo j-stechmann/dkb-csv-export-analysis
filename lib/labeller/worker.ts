@@ -1,12 +1,14 @@
 import { and, eq, inArray, lt, sql } from "drizzle-orm"
 import { getConfig } from "@/lib/config"
 import { getDb } from "@/lib/db"
-import { transactions } from "@/lib/db/schema"
+import { categories, transactions } from "@/lib/db/schema"
 import {
-  LabellerClient,
-  labelWithChunking,
-  type LabellerInput,
-} from "@/lib/labeller/client"
+  LlmClient,
+  LlmTimeoutError,
+  toPromptTransaction,
+} from "@/lib/llm/client"
+import type { PromptTransaction } from "@/lib/llm/prompt"
+import { resolveLabelNames, suggestForBatch } from "@/lib/labels/matching"
 import {
   applyLabelResults,
   completeDrainedBatches,
@@ -38,6 +40,7 @@ export interface ClaimedRow {
   purpose: string | null
   bookingDate: string
   type: string
+  counterpartyIban: string | null
 }
 
 /**
@@ -75,20 +78,14 @@ export function claimLabelRows(batchSize: number, maxAttempts: number) {
     .all()
 }
 
-function toLabellerInput(row: ClaimedRow): LabellerInput {
-  return {
-    id: row.id,
-    amountCents: row.amountCents,
-    counterparty:
-      row.type === "Ausgang" ? (row.payee ?? "") : (row.payer ?? ""),
-    purpose: row.purpose ?? "",
-    bookingDate: row.bookingDate,
-  }
+function counterpartyFor(row: ClaimedRow): string {
+  return row.type === "Ausgang" ? (row.payee ?? "") : (row.payer ?? "")
 }
 
 /**
- * One worker pass: claim a batch of rows, label them, persist results.
- * Errors are contained per pass — a failing chunk marks its rows failed
+ * One worker pass: health gate → claim a batch → resolve rule suggestions →
+ * label via llama-server → persist results → mark unapplied rows failed.
+ * Errors are contained per pass — a failing call marks its rows failed
  * (attempts already incremented), and any other failure (including the
  * synchronous DB calls) is logged instead of escaping as an unhandled
  * rejection. Never kills the worker loop.
@@ -105,50 +102,98 @@ export async function tick(): Promise<void> {
 
     const cfg = getConfig()
 
-    // drain check first: completing a batch needs no labeller — only the
+    // drain check first: completing a batch needs no LLM — only the
     // absence of labelable pending rows (also covers all-Nicht-gebucht
     // batches and rows that exhausted their attempts)
-    completeDrainedBatches(cfg.LABELLER_MAX_ATTEMPTS)
+    completeDrainedBatches(cfg.LLM_MAX_ATTEMPTS)
 
-    const client = new LabellerClient()
+    const client = new LlmClient()
+    // health gate: without it an LLM outage would burn every row's attempt
+    // budget on timed-out claims (rows become unclaimable until manual retry)
     const health = await client.health()
     if (health !== "ok") return
 
-    const claimed = claimLabelRows(
-      cfg.LABELLER_BATCH_SIZE,
-      cfg.LABELLER_MAX_ATTEMPTS
-    )
+    const claimed = claimLabelRows(cfg.LLM_BATCH_SIZE, cfg.LLM_MAX_ATTEMPTS)
     if (claimed.length === 0) return
 
     // attempts snapshot at claim time: a mismatch at apply time means the
-    // row was reset meanwhile (concurrent fuzzy-update or retry endpoint),
-    // so its label would be computed from stale content
+    // row was reset meanwhile (concurrent fuzzy-update, retry endpoint, or
+    // manual assignment), so its stale LLM result must not be applied
     const claimedAttempts = new Map(
       claimed.map((r): [string, number] => [r.id, r.labelAttempts])
     )
 
+    // multi-suggestions: all learned rules for each claimed row's IBAN key
+    const db = getDb()
+    const suggestionMap = suggestForBatch(
+      claimed.map((r) => ({ counterpartyIban: r.counterpartyIban }))
+    )
+    const allSuggestionIds = [...new Set([...suggestionMap.values()].flat())]
+    const labelNames = resolveLabelNames(db, allSuggestionIds)
+
+    const items: PromptTransaction[] = claimed.map((row, i) => {
+      const ids = suggestionMap.get(i) ?? []
+      const suggestions = ids
+        .map((id) => labelNames.get(id))
+        .filter((x): x is string => x !== undefined)
+      return {
+        id: row.id,
+        amountCents: row.amountCents,
+        counterparty: counterpartyFor(row),
+        purpose: row.purpose ?? "",
+        bookingDate: row.bookingDate,
+        suggestions,
+      }
+    })
+
     try {
-      await labelWithChunking(
-        client,
-        claimed.map(toLabellerInput),
-        (results) => {
-          applyLabelResults(results, claimedAttempts)
-        }
+      const results = await client.labelBatch(
+        items.map(toPromptTransaction),
+        existingLabelsForPrompt(cfg)
       )
+      applyLabelResults(results, claimedAttempts)
+      // no fallback labels: claimed rows with no applied result (empty or
+      // partial model output) are explicitly failed — they keep their
+      // incremented attempts and show as "ohne Kategorie" until retried
+      const appliedIds = new Set(results.map((r) => r.id))
+      const unapplied = claimed
+        .map((r) => r.id)
+        .filter((id) => !appliedIds.has(id))
+      markRowsFailed(unapplied, claimedAttempts)
     } catch (err) {
-      console.error("[label worker] chunk failed, marking rows failed:", err)
+      if (err instanceof LlmTimeoutError) {
+        console.error("[label worker] LLM timeout, marking rows failed")
+      } else {
+        console.error("[label worker] chunk failed, marking rows failed:", err)
+      }
       markRowsFailed(
         claimed.map((r) => r.id),
         claimedAttempts
       )
     }
 
-    completeDrainedBatches(cfg.LABELLER_MAX_ATTEMPTS)
+    completeDrainedBatches(cfg.LLM_MAX_ATTEMPTS)
   } catch (err) {
     console.error("[label worker] tick failed:", err)
   } finally {
     state.ticking = false
   }
+}
+
+/**
+ * Existing labels for the system prompt: most-used first, capped. Read
+ * synchronously from the DB (the prompt builder handles the empty case).
+ */
+function existingLabelsForPrompt(cfg: ReturnType<typeof getConfig>): string[] {
+  if (cfg.LLM_MAX_LABELS_PROMPT === 0) return []
+  const db = getDb()
+  const rows = db
+    .select({ name: categories.name })
+    .from(categories)
+    .orderBy(sql`usage_count DESC, name ASC`)
+    .limit(cfg.LLM_MAX_LABELS_PROMPT)
+    .all()
+  return rows.map((r) => r.name)
 }
 
 /** Start the periodic worker loop (idempotent across dev hot-reloads). */

@@ -2,20 +2,18 @@ import { z } from "zod"
 
 const envSchema = z.object({
   DATABASE_PATH: z.string().default("./data/dkb.db"),
-  LABELLER_BASE_URL: z.string().url().default("http://127.0.0.1:8080"),
-  LABELLER_LANGUAGE: z
+  LLM_BASE_URL: z.string().url().default("http://127.0.0.1:8080"),
+  LLM_LANGUAGE: z
     .string()
     .regex(/^[a-z]{2}$/)
     .default("de"),
-  LABELLER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
-  LABELLER_MAX_RETRIES: z.coerce.number().int().min(0).default(3),
-  LABELLER_TIMEOUT_MS: z.coerce.number().int().min(1000).default(180_000),
-  LABELLER_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
-  LABELLER_RETRY_AFTER_FALLBACK_MS: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .default(5000),
+  LLM_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(20),
+  LLM_MAX_RETRIES: z.coerce.number().int().min(0).default(2),
+  LLM_TIMEOUT_MS: z.coerce.number().int().min(1000).default(300_000),
+  LLM_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
+  LLM_NUM_CTX: z.coerce.number().int().min(512).max(131_072).default(8192),
+  LLM_MAX_LABELS_PROMPT: z.coerce.number().int().min(0).default(200),
+  LLM_MAX_SUGGESTIONS: z.coerce.number().int().min(1).max(10).default(3),
 })
 
 export type AppConfig = z.infer<typeof envSchema>

@@ -325,8 +325,8 @@ export default function ImportsPage() {
       </div>
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Konfiguration: Labeller-URL und Kategoriensprache werden über
-          Umgebungsvariablen gesetzt (LABELLER_BASE_URL, LABELLER_LANGUAGE).
+          Konfiguration: LLM-URL (llama-server) und Kategoriensprache werden
+          über Umgebungsvariablen gesetzt (LLM_BASE_URL, LLM_LANGUAGE).
         </p>
         <RetryLabelingButton />
       </div>
