@@ -168,6 +168,10 @@ function AssignLabelDialog({
           description: data2.message ?? data2.error ?? `HTTP ${res.status}`,
         })
       }
+    } catch (err) {
+      toast.error("Zuweisung fehlgeschlagen", {
+        description: err instanceof Error ? err.message : "Netzwerkfehler",
+      })
     } finally {
       setBusy(false)
     }
@@ -195,6 +199,10 @@ function AssignLabelDialog({
           description: data2.message ?? data2.error ?? `HTTP ${res.status}`,
         })
       }
+    } catch (err) {
+      toast.error("Erstellen fehlgeschlagen", {
+        description: err instanceof Error ? err.message : "Netzwerkfehler",
+      })
     } finally {
       setBusy(false)
     }
@@ -218,7 +226,8 @@ function AssignLabelDialog({
               key={label.id}
               className={cn(
                 "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent",
-                selectedId === label.id && "border-primary bg-accent"
+                selectedId === label.id && "border-primary bg-accent",
+                busy && "pointer-events-none opacity-50"
               )}
               onClick={() => setSelectedId(label.id)}
               onDoubleClick={() => void assign(label.id)}
