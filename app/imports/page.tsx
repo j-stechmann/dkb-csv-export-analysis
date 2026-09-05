@@ -68,6 +68,10 @@ function ImportDropzone() {
           description: data.error ?? data.message ?? `HTTP ${res.status}`,
         })
       }
+    } catch (err) {
+      toast.error("Import fehlgeschlagen", {
+        description: err instanceof Error ? err.message : "Netzwerkfehler",
+      })
     } finally {
       setIsUploading(false)
     }
@@ -159,6 +163,10 @@ function RetryLabelingButton() {
               description: data.message ?? `HTTP ${res.status}`,
             })
           }
+        } catch {
+          toast.error("Erneuter Versuch fehlgeschlagen", {
+            description: "Netzwerkfehler",
+          })
         } finally {
           setBusy(false)
         }
