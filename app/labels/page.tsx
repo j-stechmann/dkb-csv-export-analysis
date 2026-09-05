@@ -96,6 +96,10 @@ function CreateLabelForm() {
           description: data.message ?? `HTTP ${res.status}`,
         })
       }
+    } catch (err) {
+      toast.error("Erstellen fehlgeschlagen", {
+        description: err instanceof Error ? err.message : "Netzwerkfehler",
+      })
     } finally {
       setBusy(false)
     }
@@ -150,6 +154,10 @@ function RenameDialog({
           description: data.message ?? `HTTP ${res.status}`,
         })
       }
+    } catch (err) {
+      toast.error("Umbenennen fehlgeschlagen", {
+        description: err instanceof Error ? err.message : "Netzwerkfehler",
+      })
     } finally {
       setBusy(false)
     }
@@ -216,6 +224,10 @@ function DeleteLabelDialog({
           description: data.error ?? `HTTP ${res.status}`,
         })
       }
+    } catch (err) {
+      toast.error("Löschen fehlgeschlagen", {
+        description: err instanceof Error ? err.message : "Netzwerkfehler",
+      })
     } finally {
       setBusy(false)
     }
@@ -289,6 +301,10 @@ function EditRuleDialog({
           description: data.message ?? `HTTP ${res.status}`,
         })
       }
+    } catch (err) {
+      toast.error("Bearbeiten fehlgeschlagen", {
+        description: err instanceof Error ? err.message : "Netzwerkfehler",
+      })
     } finally {
       setBusy(false)
     }
@@ -407,6 +423,10 @@ function ApplyRuleDialog({
           description: data.error ?? `HTTP ${res.status}`,
         })
       }
+    } catch (err) {
+      toast.error("Anwenden fehlgeschlagen", {
+        description: err instanceof Error ? err.message : "Netzwerkfehler",
+      })
     } finally {
       setBusy(false)
     }
@@ -533,6 +553,10 @@ function RulesList({
                   } else {
                     toast.error("Löschen der Regel fehlgeschlagen")
                   }
+                } catch {
+                  toast.error("Löschen der Regel fehlgeschlagen", {
+                    description: "Netzwerkfehler",
+                  })
                 } finally {
                   setBusyId(null)
                 }

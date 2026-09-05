@@ -345,15 +345,13 @@ export function findIbanRuleMatches(
  * Also re-points completed owning batches to 'labeling' and refreshes their
  * stale labels_total (same bookkeeping as label-deletion reset; done/failed
  * counters are computed on read and self-heal).
- * Passing `existingTx` runs inside the caller's transaction.
  */
 export function applyIbanRuleToTransactions(
   ibanKey: string,
-  labelId: number,
-  existingTx?: DbTx
+  labelId: number
 ): string[] {
   const db = getDb()
-  const handle = existingTx ?? db
+  const handle = db
   const affected = findIbanRuleMatches(handle, ibanKey)
 
   const run = (tx: DbTx) => {
@@ -388,11 +386,7 @@ export function applyIbanRuleToTransactions(
     }
   }
 
-  if (existingTx) {
-    run(existingTx)
-  } else {
-    db.transaction(run)
-  }
+  db.transaction(run)
 
   return affected.map((r) => r.id)
 }
