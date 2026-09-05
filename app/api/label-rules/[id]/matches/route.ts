@@ -20,7 +20,11 @@ export async function GET(
 
   const db = getDb()
   const rule = db
-    .select({ id: labelRules.id, iban: labelRules.iban })
+    .select({
+      id: labelRules.id,
+      iban: labelRules.iban,
+      labelId: labelRules.labelId,
+    })
     .from(labelRules)
     .where(eq(labelRules.id, ruleId))
     .get()
@@ -28,5 +32,9 @@ export async function GET(
     return NextResponse.json({ error: "not_found" }, { status: 404 })
   }
 
-  return NextResponse.json({ count: findIbanRuleMatches(db, rule.iban).length })
+  // Same exclusion as apply, so the preview count matches what applying
+  // would actually reset (rows already at the rule's label are skipped).
+  return NextResponse.json({
+    count: findIbanRuleMatches(db, rule.iban, rule.labelId).length,
+  })
 }

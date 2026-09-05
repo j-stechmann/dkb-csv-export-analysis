@@ -60,7 +60,10 @@ export async function PATCH(
     .where(eq(categories.id, body.labelId))
     .get()
   if (!targetLabel) {
-    return NextResponse.json({ error: "label_not_found" }, { status: 404 })
+    return NextResponse.json(
+      { error: "label_not_found", message: "Label existiert nicht" },
+      { status: 404 }
+    )
   }
 
   const ibanKey = normalizeIbanKey(body.iban)

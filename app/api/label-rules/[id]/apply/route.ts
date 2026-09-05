@@ -34,9 +34,20 @@ export async function POST(
     .where(eq(labelRules.id, ruleId))
     .get()
   if (!rule) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 })
+    return NextResponse.json(
+      { error: "not_found", message: "Regel existiert nicht" },
+      { status: 404 }
+    )
   }
 
   const affected = applyIbanRuleToTransactions(rule.iban, rule.labelId)
+  if (affected === null) {
+    // Label deleted between the rule read and the apply transaction (label
+    // deletion cascades to rules, so the rule itself is gone too).
+    return NextResponse.json(
+      { error: "not_found", message: "Regel oder Label existiert nicht mehr" },
+      { status: 404 }
+    )
+  }
   return NextResponse.json({ applied: affected.length })
 }

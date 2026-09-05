@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm"
+import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm"
 import { getDb, type Db, type DbTx } from "@/lib/db"
 import { categories, importBatches, transactions } from "@/lib/db/schema"
 import { normalizeIbanKey } from "@/lib/db/normalize"
@@ -310,11 +310,15 @@ export function resetTransactionsForLabelDeletion(
  * would be matched by suggestLabelIds but missed here. NULL/empty
  * counterparty IBANs never match. Only 'Gebucht' rows are returned: the
  * worker never claims anything else, so including 'Nicht gebucht' rows
- * would only inflate counts.
+ * would only inflate counts. With `excludeLabelId`, rows already pointing
+ * at that label are skipped (any label_status): re-applying a rule must
+ * neither rewrite them nor re-queue them for a redundant LLM call — apply
+ * is for switching rows to the rule's label, not for refreshing it.
  */
 export function findIbanRuleMatches(
   db: Db | DbTx,
-  ibanKey: string
+  ibanKey: string,
+  excludeLabelId?: number
 ): Array<{ id: string; batchId: string | null }> {
   if (!ibanKey) return []
   const candidates = db
@@ -327,7 +331,13 @@ export function findIbanRuleMatches(
     .where(
       and(
         eq(transactions.status, "Gebucht"),
-        sql`UPPER(REPLACE(${transactions.counterpartyIban}, ' ', '')) = ${ibanKey}`
+        sql`UPPER(REPLACE(${transactions.counterpartyIban}, ' ', '')) = ${ibanKey}`,
+        excludeLabelId === undefined
+          ? undefined
+          : or(
+              isNull(transactions.categoryId),
+              ne(transactions.categoryId, excludeLabelId)
+            )!
       )
     )
     .all()
@@ -344,20 +354,37 @@ export function findIbanRuleMatches(
  * immediately shows the rule's label in the UI while the row is pending.
  * Also re-points completed owning batches to 'labeling' and refreshes their
  * stale labels_total (same bookkeeping as label-deletion reset; done/failed
- * counters are computed on read and self-heal).
+ * counters are computed on read and self-heal). The match read runs inside
+ * the transaction so the reported count matches the rows actually updated
+ * (concurrent deletes can't sneak between read and write) and rows already
+ * carrying the rule's label are left untouched instead of re-queued.
+ * Returns null if the label was deleted concurrently (nothing written).
  */
 export function applyIbanRuleToTransactions(
   ibanKey: string,
   labelId: number
-): string[] {
+): string[] | null {
   const db = getDb()
-  const handle = db
-  const affected = findIbanRuleMatches(handle, ibanKey)
 
+  let applied: string[] = []
+  let labelMissing = false
   const run = (tx: DbTx) => {
+    // Re-check the label inside the transaction: a concurrent label delete
+    // would otherwise make the per-row updates fail on the category FK.
+    const label = tx
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.id, labelId))
+      .get()
+    if (!label) {
+      labelMissing = true
+      return
+    }
+
+    const matched = findIbanRuleMatches(tx, ibanKey, labelId)
     const batchIds = new Set<string>()
     const now = new Date().toISOString()
-    for (const row of affected) {
+    for (const row of matched) {
       tx.update(transactions)
         .set({
           categoryId: labelId,
@@ -384,9 +411,9 @@ export function applyIbanRuleToTransactions(
         )
         .run()
     }
+    applied = matched.map((r) => r.id)
   }
-
   db.transaction(run)
 
-  return affected.map((r) => r.id)
+  return labelMissing ? null : applied
 }

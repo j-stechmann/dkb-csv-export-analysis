@@ -308,6 +308,24 @@ describe("findIbanRuleMatches", () => {
     const matches = findIbanRuleMatches(db, CP_IBAN_KEY)
     expect(matches.map((m) => m.id).sort()).toEqual([a, b].sort())
   })
+
+  it("excludes rows already carrying the excluded label", () => {
+    const labelId = seedLabel("Miete")
+    const otherLabel = seedLabel("Strom")
+    seedTx(null, { categoryId: labelId, labelStatus: "pending" })
+    seedTx(null, {
+      categoryId: labelId,
+      labelStatus: "labeled",
+    })
+    seedTx(null, { categoryId: labelId, labelStatus: "failed" })
+    const other = seedTx(null, { categoryId: otherLabel })
+    const fresh = seedTx(null)
+
+    const matches = findIbanRuleMatches(db, CP_IBAN_KEY, labelId)
+    expect(matches.map((m) => m.id).sort()).toEqual([fresh, other].sort())
+    // without exclusion, all five rows match
+    expect(findIbanRuleMatches(db, CP_IBAN_KEY)).toHaveLength(5)
+  })
 })
 
 describe("GET /api/label-rules/[id]/matches", () => {
@@ -325,6 +343,22 @@ describe("GET /api/label-rules/[id]/matches", () => {
       ruleParams(ruleId)
     )
     expect(res.status).toBe(200)
+    const data = (await res.json()) as { count: number }
+    expect(data.count).toBe(1)
+  })
+
+  it("excludes rows already at the rule's label from the count", async () => {
+    const labelId = seedLabel("Miete")
+    const ruleId = seedRule(labelId)
+    seedTx(null)
+    seedTx(null, { categoryId: labelId, labelStatus: "pending" })
+
+    const res = await countMatches(
+      new NextRequest(
+        new Request(`http://x/api/label-rules/${ruleId}/matches`)
+      ),
+      ruleParams(ruleId)
+    )
     const data = (await res.json()) as { count: number }
     expect(data.count).toBe(1)
   })
@@ -458,6 +492,63 @@ describe("POST /api/label-rules/[id]/apply", () => {
       ruleParams(999)
     )
     expect(out.status).toBe(404)
+  })
+
+  it("leaves rows already at the rule's label untouched", async () => {
+    const labelId = seedLabel("Miete")
+    const ruleId = seedRule(labelId)
+    seedTx(null, {
+      categoryId: labelId,
+      labelStatus: "labeled",
+      labelAttempts: 3,
+    })
+
+    const out = await applyRule(
+      new NextRequest(
+        new Request(`http://x/api/label-rules/${ruleId}/apply`, {
+          method: "POST",
+        })
+      ),
+      ruleParams(ruleId)
+    )
+    expect(out.status).toBe(200)
+    const data = (await out.json()) as { applied: number }
+    expect(data.applied).toBe(0)
+
+    const row = db.select().from(transactions).all()[0]
+    expect(row.categoryId).toBe(labelId)
+    expect(row.labelStatus).toBe("labeled")
+    expect(row.labelAttempts).toBe(3)
+  })
+
+  it("maps a concurrently deleted label to 404 and writes nothing", async () => {
+    const labelId = seedLabel("Miete")
+    const ruleId = seedRule(labelId)
+    seedTx(null)
+    // Simulate the concurrent-write window the FK can't produce statically:
+    // the route read the rule, then the label vanished before the apply
+    // transaction (label delete cascades to rules, but apply already holds
+    // rule.iban/labelId in memory). Drop the label behind the route's back
+    // by disabling FK enforcement for the delete.
+    db.run("PRAGMA foreign_keys = OFF")
+    db.delete(categories).where(eq(categories.id, labelId)).run()
+    db.run("PRAGMA foreign_keys = ON")
+
+    const out = await applyRule(
+      new NextRequest(
+        new Request(`http://x/api/label-rules/${ruleId}/apply`, {
+          method: "POST",
+        })
+      ),
+      ruleParams(ruleId)
+    )
+    expect(out.status).toBe(404)
+    // the rule row survived (no cascade — label was force-deleted)
+    expect(db.select().from(labelRules).all()).toHaveLength(1)
+    // untouched row stays pending with no category
+    const row = db.select().from(transactions).all()[0]
+    expect(row.categoryId).toBe(null)
+    expect(row.labelStatus).toBe("pending")
   })
 })
 

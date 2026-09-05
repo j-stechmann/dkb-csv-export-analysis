@@ -411,6 +411,7 @@ function ApplyRuleDialog({
       const data = (await res.json()) as {
         applied?: number
         error?: string
+        message?: string
       }
       if (res.ok) {
         toast.success("Regel angewendet", {
@@ -423,7 +424,7 @@ function ApplyRuleDialog({
         onClose()
       } else {
         toast.error("Anwenden fehlgeschlagen", {
-          description: data.error ?? `HTTP ${res.status}`,
+          description: data.message ?? data.error ?? `HTTP ${res.status}`,
         })
       }
     } catch (err) {
