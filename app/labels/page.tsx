@@ -215,7 +215,10 @@ function DeleteLabelDialog({
       }
       if (res.ok) {
         toast.success(`Label "${label.name}" gelöscht`, {
-          description: `${data.affected ?? 0} Transaktionen werden neu kategorisiert.`,
+          description:
+            data.affected === 1
+              ? "Eine Transaktion wird neu kategorisiert."
+              : `${data.affected ?? 0} Transaktionen werden neu kategorisiert.`,
         })
         invalidateAll(queryClient)
         onClose()
@@ -380,27 +383,24 @@ function ApplyRuleDialog({
   labels: LabelRow[]
   onClose: () => void
 }) {
-  const [count, setCount] = React.useState<number | null>(null)
   const [busy, setBusy] = React.useState(false)
-  const [failed, setFailed] = React.useState(false)
   const queryClient = useQueryClient()
 
-  React.useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const res = await fetch(`/api/label-rules/${rule.id}/matches`)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = (await res.json()) as { count: number }
-        if (!cancelled) setCount(data.count)
-      } catch {
-        if (!cancelled) setFailed(true)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [rule.id])
+  // Live query instead of a one-shot fetch: invalidateAll refetches it while
+  // the dialog is open, so the preview count tracks transaction changes.
+  const {
+    data,
+    isLoading,
+    isError: failed,
+  } = useQuery<{ count: number }>({
+    queryKey: ["label-rules", rule.id, "matches"],
+    queryFn: async () => {
+      const res = await fetch(`/api/label-rules/${rule.id}/matches`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    },
+  })
+  const count = data?.count ?? null
 
   const apply = async () => {
     setBusy(true)
@@ -414,7 +414,10 @@ function ApplyRuleDialog({
       }
       if (res.ok) {
         toast.success("Regel angewendet", {
-          description: `${data.applied ?? 0} Transaktionen werden neu gelabelt.`,
+          description:
+            data.applied === 1
+              ? "Eine Transaktion wird neu gelabelt."
+              : `${data.applied ?? 0} Transaktionen werden neu gelabelt.`,
         })
         invalidateAll(queryClient)
         onClose()
@@ -442,7 +445,7 @@ function ApplyRuleDialog({
           <p className="text-sm text-destructive">
             Treffer konnten nicht gezählt werden.
           </p>
-        ) : count === null ? (
+        ) : isLoading || count === null ? (
           <p className="text-sm text-muted-foreground">…</p>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -486,10 +489,8 @@ function RulesList({
     },
   })
   const [busyId, setBusyId] = React.useState<number | null>(null)
-  const [editTarget, setEditTarget] = React.useState<LabelRuleRow | null>(null)
-  const [applyTarget, setApplyTarget] = React.useState<LabelRuleRow | null>(
-    null
-  )
+  const [editTargetId, setEditTargetId] = React.useState<number | null>(null)
+  const [applyTargetId, setApplyTargetId] = React.useState<number | null>(null)
   const queryClient = useQueryClient()
 
   const rules = data?.rules ?? []
@@ -501,6 +502,11 @@ function RulesList({
       </p>
     )
   }
+
+  // Derive dialogs from the live rules list so a deleted rule (or its label)
+  // closes the dialog instead of operating on stale state.
+  const editTarget = rules.find((r) => r.id === editTargetId) ?? null
+  const applyTarget = rules.find((r) => r.id === applyTargetId) ?? null
 
   return (
     <div className="space-y-1">
@@ -523,7 +529,7 @@ function RulesList({
               variant="ghost"
               size="sm"
               disabled={busyId === rule.id}
-              onClick={() => setEditTarget(rule)}
+              onClick={() => setEditTargetId(rule.id)}
               title="Regel bearbeiten"
             >
               <Pencil className="size-3.5" />
@@ -532,7 +538,7 @@ function RulesList({
               variant="ghost"
               size="sm"
               disabled={busyId === rule.id}
-              onClick={() => setApplyTarget(rule)}
+              onClick={() => setApplyTargetId(rule.id)}
               title="Auf bestehende Transaktionen anwenden"
             >
               <RefreshCw className="size-3.5" />
@@ -571,14 +577,14 @@ function RulesList({
         <EditRuleDialog
           rule={editTarget}
           labels={labels}
-          onClose={() => setEditTarget(null)}
+          onClose={() => setEditTargetId(null)}
         />
       )}
       {applyTarget && (
         <ApplyRuleDialog
           rule={applyTarget}
           labels={labels}
-          onClose={() => setApplyTarget(null)}
+          onClose={() => setApplyTargetId(null)}
         />
       )}
     </div>
