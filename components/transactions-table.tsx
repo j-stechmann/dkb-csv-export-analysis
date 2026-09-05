@@ -142,14 +142,21 @@ function AssignLabelDialog({
   )
   const selected = (data?.labels ?? []).find((l) => l.id === selectedId)
 
-  const assign = async () => {
-    if (!selectedId) return
+  const toastError = (title: string, err: unknown) =>
+    toast.error(title, {
+      description: err instanceof Error ? err.message : "Netzwerkfehler",
+    })
+
+  const assign = async (labelId?: number) => {
+    if (busy) return
+    const id = labelId ?? selectedId
+    if (!id) return
     setBusy(true)
     try {
       const res = await fetch(`/api/transactions/${row.id}/label`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ labelId: selectedId }),
+        body: JSON.stringify({ labelId: id }),
       })
       const data2 = (await res.json()) as { error?: string; message?: string }
       if (res.ok) {
@@ -166,12 +173,15 @@ function AssignLabelDialog({
           description: data2.message ?? data2.error ?? `HTTP ${res.status}`,
         })
       }
+    } catch (err) {
+      toastError("Zuweisung fehlgeschlagen", err)
     } finally {
       setBusy(false)
     }
   }
 
   const createAndAssign = async () => {
+    if (busy) return
     if (!search.trim() || exactMatch) return
     setBusy(true)
     try {
@@ -193,6 +203,8 @@ function AssignLabelDialog({
           description: data2.message ?? data2.error ?? `HTTP ${res.status}`,
         })
       }
+    } catch (err) {
+      toastError("Erstellen fehlgeschlagen", err)
     } finally {
       setBusy(false)
     }
@@ -216,9 +228,11 @@ function AssignLabelDialog({
               key={label.id}
               className={cn(
                 "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent",
-                selectedId === label.id && "border-primary bg-accent"
+                selectedId === label.id && "border-primary bg-accent",
+                busy && "pointer-events-none opacity-50"
               )}
               onClick={() => setSelectedId(label.id)}
+              onDoubleClick={() => void assign(label.id)}
             >
               <span
                 className="size-2.5 shrink-0 rounded-full"
