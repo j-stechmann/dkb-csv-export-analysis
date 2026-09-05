@@ -427,12 +427,11 @@ function ApplyRuleDialog({
         ) : (
           <p className="text-sm text-muted-foreground">
             {count === 1
-              ? "Eine Transaktion passt zu dieser Regel"
-              : `${count} Transaktionen passen zu dieser Regel`}
-            . sie erhalten das Label &quot;
-            {labels.find((l) => l.id === rule.labelId)?.name ?? "?"}&quot;
-            zugeordnet und werden vom LLM neu kategorisiert – auch bereits
-            manuell zugewiesene.
+              ? "Eine Transaktion passt zu dieser Regel. Sie erhält das Label "
+              : `${count} Transaktionen passen zu dieser Regel. Sie erhalten das Label `}
+            &quot;{labels.find((l) => l.id === rule.labelId)?.name ?? "?"}&quot;
+            zugeordnet und {count === 1 ? "wird" : "werden"} vom LLM neu
+            kategorisiert – auch bereits manuell zugewiesene.
           </p>
         )}
         <DialogFooter>
