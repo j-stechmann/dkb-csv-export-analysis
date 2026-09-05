@@ -142,6 +142,11 @@ function AssignLabelDialog({
   )
   const selected = (data?.labels ?? []).find((l) => l.id === selectedId)
 
+  const toastError = (title: string, err: unknown) =>
+    toast.error(title, {
+      description: err instanceof Error ? err.message : "Netzwerkfehler",
+    })
+
   const assign = async (labelId?: number) => {
     if (busy) return
     const id = labelId ?? selectedId
@@ -169,15 +174,14 @@ function AssignLabelDialog({
         })
       }
     } catch (err) {
-      toast.error("Zuweisung fehlgeschlagen", {
-        description: err instanceof Error ? err.message : "Netzwerkfehler",
-      })
+      toastError("Zuweisung fehlgeschlagen", err)
     } finally {
       setBusy(false)
     }
   }
 
   const createAndAssign = async () => {
+    if (busy) return
     if (!search.trim() || exactMatch) return
     setBusy(true)
     try {
@@ -200,9 +204,7 @@ function AssignLabelDialog({
         })
       }
     } catch (err) {
-      toast.error("Erstellen fehlgeschlagen", {
-        description: err instanceof Error ? err.message : "Netzwerkfehler",
-      })
+      toastError("Erstellen fehlgeschlagen", err)
     } finally {
       setBusy(false)
     }
