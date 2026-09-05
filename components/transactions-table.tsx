@@ -142,14 +142,16 @@ function AssignLabelDialog({
   )
   const selected = (data?.labels ?? []).find((l) => l.id === selectedId)
 
-  const assign = async () => {
-    if (!selectedId) return
+  const assign = async (labelId?: number) => {
+    if (busy) return
+    const id = labelId ?? selectedId
+    if (!id) return
     setBusy(true)
     try {
       const res = await fetch(`/api/transactions/${row.id}/label`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ labelId: selectedId }),
+        body: JSON.stringify({ labelId: id }),
       })
       const data2 = (await res.json()) as { error?: string; message?: string }
       if (res.ok) {
@@ -219,6 +221,7 @@ function AssignLabelDialog({
                 selectedId === label.id && "border-primary bg-accent"
               )}
               onClick={() => setSelectedId(label.id)}
+              onDoubleClick={() => void assign(label.id)}
             >
               <span
                 className="size-2.5 shrink-0 rounded-full"
