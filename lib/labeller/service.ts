@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm"
-import { getDb, type DbTx } from "@/lib/db"
+import { getDb, type Db, type DbTx } from "@/lib/db"
 import { categories, importBatches, transactions } from "@/lib/db/schema"
+import { normalizeIbanKey } from "@/lib/db/normalize"
 import type { LabelResult } from "@/lib/llm/client"
 import { sanitizeField } from "@/lib/llm/prompt"
 
@@ -271,6 +272,106 @@ export function resetTransactionsForLabelDeletion(
     }
     if (batchIds.size > 0) {
       const now = new Date().toISOString()
+      tx.update(importBatches)
+        .set({
+          status: "labeling",
+          labelsTotal: sql`(SELECT COUNT(*) FROM transactions t WHERE t.batch_id = import_batches.id AND t.status = 'Gebucht')`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            inArray(importBatches.id, [...batchIds]),
+            eq(importBatches.status, "completed")
+          )
+        )
+        .run()
+    }
+  }
+
+  if (existingTx) {
+    run(existingTx)
+  } else {
+    db.transaction(run)
+  }
+
+  return affected.map((r) => r.id)
+}
+
+/**
+ * Finds transactions whose counterparty IBAN matches `ibanKey` (rule-style
+ * normalized comparison) and are labelable by the worker. Counterparty IBANs
+ * are stored with interior spaces and export case, so the SQL prefilter
+ * (UPPER/REPLACE) casts a wide net and the exact TS-side recheck with
+ * normalizeIbanKey decides the match. The prefilter strips ASCII spaces
+ * only — exact for everything the CSV parser stores (cleanCell collapses
+ * all whitespace, including NBSP/U+202F, into single ASCII spaces before
+ * insert); a hypothetical out-of-band writer leaving other whitespace or
+ * non-ASCII letters (SQLite UPPER is ASCII-only, unlike JS toUpperCase)
+ * would be matched by suggestLabelIds but missed here. NULL/empty
+ * counterparty IBANs never match. Only 'Gebucht' rows are returned: the
+ * worker never claims anything else, so including 'Nicht gebucht' rows
+ * would only inflate counts.
+ */
+export function findIbanRuleMatches(
+  db: Db | DbTx,
+  ibanKey: string
+): Array<{ id: string; batchId: string | null }> {
+  if (!ibanKey) return []
+  const candidates = db
+    .select({
+      id: transactions.id,
+      batchId: transactions.batchId,
+      counterpartyIban: transactions.counterpartyIban,
+    })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.status, "Gebucht"),
+        sql`UPPER(REPLACE(${transactions.counterpartyIban}, ' ', '')) = ${ibanKey}`
+      )
+    )
+    .all()
+  return candidates.filter(
+    (row) => normalizeIbanKey(row.counterpartyIban) === ibanKey
+  )
+}
+
+/**
+ * Applies a label rule to existing data (email-filter style): every matching
+ * 'Gebucht' transaction is pointed at the rule's label and reset to pending
+ * so the label worker re-labels it via the LLM — the rule is injected as a
+ * suggestion and the model confirms the final label. Setting categoryId
+ * immediately shows the rule's label in the UI while the row is pending.
+ * Also re-points completed owning batches to 'labeling' and refreshes their
+ * stale labels_total (same bookkeeping as label-deletion reset; done/failed
+ * counters are computed on read and self-heal).
+ * Passing `existingTx` runs inside the caller's transaction.
+ */
+export function applyIbanRuleToTransactions(
+  ibanKey: string,
+  labelId: number,
+  existingTx?: DbTx
+): string[] {
+  const db = getDb()
+  const handle = existingTx ?? db
+  const affected = findIbanRuleMatches(handle, ibanKey)
+
+  const run = (tx: DbTx) => {
+    const batchIds = new Set<string>()
+    const now = new Date().toISOString()
+    for (const row of affected) {
+      tx.update(transactions)
+        .set({
+          categoryId: labelId,
+          labelStatus: "pending",
+          labelAttempts: 0,
+          updatedAt: now,
+        })
+        .where(eq(transactions.id, row.id))
+        .run()
+      if (row.batchId) batchIds.add(row.batchId)
+    }
+    if (batchIds.size > 0) {
       tx.update(importBatches)
         .set({
           status: "labeling",

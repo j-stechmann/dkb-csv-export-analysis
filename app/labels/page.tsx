@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import {
   Card,
@@ -14,6 +14,13 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -243,7 +250,214 @@ function DeleteLabelDialog({
   )
 }
 
-function RulesList({ labelId }: { labelId: number }) {
+function EditRuleDialog({
+  rule,
+  labels,
+  onClose,
+}: {
+  rule: LabelRuleRow
+  labels: LabelRow[]
+  onClose: () => void
+}) {
+  const [labelId, setLabelId] = React.useState(String(rule.labelId))
+  const [iban, setIban] = React.useState(rule.iban)
+  const [name, setName] = React.useState(rule.name)
+  const [busy, setBusy] = React.useState(false)
+  const queryClient = useQueryClient()
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/label-rules/${rule.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          labelId: Number.parseInt(labelId, 10),
+          iban: iban.trim(),
+          name: name.trim(),
+        }),
+      })
+      const data = (await res.json()) as { error?: string; message?: string }
+      if (res.ok) {
+        toast.success("Regel aktualisiert")
+        invalidateAll(queryClient)
+        onClose()
+      } else if (res.status === 409) {
+        toast.error("Regel existiert bereits")
+      } else {
+        toast.error("Bearbeiten fehlgeschlagen", {
+          description: data.message ?? `HTTP ${res.status}`,
+        })
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Regel bearbeiten</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <span className="text-xs text-muted-foreground">Label</span>
+            <Select
+              items={Object.fromEntries(
+                labels.map((l) => [String(l.id), l.name])
+              )}
+              value={labelId}
+              onValueChange={(value) => value && setLabelId(value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {labels.map((label) => (
+                  <SelectItem key={label.id} value={String(label.id)}>
+                    {label.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-xs text-muted-foreground">IBAN</span>
+            <Input
+              value={iban}
+              autoFocus
+              onChange={(e) => setIban(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-xs text-muted-foreground">Name</span>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Änderungen wirken erst, wenn du die Regel mit &quot;Anwenden&quot;
+            auf bestehende Transaktionen loslässt.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Abbrechen
+          </Button>
+          <Button
+            disabled={busy || !iban.trim() || !name.trim()}
+            onClick={() => void save()}
+          >
+            Speichern
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ApplyRuleDialog({
+  rule,
+  labels,
+  onClose,
+}: {
+  rule: LabelRuleRow
+  labels: LabelRow[]
+  onClose: () => void
+}) {
+  const [count, setCount] = React.useState<number | null>(null)
+  const [busy, setBusy] = React.useState(false)
+  const [failed, setFailed] = React.useState(false)
+  const queryClient = useQueryClient()
+
+  React.useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/label-rules/${rule.id}/matches`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = (await res.json()) as { count: number }
+        if (!cancelled) setCount(data.count)
+      } catch {
+        if (!cancelled) setFailed(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [rule.id])
+
+  const apply = async () => {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/label-rules/${rule.id}/apply`, {
+        method: "POST",
+      })
+      const data = (await res.json()) as {
+        applied?: number
+        error?: string
+      }
+      if (res.ok) {
+        toast.success("Regel angewendet", {
+          description: `${data.applied ?? 0} Transaktionen werden neu gelabelt.`,
+        })
+        invalidateAll(queryClient)
+        onClose()
+      } else {
+        toast.error("Anwenden fehlgeschlagen", {
+          description: data.error ?? `HTTP ${res.status}`,
+        })
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Regel anwenden?</DialogTitle>
+        </DialogHeader>
+        {failed ? (
+          <p className="text-sm text-destructive">
+            Treffer konnten nicht gezählt werden.
+          </p>
+        ) : count === null ? (
+          <p className="text-sm text-muted-foreground">…</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {count === 1
+              ? "Eine Transaktion passt zu dieser Regel"
+              : `${count} Transaktionen passen zu dieser Regel`}
+            . sie erhalten das Label &quot;
+            {labels.find((l) => l.id === rule.labelId)?.name ?? "?"}&quot;
+            zugeordnet und werden vom LLM neu kategorisiert – auch bereits
+            manuell zugewiesene.
+          </p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Abbrechen
+          </Button>
+          <Button
+            disabled={busy || failed || count === null || count === 0}
+            onClick={() => void apply()}
+          >
+            <RefreshCw className="size-4" /> Anwenden
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RulesList({
+  labelId,
+  labels,
+}: {
+  labelId: number
+  labels: LabelRow[]
+}) {
   const { data } = useQuery<{ rules: LabelRuleRow[] }>({
     queryKey: ["label-rules", labelId],
     queryFn: async () => {
@@ -253,6 +467,10 @@ function RulesList({ labelId }: { labelId: number }) {
     },
   })
   const [busyId, setBusyId] = React.useState<number | null>(null)
+  const [editTarget, setEditTarget] = React.useState<LabelRuleRow | null>(null)
+  const [applyTarget, setApplyTarget] = React.useState<LabelRuleRow | null>(
+    null
+  )
   const queryClient = useQueryClient()
 
   const rules = data?.rules ?? []
@@ -281,31 +499,65 @@ function RulesList({ labelId }: { labelId: number }) {
               {rule.iban}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busyId === rule.id}
-            onClick={async () => {
-              setBusyId(rule.id)
-              try {
-                const res = await fetch(`/api/label-rules/${rule.id}`, {
-                  method: "DELETE",
-                })
-                if (res.ok) {
-                  toast.success("Regel gelöscht")
-                  invalidateAll(queryClient)
-                } else {
-                  toast.error("Löschen der Regel fehlgeschlagen")
+          <div className="flex shrink-0 items-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busyId === rule.id}
+              onClick={() => setEditTarget(rule)}
+              title="Regel bearbeiten"
+            >
+              <Pencil className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busyId === rule.id}
+              onClick={() => setApplyTarget(rule)}
+              title="Auf bestehende Transaktionen anwenden"
+            >
+              <RefreshCw className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busyId === rule.id}
+              onClick={async () => {
+                setBusyId(rule.id)
+                try {
+                  const res = await fetch(`/api/label-rules/${rule.id}`, {
+                    method: "DELETE",
+                  })
+                  if (res.ok) {
+                    toast.success("Regel gelöscht")
+                    invalidateAll(queryClient)
+                  } else {
+                    toast.error("Löschen der Regel fehlgeschlagen")
+                  }
+                } finally {
+                  setBusyId(null)
                 }
-              } finally {
-                setBusyId(null)
-              }
-            }}
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
+              }}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </div>
         </div>
       ))}
+      {editTarget && (
+        <EditRuleDialog
+          rule={editTarget}
+          labels={labels}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+      {applyTarget && (
+        <ApplyRuleDialog
+          rule={applyTarget}
+          labels={labels}
+          onClose={() => setApplyTarget(null)}
+        />
+      )}
     </div>
   )
 }
@@ -334,8 +586,9 @@ export default function LabelsPage() {
         </h1>
         <p className="text-sm text-muted-foreground">
           Kategorien verwalten. Gelernte Regeln entstehen durch manuelle
-          Zuweisung in der Transaktionsliste und schlagen passende Labels dem
-          LLM vor.
+          Zuweisung in der Transaktionstabelle, können bearbeitet werden und
+          schlagen passende Labels dem LLM vor. Mit &quot;Anwenden&quot; wird
+          eine Regel auf alle bestehenden passenden Transaktionen losgelassen.
         </p>
       </div>
 
@@ -420,7 +673,7 @@ export default function LabelsPage() {
                 </div>
                 {expandedId === label.id && (
                   <div className="mt-2 border-t pt-2">
-                    <RulesList labelId={label.id} />
+                    <RulesList labelId={label.id} labels={labels} />
                   </div>
                 )}
               </div>
