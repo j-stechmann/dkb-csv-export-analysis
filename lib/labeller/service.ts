@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm"
 import { getDb, type Db, type DbTx } from "@/lib/db"
 import { categories, importBatches, transactions } from "@/lib/db/schema"
-import { normalizeIbanKey } from "@/lib/db/normalize"
+import { normalizeCounterpartyKey, normalizeIbanKey } from "@/lib/db/normalize"
 import type { LabelResult } from "@/lib/llm/client"
 import { sanitizeField } from "@/lib/llm/prompt"
 
@@ -297,41 +297,59 @@ export function resetTransactionsForLabelDeletion(
   return affected.map((r) => r.id)
 }
 
+/** Rule match tuple: normalized IBAN + payer + payee keys. */
+export interface RuleTuple {
+  ibanKey: string
+  payerKey: string
+  payeeKey: string
+}
+
 /**
- * Finds transactions whose counterparty IBAN matches `ibanKey` (rule-style
- * normalized comparison) and are labelable by the worker. Counterparty IBANs
- * are stored with interior spaces and export case, so the SQL prefilter
+ * Finds transactions whose exact counterparty combination (IBAN + payer +
+ * payee) matches the rule tuple and are labelable by the worker. Counterparty
+ * IBANs are stored with interior spaces and export case, so the SQL prefilter
  * (UPPER/REPLACE) casts a wide net and the exact TS-side recheck with
- * normalizeIbanKey decides the match. The prefilter strips ASCII spaces
- * only — exact for everything the CSV parser stores (cleanCell collapses
- * all whitespace, including NBSP/U+202F, into single ASCII spaces before
- * insert); a hypothetical out-of-band writer leaving other whitespace or
- * non-ASCII letters (SQLite UPPER is ASCII-only, unlike JS toUpperCase)
- * would be matched by suggestLabelIds but missed here. NULL/empty
- * counterparty IBANs never match. Only 'Gebucht' rows are returned: the
- * worker never claims anything else, so including 'Nicht gebucht' rows
- * would only inflate counts. With `excludeLabelId`, rows already pointing
- * at that label are skipped (any label_status): re-applying a rule must
- * neither rewrite them nor re-queue them for a redundant LLM call — apply
- * is for switching rows to the rule's label, not for refreshing it.
+ * normalizeIbanKey + normalizeCounterpartyKey decides the match. The prefilter
+ * strips ASCII spaces only — exact for everything the CSV parser stores
+ * (cleanCell collapses all whitespace, including NBSP/U+202F, into single
+ * ASCII spaces before insert); a hypothetical out-of-band writer leaving
+ * other whitespace or non-ASCII letters (SQLite UPPER is ASCII-only, unlike
+ * JS toUpperCase) would be matched by suggestLabelIds but missed here.
+ * NULL/empty counterparty IBANs never match. Only 'Gebucht' rows are
+ * returned: the worker never claims anything else, so including
+ * 'Nicht gebucht' rows would only inflate counts. With `excludeLabelId`,
+ * rows already pointing at that label are skipped (any label_status):
+ * re-applying a rule must neither rewrite them nor re-queue them for a
+ * redundant LLM call — apply is for switching rows to the rule's label,
+ * not for refreshing it.
  */
-export function findIbanRuleMatches(
+export function findRuleMatches(
   db: Db | DbTx,
-  ibanKey: string,
+  key: {
+    ibanKey: string
+    payerKey: string
+    payeeKey: string
+  },
   excludeLabelId?: number
 ): Array<{ id: string; batchId: string | null }> {
-  if (!ibanKey) return []
+  if (!key.ibanKey) return []
+  // empty key components are inert (legacy fallback rules): ruleKeyFor never
+  // produces them, so findRuleMatches must not match them either — otherwise
+  // apply would reset rows the worker then labels without a rule_label
+  if (!key.payerKey || !key.payeeKey) return []
   const candidates = db
     .select({
       id: transactions.id,
       batchId: transactions.batchId,
       counterpartyIban: transactions.counterpartyIban,
+      payer: transactions.payer,
+      payee: transactions.payee,
     })
     .from(transactions)
     .where(
       and(
         eq(transactions.status, "Gebucht"),
-        sql`UPPER(REPLACE(${transactions.counterpartyIban}, ' ', '')) = ${ibanKey}`,
+        sql`UPPER(REPLACE(${transactions.counterpartyIban}, ' ', '')) = ${key.ibanKey}`,
         excludeLabelId === undefined
           ? undefined
           : or(
@@ -341,27 +359,42 @@ export function findIbanRuleMatches(
       )
     )
     .all()
-  return candidates.filter(
-    (row) => normalizeIbanKey(row.counterpartyIban) === ibanKey
-  )
+  return candidates.filter((row) => {
+    if (normalizeIbanKey(row.counterpartyIban) !== key.ibanKey) return false
+    const payerKey = normalizeCounterpartyKey(row.payer)
+    const payeeKey = normalizeCounterpartyKey(row.payee)
+    // strict match: an empty transaction key can never equal a rule key
+    // (normalizeCounterpartyKey('') === '' would otherwise match inert rules)
+    return (
+      payerKey !== "" &&
+      payeeKey !== "" &&
+      payerKey === key.payerKey &&
+      payeeKey === key.payeeKey
+    )
+  })
 }
 
 /**
  * Applies a label rule to existing data (email-filter style): every matching
  * 'Gebucht' transaction is pointed at the rule's label and reset to pending
  * so the label worker re-labels it via the LLM — the rule is injected as a
- * suggestion and the model confirms the final label. Setting categoryId
- * immediately shows the rule's label in the UI while the row is pending.
- * Also re-points completed owning batches to 'labeling' and refreshes their
- * stale labels_total (same bookkeeping as label-deletion reset; done/failed
- * counters are computed on read and self-heal). The match read runs inside
- * the transaction so the reported count matches the rows actually updated
- * (concurrent deletes can't sneak between read and write) and rows already
- * carrying the rule's label are left untouched instead of re-queued.
- * Returns null if the label was deleted concurrently (nothing written).
+ * human-made rule_label and the model confirms the final label. Setting
+ * categoryId immediately shows the rule's label in the UI while the row is
+ * pending. Also re-points completed owning batches to 'labeling' and
+ * refreshes their stale labels_total (same bookkeeping as label-deletion
+ * reset; done/failed counters are computed on read and self-heal). The
+ * match read runs inside the transaction so the reported count matches the
+ * rows actually updated (concurrent deletes can't sneak between read and
+ * write) and rows already carrying the rule's label are left untouched
+ * instead of re-queued. Returns null if the label was deleted concurrently
+ * (nothing written).
  */
-export function applyIbanRuleToTransactions(
-  ibanKey: string,
+export function applyRuleToTransactions(
+  key: {
+    ibanKey: string
+    payerKey: string
+    payeeKey: string
+  },
   labelId: number
 ): string[] | null {
   const db = getDb()
@@ -381,7 +414,7 @@ export function applyIbanRuleToTransactions(
       return
     }
 
-    const matched = findIbanRuleMatches(tx, ibanKey, labelId)
+    const matched = findRuleMatches(tx, key, labelId)
     const batchIds = new Set<string>()
     const now = new Date().toISOString()
     for (const row of matched) {

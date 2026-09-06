@@ -17,7 +17,7 @@ function tx(overrides: Partial<PromptTransaction> = {}): PromptTransaction {
     counterparty: "REWE",
     purpose: "Einkauf",
     bookingDate: "2026-02-14",
-    suggestions: [],
+    ruleLabel: null,
     ...overrides,
   }
 }
@@ -43,10 +43,12 @@ describe("systemPrompt", () => {
     expect(p).not.toContain("Existing category labels")
   })
 
-  it("documents the suggested_labels rule", () => {
+  it("documents the rule_label contract as the final section", () => {
     const p = systemPrompt("de", ["Miete"])
-    expect(p).toContain("suggested_labels")
-    expect(p).toContain("Prefer the first fitting suggestion")
+    expect(p).toContain("RULES FOR RULE_LABEL")
+    expect(p).toContain("human-made rule")
+    expect(p).toContain("EXACTLY")
+    expect(p).not.toContain("suggested_labels")
   })
 })
 
@@ -62,20 +64,17 @@ describe("userPrompt", () => {
     expect(p).toContain("Gehalt")
   })
 
-  it("renders single and multiple suggestions joined by pipes", () => {
-    const p1 = userPrompt([tx({ suggestions: ["Miete"] })])
-    expect(p1).toContain("suggested_labels=<<Miete>>")
+  it("renders rule_label at the end of the line when present", () => {
+    const withRule = userPrompt([tx({ ruleLabel: "Miete" })])
+    expect(withRule).toContain("purpose=<<Einkauf>>; rule_label=<<Miete>>")
 
-    const p2 = userPrompt([tx({ suggestions: ["Miete", "Kaution"] })])
-    expect(p2).toContain("suggested_labels=<<Miete | Kaution>>")
-
-    const p0 = userPrompt([tx()])
-    expect(p0).toContain("suggested_labels=<<none>>")
+    const withoutRule = userPrompt([tx()])
+    expect(withoutRule).not.toContain("rule_label")
   })
 
-  it("neutralizes pipes inside suggestions so a label stays one entry", () => {
-    const p = userPrompt([tx({ suggestions: ["X | Y"] })])
-    expect(p).toContain("suggested_labels=<<X / Y>>")
+  it("does not render suggested_labels", () => {
+    const p = userPrompt([tx({ ruleLabel: "Miete" })])
+    expect(p).not.toContain("suggested_labels")
   })
 
   it("sanitizes injection markers", () => {

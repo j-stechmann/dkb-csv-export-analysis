@@ -5,8 +5,10 @@ import { accounts, categories, labelRules } from "@/lib/db/schema"
 import {
   learnRule,
   resolveLabelNames,
+  ruleKeyFor,
   suggestForBatch,
   suggestLabelIds,
+  type RuleKey,
 } from "@/lib/labels/matching"
 import { resetConfigCache } from "@/lib/config"
 
@@ -37,21 +39,31 @@ function cat(name: string, origin = "manual", usageCount = 0): number {
 function rule(
   labelId: number,
   iban: string,
-  nameKey: string,
-  createdAt = new Date().toISOString()
+  payerKey: string,
+  payeeKey: string
 ): number {
   return db
     .insert(labelRules)
     .values({
       labelId,
       iban,
-      nameKey,
-      name: nameKey,
-      createdAt,
-      updatedAt: createdAt,
+      payerKey,
+      payeeKey,
+      payer: payerKey.toUpperCase(),
+      payee: payeeKey.toUpperCase(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     })
     .returning()
     .get().id
+}
+
+function key(
+  iban: string | null,
+  payer: string | null,
+  payee: string | null
+): RuleKey | null {
+  return ruleKeyFor({ counterpartyIban: iban, payer, payee })
 }
 
 beforeEach(() => {
@@ -61,69 +73,74 @@ beforeEach(() => {
   resetConfigCache()
 })
 
-describe("suggestLabelIds", () => {
-  it("returns rules for an exact IBAN match", () => {
-    const miete = cat("Miete")
-    rule(miete, IBAN, "vermieter")
+describe("ruleKeyFor", () => {
+  it("normalizes the tuple case/space-insensitively", () => {
+    expect(
+      key(" de02 1203 0000 0000 2020 51 ", "Vermieter GmbH", "Mieter AG")
+    ).toEqual({
+      ibanKey: IBAN,
+      payerKey: "vermieter",
+      payeeKey: "mieter",
+    })
+  })
 
-    expect(suggestLabelIds(db, " de02 1203 0000 0000 2020 51 ")).toEqual([
-      miete,
-    ])
+  it("returns null when any component is unusable", () => {
+    expect(key(null, "A", "B")).toBeNull()
+    expect(key("", "A", "B")).toBeNull()
+    expect(key(IBAN, null, "B")).toBeNull()
+    expect(key(IBAN, "   ", "B")).toBeNull()
+    expect(key(IBAN, "GmbH", "B")).toBeNull() // legal-form-only name
+    expect(key(IBAN, "A", null)).toBeNull()
+  })
+})
+
+describe("suggestLabelIds", () => {
+  it("returns the rule for an exact tuple match", () => {
+    const miete = cat("Miete")
+    rule(miete, IBAN, "vermieter", "mieter")
+
+    expect(
+      suggestLabelIds(db, key(IBAN, "Vermieter GmbH", "Mieter AG")!)
+    ).toEqual([miete])
+  })
+
+  it("requires every tuple component to match", () => {
+    const miete = cat("Miete")
+    rule(miete, IBAN, "vermieter", "mieter")
+
+    expect(suggestLabelIds(db, key(IBAN, "Vermieter", "Other")!)).toEqual([])
+    expect(suggestLabelIds(db, key(IBAN, "Other", "Mieter")!)).toEqual([])
+    expect(
+      suggestLabelIds(db, key("DE00999999990000000099", "Vermieter", "Mieter")!)
+    ).toEqual([])
   })
 
   it("returns nothing without a rule match", () => {
-    expect(suggestLabelIds(db, IBAN)).toEqual([])
-    expect(suggestLabelIds(db, null)).toEqual([])
-    expect(suggestLabelIds(db, "")).toEqual([])
-  })
-
-  it("ranks by usageCount desc, manual before llm, newest first", () => {
-    const old = new Date(Date.now() - 60_000).toISOString()
-    const now = new Date().toISOString()
-
-    const llmLow = cat("LlmLow", "llm", 1)
-    const manualLow = cat("ManualLow", "manual", 1)
-    const llmHigh = cat("LlmHigh", "llm", 5)
-    const manualHigh = cat("ManualHigh", "manual", 5)
-
-    // same usage, manual beats llm; same usage+origin, newest wins
-    rule(llmLow, IBAN, "llm-low", old)
-    rule(manualLow, IBAN, "manual-low", now)
-    rule(llmHigh, IBAN, "llm-high", old)
-    rule(manualHigh, IBAN, "manual-high", now)
-
-    expect(suggestLabelIds(db, IBAN)).toEqual([manualHigh, llmHigh, manualLow])
-  })
-
-  it("dedupes by label and caps at LLM_MAX_SUGGESTIONS", () => {
-    process.env.LLM_MAX_SUGGESTIONS = "2"
-    resetConfigCache()
-
-    const a = cat("A", "llm", 5)
-    const b = cat("B", "llm", 4)
-    const c = cat("C", "llm", 3)
-    // two rules (different nameKeys) pointing at label A — deduped
-    rule(a, IBAN, "rendering-1")
-    rule(a, IBAN, "rendering-2")
-    rule(b, IBAN, "rendering-3")
-    rule(c, IBAN, "rendering-4")
-
-    expect(suggestLabelIds(db, IBAN)).toEqual([a, b])
-    delete process.env.LLM_MAX_SUGGESTIONS
-    resetConfigCache()
+    expect(suggestLabelIds(db, key(IBAN, "A", "B")!)).toEqual([])
+    expect(
+      suggestLabelIds(db, { ibanKey: "", payerKey: "a", payeeKey: "b" })
+    ).toEqual([])
   })
 })
 
 describe("suggestForBatch", () => {
-  it("maps suggestions per transaction and queries each IBAN once", () => {
+  it("maps suggestions per transaction and queries each tuple once", () => {
     const miete = cat("Miete")
-    rule(miete, IBAN, "vermieter")
+    rule(miete, IBAN, "vermieter", "mieter")
 
     const result = suggestForBatch([
-      { counterpartyIban: IBAN },
-      { counterpartyIban: IBAN },
-      { counterpartyIban: null },
-      { counterpartyIban: "DE00UNMATCHED00000000" },
+      { counterpartyIban: IBAN, payer: "Vermieter", payee: "Mieter" },
+      {
+        counterpartyIban: " de02 1203 0000 0000 2020 51 ",
+        payer: "vermieter gmbh",
+        payee: "Mieter",
+      },
+      { counterpartyIban: IBAN, payer: null, payee: "Mieter" },
+      {
+        counterpartyIban: "DE00UNMATCHED00000000",
+        payer: "Vermieter",
+        payee: "Mieter",
+      },
     ])
 
     expect(result.get(0)).toEqual([miete])
@@ -134,78 +151,97 @@ describe("suggestForBatch", () => {
 })
 
 describe("learnRule", () => {
-  it("inserts a rule with normalized keys and display name", () => {
+  it("inserts a rule with normalized tuple keys and display names", () => {
     const miete = cat("Miete")
     const id = learnRule(db, {
       counterpartyIban: " de02 1203 0000 0000 2020 51 ",
-      counterpartyName: "Vermieter GmbH",
+      payer: "ISSUER",
+      payee: "Vermieter GmbH",
       labelId: miete,
     })
 
     expect(id).not.toBeNull()
     const row = db.select().from(labelRules).all()[0]
     expect(row.iban).toBe(IBAN)
-    expect(row.nameKey).toBe("vermieter")
-    expect(row.name).toBe("Vermieter GmbH")
+    expect(row.payerKey).toBe("issuer")
+    expect(row.payeeKey).toBe("vermieter")
+    expect(row.payer).toBe("ISSUER")
+    expect(row.payee).toBe("Vermieter GmbH")
     expect(row.labelId).toBe(miete)
   })
 
-  it("upserts: re-assigning the same rendering replaces the label", () => {
+  it("upserts: re-assigning the same tuple replaces the label", () => {
     const miete = cat("Miete")
     const kaution = cat("Kaution")
     learnRule(db, {
       counterpartyIban: IBAN,
-      counterpartyName: "Vermieter",
+      payer: "ISSUER",
+      payee: "Vermieter",
       labelId: miete,
     })
     learnRule(db, {
       counterpartyIban: IBAN,
-      counterpartyName: "vermieter gmbh",
+      payer: "ISSUER",
+      payee: "vermieter gmbh",
       labelId: kaution,
     })
 
     const rules = db.select().from(labelRules).all()
-    // "Vermieter" and "vermieter gmbh" normalize to the same key → replaced
+    // same tuple → replaced, newest wins
     expect(rules).toHaveLength(1)
     expect(rules[0].labelId).toBe(kaution)
+    expect(rules[0].payee).toBe("vermieter gmbh")
   })
 
-  it("keeps sibling renderings as separate rules", () => {
+  it("keeps sibling tuples as separate rules", () => {
     const miete = cat("Miete")
     learnRule(db, {
       counterpartyIban: IBAN,
-      counterpartyName: "EDEKA",
+      payer: "ISSUER",
+      payee: "EDEKA",
       labelId: miete,
     })
     learnRule(db, {
       counterpartyIban: IBAN,
-      counterpartyName: "EDEKA.SCHROT/ELXLEBEN",
+      payer: "ISSUER",
+      payee: "REWE",
       labelId: miete,
     })
 
     expect(db.select().from(labelRules).all()).toHaveLength(2)
   })
 
-  it("rejects junk IBANs and empty names", () => {
+  it("rejects junk IBANs and empty payer/payee", () => {
     const miete = cat("Miete")
     expect(
       learnRule(db, {
         counterpartyIban: "IBAN123",
-        counterpartyName: "X",
+        payer: "A",
+        payee: "B",
         labelId: miete,
       })
     ).toBeNull()
     expect(
       learnRule(db, {
         counterpartyIban: IBAN,
-        counterpartyName: "   ",
+        payer: "   ",
+        payee: "B",
+        labelId: miete,
+      })
+    ).toBeNull()
+    expect(
+      learnRule(db, {
+        counterpartyIban: IBAN,
+        payer: "A",
+        payee: null,
         labelId: miete,
       })
     ).toBeNull()
     expect(
       learnRule(db, {
         counterpartyIban: null,
-        counterpartyName: "X",
+        payer: "A",
+        payee: "B",
         labelId: miete,
       })
     ).toBeNull()

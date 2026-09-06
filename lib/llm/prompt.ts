@@ -25,14 +25,16 @@ export interface PromptTransaction {
   counterparty: string
   purpose: string
   bookingDate: string
-  suggestions: string[]
+  /** category from a human-learned rule for this exact counterparty combination */
+  ruleLabel: string | null
 }
 
 /**
  * Renders the system prompt: role, output contract, labelling rules, the
  * existing-label list (usage-ranked, verbatim reuse required) and the
- * suggested-label rule. Suggestions come from learned counterparty rules and
- * are hints — the model decides, but must reuse a fitting one verbatim.
+ * rule_label contract. A rule_label comes from a learned counterparty rule
+ * (human-made) — the model confirms it or deviates when it clearly doesn't
+ * fit.
  */
 export function systemPrompt(lang: string, existingLabels: string[]): string {
   const langName = languageDisplay(lang)
@@ -70,23 +72,22 @@ export function systemPrompt(lang: string, existingLabels: string[]): string {
     s +=
       "- Only invent a new label when none of the existing labels fits. New labels are added to the list automatically.\n"
   }
-  s += "\nRULES FOR SUGGESTED LABELS:\n"
+  s += "\nRULES FOR RULE_LABEL:\n"
   s +=
-    "- Each transaction may carry suggested_labels from the user's own labelling history.\n"
+    "- Some transactions carry rule_label: a category the user has manually assigned to this exact counterparty combination (payer + payee + account) before. It is a human-made rule, not a hint.\n"
   s +=
-    "- If a suggested label fits the transaction, you MUST use it EXACTLY as written (character-for-character). Prefer the first fitting suggestion.\n"
+    "- You MUST reuse the rule_label EXACTLY as written (character-for-character) unless it clearly does not fit the transaction (e.g. the purpose contradicts the category).\n"
   s +=
-    "- If none of the suggested labels fits, fall back to the existing labels above, or invent a new label.\n"
+    "- If the rule_label clearly does not fit, choose from the existing labels above or invent a new label.\n"
   return s
 }
 
 /**
  * Neutralizes prompt-structure markers so a stored label always survives
  * rendering unchanged: `<<`/`>>` runs collapse to single `<`/`>`, `index=`
- * loses its `=`, `|` becomes `/` (the suggestions list is joined with ` | `,
- * so a literal pipe would render as two suggestions). The angle replacements
- * iterate to a fixed point — a single pass only halves odd runs (`a<<<b`
- * → `a<<b` still reads as a marker opener).
+ * loses its `=`, `|` becomes `/`. The angle replacements iterate to a fixed
+ * point — a single pass only halves odd runs (`a<<<b` → `a<<b` still reads
+ * as a marker opener).
  */
 export function neutralizeMarkers(s: string): string {
   let out = s
@@ -128,10 +129,10 @@ export function formatAmount(cents: number): string {
 export function userPrompt(txs: PromptTransaction[]): string {
   let s = "Classify these transactions:\n"
   txs.forEach((tx, i) => {
-    const suggestions = tx.suggestions.length
-      ? tx.suggestions.map((x) => sanitizeField(x)).join(" | ")
-      : "none"
-    s += `[${i}] date=${sanitizeField(tx.bookingDate)}; amount=${formatAmount(tx.amountCents)}; currency=EUR; counterparty=<<${sanitizeField(tx.counterparty)}>>; purpose=<<${sanitizeField(tx.purpose)}>>; suggested_labels=<<${suggestions}>>\n`
+    const ruleLabel = tx.ruleLabel
+      ? `; rule_label=<<${sanitizeField(tx.ruleLabel)}>>`
+      : ""
+    s += `[${i}] date=${sanitizeField(tx.bookingDate)}; amount=${formatAmount(tx.amountCents)}; currency=EUR; counterparty=<<${sanitizeField(tx.counterparty)}>>; purpose=<<${sanitizeField(tx.purpose)}>>${ruleLabel}\n`
   })
   return s
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { labelRules } from "@/lib/db/schema"
-import { applyIbanRuleToTransactions } from "@/lib/labeller/service"
+import { applyRuleToTransactions, type RuleTuple } from "@/lib/labeller/service"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic"
 /**
  * Applies a rule to existing data: matching 'Gebucht' transactions are
  * pointed at the rule's label and reset to pending so the background worker
- * re-labels them via the LLM (rule goes in as a suggestion). The reset
- * invalidates any in-flight LLM claim via the attempts-snapshot guard.
+ * re-labels them via the LLM (rule goes in as a human-made rule_label). The
+ * reset invalidates any in-flight LLM claim via the attempts-snapshot guard.
  */
 export async function POST(
   _request: NextRequest,
@@ -28,6 +28,8 @@ export async function POST(
     .select({
       id: labelRules.id,
       iban: labelRules.iban,
+      payerKey: labelRules.payerKey,
+      payeeKey: labelRules.payeeKey,
       labelId: labelRules.labelId,
     })
     .from(labelRules)
@@ -40,7 +42,12 @@ export async function POST(
     )
   }
 
-  const affected = applyIbanRuleToTransactions(rule.iban, rule.labelId)
+  const key: RuleTuple = {
+    ibanKey: rule.iban,
+    payerKey: rule.payerKey,
+    payeeKey: rule.payeeKey,
+  }
+  const affected = applyRuleToTransactions(key, rule.labelId)
   if (affected === null) {
     // Label deleted between the rule read and the apply transaction (label
     // deletion cascades to rules, so the rule itself is gone too).

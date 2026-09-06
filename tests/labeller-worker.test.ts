@@ -47,6 +47,7 @@ function seedTx(
       batchId,
       bookingDate: "2026-02-03",
       status: "Gebucht",
+      payer: "ISSUER",
       payee: "REWE",
       type: "Ausgang",
       amountCents: -100,
@@ -209,13 +210,14 @@ describe("tick", () => {
     })
   })
 
-  it("suggests labels from learned rules and prefers them in the prompt", async () => {
+  it("labels a rule match via rule_label in the prompt", async () => {
     const batchId = seedBatch()
     const id = seedTx(batchId, {
       counterpartyIban: "de02 1203 0000 0000 2020 51",
     })
 
-    // learn a rule for this IBAN (normalized key strips spaces + uppercases)
+    // learn a rule for this exact counterparty tuple (normalized keys strip
+    // spaces + lowercases; "REWE" normalizes to "rewe")
     const cat = db
       .insert(categories)
       .values({
@@ -230,14 +232,17 @@ describe("tick", () => {
       .values({
         labelId: cat.id,
         iban: "DE02120300000000202051",
-        nameKey: "vermieter",
-        name: "Vermieter",
+        payerKey: "issuer",
+        payeeKey: "rewe",
+        payer: "ISSUER",
+        payee: "REWE",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
       .run()
 
-    let promptSuggestion: string | null = null
+    let promptRuleLabel: string | null = null
+    let promptHasSuggestedLabels = false
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.includes("/health") && !url.includes("chat")) {
         return new Response("{}", { status: 200 })
@@ -246,8 +251,9 @@ describe("tick", () => {
         messages: Array<{ role: string; content: string }>
       }
       const userMsg = b.messages.find((m) => m.role === "user")!
-      const match = userMsg.content.match(/suggested_labels=<<([^>]*)>>/)
-      promptSuggestion = match ? match[1] : null
+      promptHasSuggestedLabels = userMsg.content.includes("suggested_labels")
+      const ruleMatch = userMsg.content.match(/rule_label=<<([^>]*)>>/)
+      promptRuleLabel = ruleMatch ? ruleMatch[1] : null
       return new Response(
         JSON.stringify({
           choices: [
@@ -267,10 +273,49 @@ describe("tick", () => {
 
     await tick()
 
-    expect(promptSuggestion).toBe("Miete")
+    // the matching rule is communicated as a human-made rule_label;
+    // suggested_labels no longer exists in the prompt
+    expect(promptRuleLabel).toBe("Miete")
+    expect(promptHasSuggestedLabels).toBe(false)
     const row = getTx(id)!
     expect(row.labelStatus).toBe("labeled")
     expect(row.categoryId).toBe(cat.id)
+  })
+
+  it("system prompt documents the rule_label contract", async () => {
+    const batchId = seedBatch()
+    seedTx(batchId)
+
+    let systemPrompt: string | null = null
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/health") && !url.includes("chat")) {
+        return new Response("{}", { status: 200 })
+      }
+      const b = JSON.parse(String(init?.body)) as {
+        messages: Array<{ role: string; content: string }>
+      }
+      systemPrompt = b.messages.find((m) => m.role === "system")!.content
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  results: [{ index: 0, label: "Miete" }],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await tick()
+
+    expect(systemPrompt).toContain("RULES FOR RULE_LABEL")
+    expect(systemPrompt).toContain("human-made rule")
   })
 
   it("marks unapplied rows failed on partial model output", async () => {

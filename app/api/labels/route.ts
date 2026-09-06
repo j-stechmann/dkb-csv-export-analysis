@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { eq, sql } from "drizzle-orm"
+import { asc, count, desc, eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
-import { categories } from "@/lib/db/schema"
+import { categories, labelRules } from "@/lib/db/schema"
 import { normalizeCategoryKey, isValidLabelName } from "@/lib/labeller/service"
 
 export const runtime = "nodejs"
@@ -9,16 +9,20 @@ export const dynamic = "force-dynamic"
 
 export async function GET() {
   const db = getDb()
+  // count(labelRules.id) — NOT count(): COUNT(*) after the LEFT JOIN would
+  // report 1 for every label without rules.
   const rows = db
     .select({
       id: categories.id,
       name: categories.name,
       origin: categories.origin,
       usageCount: categories.usageCount,
-      ruleCount: sql<number>`(SELECT COUNT(*) FROM label_rules r WHERE r.label_id = ${categories.id})`,
+      ruleCount: count(labelRules.id),
     })
     .from(categories)
-    .orderBy(sql`usage_count DESC, name ASC`)
+    .leftJoin(labelRules, eq(labelRules.labelId, categories.id))
+    .groupBy(categories.id)
+    .orderBy(desc(categories.usageCount), asc(categories.name))
     .all()
   return NextResponse.json({ labels: rows })
 }

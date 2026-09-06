@@ -30,6 +30,7 @@ function jsonReq(url: string, body: unknown, method = "POST"): NextRequest {
 function seedTx(
   overrides: Partial<{
     payee: string
+    payer: string
     counterpartyIban: string | null
     type: string
     labelStatus: string
@@ -43,6 +44,7 @@ function seedTx(
       accountId,
       bookingDate: "2026-02-03",
       status: "Gebucht",
+      payer: "ISSUER",
       payee: "Vermieter GmbH",
       counterpartyIban: IBAN,
       type: "Ausgang",
@@ -100,6 +102,48 @@ describe("GET /api/labels", () => {
       usageCount: 3,
       ruleCount: 0,
     })
+  })
+
+  it("counts learned rules per label (regression: ruleCount was always 0)", async () => {
+    const withRules = await createLabel(
+      jsonReq("http://test/api/labels", { name: "Miete" })
+    )
+    const { id: mieteId } = (await withRules.json()) as { id: number }
+    await createLabel(jsonReq("http://test/api/labels", { name: "Strom" }))
+
+    db.insert(labelRules)
+      .values({
+        labelId: mieteId,
+        iban: IBAN,
+        payerKey: "issuer",
+        payeeKey: "vermieter",
+        payer: "ISSUER",
+        payee: "Vermieter GmbH",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .run()
+    db.insert(labelRules)
+      .values({
+        labelId: mieteId,
+        iban: "DE89370400440532013000",
+        payerKey: "a",
+        payeeKey: "b",
+        payer: "A",
+        payee: "B",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .run()
+
+    const res = await listLabels()
+    const data = (await res.json()) as {
+      labels: Array<{ id: number; name: string; ruleCount: number }>
+    }
+    const miete = data.labels.find((l) => l.id === mieteId)!
+    expect(miete.ruleCount).toBe(2)
+    const strom = data.labels.find((l) => l.name === "Strom")!
+    expect(strom.ruleCount).toBe(0)
   })
 })
 
@@ -185,8 +229,10 @@ describe("GET /api/labels/[id]/rules", () => {
       .values({
         labelId: id,
         iban: IBAN,
-        nameKey: "vermieter",
-        name: "Vermieter GmbH",
+        payerKey: "issuer",
+        payeeKey: "vermieter",
+        payer: "ISSUER",
+        payee: "Vermieter GmbH",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
@@ -197,9 +243,13 @@ describe("GET /api/labels/[id]/rules", () => {
       { params: Promise.resolve({ id: String(id) }) }
     )
     expect(res.status).toBe(200)
-    const data = (await res.json()) as { rules: Array<{ labelId: number }> }
+    const data = (await res.json()) as {
+      rules: Array<{ labelId: number; payer: string; payee: string }>
+    }
     expect(data.rules).toHaveLength(1)
     expect(data.rules[0].labelId).toBe(id)
+    expect(data.rules[0].payer).toBe("ISSUER")
+    expect(data.rules[0].payee).toBe("Vermieter GmbH")
   })
 })
 
@@ -290,8 +340,10 @@ describe("DELETE /api/labels/[id]", () => {
       .values({
         labelId: id,
         iban: IBAN,
-        nameKey: "vermieter",
-        name: "Vermieter",
+        payerKey: "issuer",
+        payeeKey: "vermieter",
+        payer: "ISSUER",
+        payee: "Vermieter",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
@@ -352,7 +404,8 @@ describe("POST /api/transactions/[id]/label", () => {
     const rules = db.select().from(labelRules).all()
     expect(rules).toHaveLength(1)
     expect(rules[0].iban).toBe(IBAN)
-    expect(rules[0].nameKey).toBe("vermieter")
+    expect(rules[0].payerKey).toBe("issuer")
+    expect(rules[0].payeeKey).toBe("vermieter")
   })
 
   it("creates a new label inline via labelName", async () => {
@@ -431,8 +484,10 @@ describe("DELETE /api/label-rules/[id]", () => {
       .values({
         labelId: catId,
         iban: IBAN,
-        nameKey: "x",
-        name: "X",
+        payerKey: "a",
+        payeeKey: "x",
+        payer: "A",
+        payee: "X",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })

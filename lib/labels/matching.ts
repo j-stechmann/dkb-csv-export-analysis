@@ -7,88 +7,91 @@ import {
   normalizeCounterpartyKey,
   normalizeIbanKey,
 } from "@/lib/db/normalize"
-import { getConfig } from "@/lib/config"
+import type { RuleTuple } from "@/lib/labeller/service"
 
 export interface SuggestionInput {
   counterpartyIban: string | null
+  payer: string | null
+  payee: string | null
 }
 
 export interface LearnedRuleInput {
   counterpartyIban: string | null
-  counterpartyName: string | null
+  payer: string | null
+  payee: string | null
   labelId: number
 }
 
+export type RuleKey = RuleTuple
+
 /**
- * Looks up suggestions for one transaction: ALL rules whose normalized IBAN
- * key matches, deduped by label, ranked usageCount desc → manual before
- * llm → newest rule first, capped at LLM_MAX_SUGGESTIONS.
+ * Normalized (iban, payer, payee) tuple for a transaction. Both name keys
+ * are required: a rule identifies the exact counterparty combination, so an
+ * unusable name (normalizes to empty) yields no matchable key.
  */
-export function suggestLabelIds(
-  db: Db,
+export function ruleKeyFor(input: {
   counterpartyIban: string | null
-): number[] {
-  const ibanKey = normalizeIbanKey(counterpartyIban)
-  if (!ibanKey) return []
-
-  const rows = db
-    .select({
-      labelId: labelRules.labelId,
-      ruleCreatedAt: labelRules.createdAt,
-      usageCount: categories.usageCount,
-      origin: categories.origin,
-    })
-    .from(labelRules)
-    .innerJoin(categories, eq(categories.id, labelRules.labelId))
-    .where(eq(labelRules.iban, ibanKey))
-    .all()
-
-  const originRank = (origin: string) => (origin === "manual" ? 0 : 1)
-  rows.sort(
-    (a, b) =>
-      b.usageCount - a.usageCount ||
-      originRank(a.origin) - originRank(b.origin) ||
-      b.ruleCreatedAt.localeCompare(a.ruleCreatedAt) ||
-      a.labelId - b.labelId
-  )
-
-  const seen = new Set<number>()
-  const out: number[] = []
-  const cap = getConfig().LLM_MAX_SUGGESTIONS
-  for (const row of rows) {
-    if (seen.has(row.labelId)) continue
-    seen.add(row.labelId)
-    out.push(row.labelId)
-    if (out.length >= cap) break
-  }
-  return out
+  payer: string | null
+  payee: string | null
+}): RuleKey | null {
+  const ibanKey = normalizeIbanKey(input.counterpartyIban)
+  if (!ibanKey) return null
+  const payerKey = normalizeCounterpartyKey(input.payer)
+  const payeeKey = normalizeCounterpartyKey(input.payee)
+  if (!payerKey || !payeeKey) return null
+  return { ibanKey, payerKey, payeeKey }
 }
 
 /**
- * Upserts a learned rule (manual assignment path): keyed on
- * (ibanKey, counterpartyNameKey). Re-assignment of the same rendering to a
- * new label replaces the rule (newest wins); sibling renderings keep their
- * own rules. Returns the rule id, or null when the key is not learnable.
+ * Looks up the rule for one exact (iban, payer, payee) tuple. The unique
+ * index guarantees at most one match, so the return is 0..1 label ids —
+ * the historical multi-suggestion ranking/cap is gone with tuple identity.
+ */
+export function suggestLabelIds(db: Db, key: RuleKey): number[] {
+  const row = db
+    .select({ labelId: labelRules.labelId })
+    .from(labelRules)
+    .where(
+      and(
+        eq(labelRules.iban, key.ibanKey),
+        eq(labelRules.payerKey, key.payerKey),
+        eq(labelRules.payeeKey, key.payeeKey)
+      )
+    )
+    .get()
+  return row ? [row.labelId] : []
+}
+
+/**
+ * Upserts a learned rule (manual assignment path): keyed on the exact
+ * (ibanKey, payerKey, payeeKey) tuple. Re-assignment of the same tuple to a
+ * new label replaces the rule (newest wins). Returns the rule id, or null
+ * when the tuple is not learnable.
  */
 export function learnRule(
   tx: Db | DbTx,
   input: LearnedRuleInput
 ): number | null {
-  const ibanKey = normalizeIbanKey(input.counterpartyIban)
-  if (!ibanKey || !isLearnableIbanKey(ibanKey)) return null
-  const nameKey = normalizeCounterpartyKey(input.counterpartyName)
-  const name = counterpartyDisplayName(input.counterpartyName)
-  if (!nameKey || !name) return null
+  const key = ruleKeyFor(input)
+  if (!key || !isLearnableIbanKey(key.ibanKey)) return null
+  const payer = counterpartyDisplayName(input.payer)
+  const payee = counterpartyDisplayName(input.payee)
 
   const now = new Date().toISOString()
   const existing = tx
     .select({ id: labelRules.id })
     .from(labelRules)
-    .where(and(eq(labelRules.iban, ibanKey), eq(labelRules.nameKey, nameKey)))
+    .where(
+      and(
+        eq(labelRules.iban, key.ibanKey),
+        eq(labelRules.payerKey, key.payerKey),
+        eq(labelRules.payeeKey, key.payeeKey)
+      )
+    )
     .get()
   if (existing) {
     tx.update(labelRules)
-      .set({ labelId: input.labelId, name, updatedAt: now })
+      .set({ labelId: input.labelId, payer, payee, updatedAt: now })
       .where(eq(labelRules.id, existing.id))
       .run()
     return existing.id
@@ -97,9 +100,11 @@ export function learnRule(
     .insert(labelRules)
     .values({
       labelId: input.labelId,
-      iban: ibanKey,
-      nameKey,
-      name,
+      iban: key.ibanKey,
+      payerKey: key.payerKey,
+      payeeKey: key.payeeKey,
+      payer,
+      payee,
       createdAt: now,
       updatedAt: now,
     })
@@ -110,32 +115,39 @@ export function learnRule(
   const reRead = tx
     .select({ id: labelRules.id })
     .from(labelRules)
-    .where(and(eq(labelRules.iban, ibanKey), eq(labelRules.nameKey, nameKey)))
+    .where(
+      and(
+        eq(labelRules.iban, key.ibanKey),
+        eq(labelRules.payerKey, key.payerKey),
+        eq(labelRules.payeeKey, key.payeeKey)
+      )
+    )
     .get()
   return reRead?.id ?? null
 }
 
 /**
  * Batch suggestion lookup: resolves label ids per transaction index.
- * Each distinct IBAN key is queried once, then mapped back to every
- * transaction sharing it.
+ * Each distinct (iban, payer, payee) tuple is queried once, then mapped
+ * back to every transaction sharing it.
  */
 export function suggestForBatch(
   inputs: SuggestionInput[]
 ): Map<number, number[]> {
   const db = getDb()
-  const byIban = new Map<string, number[]>()
+  const byKey = new Map<string, number[]>()
   const result = new Map<number, number[]>()
   for (let i = 0; i < inputs.length; i++) {
-    const ibanKey = normalizeIbanKey(inputs[i].counterpartyIban)
-    if (!ibanKey) {
+    const key = ruleKeyFor(inputs[i])
+    if (!key) {
       result.set(i, [])
       continue
     }
-    let ids = byIban.get(ibanKey)
+    const cacheKey = `${key.ibanKey}\u0000${key.payerKey}\u0000${key.payeeKey}`
+    let ids = byKey.get(cacheKey)
     if (!ids) {
-      ids = suggestLabelIds(db, ibanKey)
-      byIban.set(ibanKey, ids)
+      ids = suggestLabelIds(db, key)
+      byKey.set(cacheKey, ids)
     }
     result.set(i, ids)
   }

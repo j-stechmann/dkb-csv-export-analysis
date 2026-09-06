@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { labelRules } from "@/lib/db/schema"
-import { findIbanRuleMatches } from "@/lib/labeller/service"
+import { findRuleMatches, type RuleTuple } from "@/lib/labeller/service"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -23,6 +23,8 @@ export async function GET(
     .select({
       id: labelRules.id,
       iban: labelRules.iban,
+      payerKey: labelRules.payerKey,
+      payeeKey: labelRules.payeeKey,
       labelId: labelRules.labelId,
     })
     .from(labelRules)
@@ -32,9 +34,14 @@ export async function GET(
     return NextResponse.json({ error: "not_found" }, { status: 404 })
   }
 
+  const key: RuleTuple = {
+    ibanKey: rule.iban,
+    payerKey: rule.payerKey,
+    payeeKey: rule.payeeKey,
+  }
   // Same exclusion as apply, so the preview count matches what applying
   // would actually reset (rows already at the rule's label are skipped).
   return NextResponse.json({
-    count: findIbanRuleMatches(db, rule.iban, rule.labelId).length,
+    count: findRuleMatches(db, key, rule.labelId).length,
   })
 }

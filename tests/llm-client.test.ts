@@ -40,7 +40,7 @@ function tx(overrides: Partial<PromptTransaction> = {}): PromptTransaction {
     counterparty: "REWE",
     purpose: "Einkauf",
     bookingDate: "2026-02-14",
-    suggestions: [],
+    ruleLabel: null,
     ...overrides,
   }
 }
@@ -525,11 +525,10 @@ describe("toPromptTransaction", () => {
     ).toBeLessThanOrEqual(512)
   })
 
-  it("keeps suggestions and truncates each", () => {
-    const out = toPromptTransaction(
-      tx({ suggestions: ["Miete", "y".repeat(600)] })
-    )
-    expect(out.suggestions[0]).toBe("Miete")
-    expect(out.suggestions[1].length).toBeLessThanOrEqual(512)
+  it("passes ruleLabel through truncated, null stays null", () => {
+    const withRule = toPromptTransaction(tx({ ruleLabel: "z".repeat(600) }))
+    expect(withRule.ruleLabel!.length).toBeLessThanOrEqual(512)
+    const withoutRule = toPromptTransaction(tx())
+    expect(withoutRule.ruleLabel).toBeNull()
   })
 })

@@ -13,9 +13,10 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * Edits a learned rule: target label, counterparty IBAN and display name.
- * Keys are normalized the same way learning normalizes them; a name change
- * re-derives the nameKey so the rule stays consistent with future learning.
+ * Edits a learned rule: target label, counterparty IBAN, payer and payee.
+ * Keys are normalized the same way learning normalizes them; a payer/payee
+ * change re-derives the keys so the rule stays consistent with future
+ * learning.
  */
 export async function PATCH(
   request: NextRequest,
@@ -30,16 +31,21 @@ export async function PATCH(
   const body = (await request.json().catch(() => null)) as {
     labelId?: unknown
     iban?: unknown
-    name?: unknown
+    payer?: unknown
+    payee?: unknown
   } | null
   if (
     typeof body?.labelId !== "number" ||
     !Number.isInteger(body.labelId) ||
     typeof body?.iban !== "string" ||
-    typeof body?.name !== "string"
+    typeof body?.payer !== "string" ||
+    typeof body?.payee !== "string"
   ) {
     return NextResponse.json(
-      { error: "invalid_body", message: "labelId, iban and name are required" },
+      {
+        error: "invalid_body",
+        message: "labelId, iban, payer and payee are required",
+      },
       { status: 400 }
     )
   }
@@ -77,27 +83,30 @@ export async function PATCH(
     )
   }
 
-  const name = counterpartyDisplayName(body.name)
-  const nameKey = normalizeCounterpartyKey(body.name)
-  if (!name || !nameKey) {
+  const payer = counterpartyDisplayName(body.payer)
+  const payee = counterpartyDisplayName(body.payee)
+  const payerKey = normalizeCounterpartyKey(body.payer)
+  const payeeKey = normalizeCounterpartyKey(body.payee)
+  if (!payer || !payerKey || !payee || !payeeKey) {
     return NextResponse.json(
       {
         error: "invalid_name",
-        message: "Name darf nicht leer sein",
+        message: "Payer und Payee dürfen nicht leer sein",
       },
       { status: 400 }
     )
   }
 
   // advisory pre-check excluding the rule itself (editing only the display
-  // name must not self-conflict) — the try/catch below covers the race.
+  // snapshots must not self-conflict) — the try/catch below covers the race.
   const clash = db
     .select({ id: labelRules.id })
     .from(labelRules)
     .where(
       and(
         eq(labelRules.iban, ibanKey),
-        eq(labelRules.nameKey, nameKey),
+        eq(labelRules.payerKey, payerKey),
+        eq(labelRules.payeeKey, payeeKey),
         ne(labelRules.id, ruleId)
       )
     )
@@ -115,8 +124,10 @@ export async function PATCH(
       .set({
         labelId: body.labelId,
         iban: ibanKey,
-        nameKey,
-        name,
+        payerKey,
+        payeeKey,
+        payer,
+        payee,
         updatedAt: now,
       })
       .where(eq(labelRules.id, ruleId))
@@ -136,8 +147,10 @@ export async function PATCH(
       id: labelRules.id,
       labelId: labelRules.labelId,
       iban: labelRules.iban,
-      nameKey: labelRules.nameKey,
-      name: labelRules.name,
+      payerKey: labelRules.payerKey,
+      payeeKey: labelRules.payeeKey,
+      payer: labelRules.payer,
+      payee: labelRules.payee,
     })
     .from(labelRules)
     .where(eq(labelRules.id, ruleId))

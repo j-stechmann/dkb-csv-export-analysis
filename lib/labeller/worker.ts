@@ -83,7 +83,7 @@ function counterpartyFor(row: ClaimedRow): string {
 }
 
 /**
- * One worker pass: health gate → claim a batch → resolve rule suggestions →
+ * One worker pass: health gate → claim a batch → resolve rule_label →
  * label via llama-server → persist results → mark unapplied rows failed.
  * Errors are contained per pass — a failing call marks its rows failed
  * (attempts already incremented), and any other failure (including the
@@ -123,26 +123,29 @@ export async function tick(): Promise<void> {
       claimed.map((r): [string, number] => [r.id, r.labelAttempts])
     )
 
-    // multi-suggestions: all learned rules for each claimed row's IBAN key
+    // tuple rules: at most one learned rule per exact (iban, payer, payee)
+    // combination; a matching rule becomes the row's rule_label in the prompt
     const db = getDb()
     const suggestionMap = suggestForBatch(
-      claimed.map((r) => ({ counterpartyIban: r.counterpartyIban }))
+      claimed.map((r) => ({
+        counterpartyIban: r.counterpartyIban,
+        payer: r.payer,
+        payee: r.payee,
+      }))
     )
     const allSuggestionIds = [...new Set([...suggestionMap.values()].flat())]
     const labelNames = resolveLabelNames(db, allSuggestionIds)
 
     const items: PromptTransaction[] = claimed.map((row, i) => {
       const ids = suggestionMap.get(i) ?? []
-      const suggestions = ids
-        .map((id) => labelNames.get(id))
-        .filter((x): x is string => x !== undefined)
+      const ruleLabel = ids.length ? (labelNames.get(ids[0]) ?? null) : null
       return {
         id: row.id,
         amountCents: row.amountCents,
         counterparty: counterpartyFor(row),
         purpose: row.purpose ?? "",
         bookingDate: row.bookingDate,
-        suggestions,
+        ruleLabel,
       }
     })
 

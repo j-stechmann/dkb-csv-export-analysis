@@ -15,12 +15,19 @@ import {
 } from "@/app/api/label-rules/[id]/route"
 import { GET as countMatches } from "@/app/api/label-rules/[id]/matches/route"
 import { POST as applyRule } from "@/app/api/label-rules/[id]/apply/route"
-import { findIbanRuleMatches } from "@/lib/labeller/service"
+import { findRuleMatches, type RuleTuple } from "@/lib/labeller/service"
 import { computeLabelCounters } from "@/lib/import/counters"
 
 const ACC_IBAN = "DE02120300000000202051"
 const CP_IBAN = "de02 1203 0000 0000 2020 51"
 const CP_IBAN_KEY = "DE02120300000000202051"
+const CP_PAYER = "ISSUER"
+const CP_PAYEE = "Vermieter GmbH"
+const RULE_KEY: RuleTuple = {
+  ibanKey: CP_IBAN_KEY,
+  payerKey: "issuer",
+  payeeKey: "vermieter",
+}
 
 let db: Db
 let accountId: number
@@ -55,15 +62,23 @@ function seedLabel(name: string, nameKey?: string): number {
 
 function seedRule(
   labelId: number,
-  overrides: Partial<{ iban: string; nameKey: string; name: string }> = {}
+  overrides: Partial<{
+    iban: string
+    payerKey: string
+    payeeKey: string
+    payer: string
+    payee: string
+  }> = {}
 ): number {
   return db
     .insert(labelRules)
     .values({
       labelId,
       iban: CP_IBAN_KEY,
-      nameKey: "vermieter",
-      name: "Vermieter GmbH",
+      payerKey: "issuer",
+      payeeKey: "vermieter",
+      payer: CP_PAYER,
+      payee: CP_PAYEE,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       ...overrides,
@@ -86,6 +101,9 @@ function seedTx(
   overrides: Partial<{
     status: string
     counterpartyIban: string | null
+    payer: string | null
+    payee: string | null
+    type: string
     labelStatus: string
     labelAttempts: number
     categoryId: number | null
@@ -99,7 +117,8 @@ function seedTx(
       batchId,
       bookingDate: "2026-02-03",
       status: "Gebucht",
-      payee: "Vermieter GmbH",
+      payer: CP_PAYER,
+      payee: CP_PAYEE,
       counterpartyIban: CP_IBAN,
       type: "Ausgang",
       amountCents: -100,
@@ -131,7 +150,7 @@ beforeEach(() => {
 })
 
 describe("PATCH /api/label-rules/[id]", () => {
-  it("edits label, iban and name with normalized keys", async () => {
+  it("edits label, iban, payer and payee with normalized keys", async () => {
     const labelA = seedLabel("Miete")
     const labelB = seedLabel("Strom")
     const ruleId = seedRule(labelA)
@@ -140,7 +159,8 @@ describe("PATCH /api/label-rules/[id]", () => {
       jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId: labelB,
         iban: " de89 3704 0044 0532 0130 00 ",
-        name: "  Stadtwerke  AG  ",
+        payer: "  Stadtwerke  AG  ",
+        payee: "Mieter  GmbH",
       }),
       ruleParams(ruleId)
     )
@@ -149,19 +169,22 @@ describe("PATCH /api/label-rules/[id]", () => {
     const rule = db.select().from(labelRules).all()[0]
     expect(rule.labelId).toBe(labelB)
     expect(rule.iban).toBe("DE89370400440532013000")
-    expect(rule.nameKey).toBe("stadtwerke")
-    expect(rule.name).toBe("Stadtwerke AG")
+    expect(rule.payerKey).toBe("stadtwerke")
+    expect(rule.payeeKey).toBe("mieter")
+    expect(rule.payer).toBe("Stadtwerke AG")
+    expect(rule.payee).toBe("Mieter GmbH")
   })
 
-  it("keeps the rule when only the display name is reformatted", async () => {
+  it("keeps the rule when only the display names are reformatted", async () => {
     const labelId = seedLabel("Miete")
-    const ruleId = seedRule(labelId, { name: "Vermieter GmbH" })
+    const ruleId = seedRule(labelId)
 
     const out = await patchRule(
       jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId,
         iban: CP_IBAN_KEY,
-        name: "Vermieter  GmbH",
+        payer: "ISSUER",
+        payee: "Vermieter  GmbH",
       }),
       ruleParams(ruleId)
     )
@@ -174,7 +197,8 @@ describe("PATCH /api/label-rules/[id]", () => {
       jsonReq("http://test/api/label-rules/999", {
         labelId: 1,
         iban: CP_IBAN_KEY,
-        name: "X",
+        payer: "A",
+        payee: "B",
       }),
       ruleParams(999)
     )
@@ -189,7 +213,8 @@ describe("PATCH /api/label-rules/[id]", () => {
       jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId: 999,
         iban: CP_IBAN_KEY,
-        name: "X",
+        payer: "A",
+        payee: "B",
       }),
       ruleParams(ruleId)
     )
@@ -206,7 +231,8 @@ describe("PATCH /api/label-rules/[id]", () => {
       jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId,
         iban: "IBAN123",
-        name: "X",
+        payer: "A",
+        payee: "B",
       }),
       ruleParams(ruleId)
     )
@@ -223,7 +249,8 @@ describe("PATCH /api/label-rules/[id]", () => {
       jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId,
         iban: CP_IBAN_KEY,
-        name: "GmbH",
+        payer: "GmbH",
+        payee: "B",
       }),
       ruleParams(ruleId)
     )
@@ -232,16 +259,17 @@ describe("PATCH /api/label-rules/[id]", () => {
     expect(data.error).toBe("invalid_name")
   })
 
-  it("rejects a body targeting another rule's key with 409", async () => {
+  it("rejects a body targeting another rule's tuple with 409", async () => {
     const labelId = seedLabel("Miete")
-    seedRule(labelId, { nameKey: "other", name: "Other" })
-    const ruleId = seedRule(labelId, { nameKey: "mine", name: "Mine" })
+    seedRule(labelId, { payeeKey: "other", payee: "Other" })
+    const ruleId = seedRule(labelId, { payeeKey: "mine", payee: "Mine" })
 
     const out = await patchRule(
       jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId,
         iban: CP_IBAN_KEY,
-        name: "Other",
+        payer: CP_PAYER,
+        payee: "Other",
       }),
       ruleParams(ruleId)
     )
@@ -252,15 +280,15 @@ describe("PATCH /api/label-rules/[id]", () => {
 
   it("maps a unique-constraint violation on update to 409", async () => {
     const labelId = seedLabel("Miete")
-    seedRule(labelId, { nameKey: "other", name: "Other" })
-    const ruleId = seedRule(labelId, { nameKey: "mine", name: "Mine" })
+    seedRule(labelId, { payeeKey: "other", payee: "Other" })
+    const ruleId = seedRule(labelId, { payeeKey: "mine", payee: "Mine" })
     // simulate the concurrent-write window: the advisory pre-check passes,
     // then the UPDATE hits the unique index (as a racing learnRule would)
     db.run(
       `CREATE TRIGGER simulate_rule_race BEFORE UPDATE ON label_rules
-       WHEN NEW.name_key = 'other'
+       WHEN NEW.payee_key = 'other'
        BEGIN
-         SELECT RAISE(ABORT, 'UNIQUE constraint failed: label_rules.iban, label_rules.name_key');
+         SELECT RAISE(ABORT, 'UNIQUE constraint failed: label_rules.iban, label_rules.payer_key, label_rules.payee_key');
        END`
     )
 
@@ -268,7 +296,8 @@ describe("PATCH /api/label-rules/[id]", () => {
       jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId,
         iban: CP_IBAN_KEY,
-        name: "Other",
+        payer: CP_PAYER,
+        payee: "Other",
       }),
       ruleParams(ruleId)
     )
@@ -290,7 +319,8 @@ describe("PATCH /api/label-rules/[id]", () => {
       jsonReq("http://test/api/label-rules/abc", {
         labelId: 1,
         iban: CP_IBAN_KEY,
-        name: "X",
+        payer: "A",
+        payee: "B",
       }),
       ruleParams("abc")
     )
@@ -298,15 +328,35 @@ describe("PATCH /api/label-rules/[id]", () => {
   })
 })
 
-describe("findIbanRuleMatches", () => {
+describe("findRuleMatches", () => {
   it("matches case/space-insensitively and excludes null/foreign ibans", () => {
     const a = seedTx(null)
     const b = seedTx(null, { counterpartyIban: CP_IBAN_KEY })
     seedTx(null, { counterpartyIban: null })
     seedTx(null, { counterpartyIban: "DE00999999990000000099" })
 
-    const matches = findIbanRuleMatches(db, CP_IBAN_KEY)
+    const matches = findRuleMatches(db, RULE_KEY)
     expect(matches.map((m) => m.id).sort()).toEqual([a, b].sort())
+  })
+
+  it("requires the exact payer/payee combination", () => {
+    const a = seedTx(null)
+    // same IBAN, different counterparty names → no match
+    seedTx(null, { payer: "ISSUER", payee: "REWE" })
+    seedTx(null, { payer: "Other GmbH", payee: CP_PAYEE })
+    // missing payer/payee → no match
+    seedTx(null, { payer: null })
+    seedTx(null, { payee: null })
+
+    const matches = findRuleMatches(db, RULE_KEY)
+    expect(matches.map((m) => m.id)).toEqual([a])
+  })
+
+  it("matches the direction-independent stored payer/payee", () => {
+    // rule matching normalizes both payer and payee regardless of direction
+    const a = seedTx(null, { type: "Eingang" })
+    const matches = findRuleMatches(db, RULE_KEY)
+    expect(matches.map((m) => m.id)).toEqual([a])
   })
 
   it("excludes rows already carrying the excluded label", () => {
@@ -321,10 +371,10 @@ describe("findIbanRuleMatches", () => {
     const other = seedTx(null, { categoryId: otherLabel })
     const fresh = seedTx(null)
 
-    const matches = findIbanRuleMatches(db, CP_IBAN_KEY, labelId)
+    const matches = findRuleMatches(db, RULE_KEY, labelId)
     expect(matches.map((m) => m.id).sort()).toEqual([fresh, other].sort())
     // without exclusion, all five rows match
-    expect(findIbanRuleMatches(db, CP_IBAN_KEY)).toHaveLength(5)
+    expect(findRuleMatches(db, RULE_KEY)).toHaveLength(5)
   })
 })
 
@@ -575,9 +625,15 @@ describe("rule apply integrates with the worker", () => {
     expect(claimed).toHaveLength(1)
     expect(claimed[0].categoryId).toBe(labelId)
 
-    // rule suggestions resolve from the (unchanged) rule
-    const { suggestLabelIds } = await import("@/lib/labels/matching")
-    const suggested = suggestLabelIds(db, claimed[0].counterpartyIban)
+    // the rule is resolved via the exact tuple of the claimed row
+    const { suggestLabelIds, ruleKeyFor } =
+      await import("@/lib/labels/matching")
+    const key = ruleKeyFor({
+      counterpartyIban: claimed[0].counterpartyIban,
+      payer: claimed[0].payer,
+      payee: claimed[0].payee,
+    })
+    const suggested = key ? suggestLabelIds(db, key) : []
     expect(suggested).toEqual([labelId])
   })
 })
@@ -588,13 +644,14 @@ describe("PATCH + apply round-trip", () => {
     const labelB = seedLabel("Strom")
     const ruleId = seedRule(labelA)
     const otherIban = "DE89370400440532013000"
-    seedTx(null, { counterpartyIban: otherIban })
+    seedTx(null, { counterpartyIban: otherIban, payee: "Stadtwerke AG" })
 
     const patched = await patchRule(
       jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId: labelB,
         iban: otherIban,
-        name: "Stadtwerke AG",
+        payer: CP_PAYER,
+        payee: "Stadtwerke AG",
       }),
       ruleParams(ruleId)
     )

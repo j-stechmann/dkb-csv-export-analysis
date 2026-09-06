@@ -75,10 +75,18 @@ export const labelRules = sqliteTable(
       .references(() => categories.id, { onDelete: "cascade" }),
     /** normalized counterparty IBAN (or IBAN-like key) of learned transactions */
     iban: text("iban").notNull(),
-    /** normalized counterparty name key of learned transactions */
-    nameKey: text("name_key").notNull(),
-    /** counterparty name as learned (display snapshot) */
-    name: text("name").notNull(),
+    /** normalized payer key of the learned transaction ('' = unknown) */
+    payerKey: text("payer_key").notNull().default(""),
+    /** normalized payee key of the learned transaction ('' = unknown) */
+    payeeKey: text("payee_key").notNull().default(""),
+    /** payer as learned (display snapshot, '' = unknown) */
+    payer: text("payer").notNull().default(""),
+    /** payee as learned (display snapshot, '' = unknown) */
+    payee: text("payee").notNull().default(""),
+    /** legacy single-counterparty key — kept as migration marker only */
+    nameKey: text("name_key").notNull().default(""),
+    /** legacy display name — kept as migration marker only */
+    name: text("name").notNull().default(""),
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
@@ -87,7 +95,11 @@ export const labelRules = sqliteTable(
       .$defaultFn(() => new Date().toISOString()),
   },
   (t) => [
-    uniqueIndex("label_rules_iban_name_key_unique").on(t.iban, t.nameKey),
+    uniqueIndex("label_rules_iban_payer_payee_unique").on(
+      t.iban,
+      t.payerKey,
+      t.payeeKey
+    ),
     index("label_rules_iban_idx").on(t.iban),
     index("label_rules_label_idx").on(t.labelId),
   ]

@@ -390,6 +390,6 @@ export function toPromptTransaction(
     counterparty: truncateField(item.counterparty),
     purpose: truncateField(item.purpose),
     bookingDate: truncateField(item.bookingDate),
-    suggestions: item.suggestions.map((s) => truncateField(s)),
+    ruleLabel: item.ruleLabel === null ? null : truncateField(item.ruleLabel),
   }
 }

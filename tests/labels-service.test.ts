@@ -52,6 +52,7 @@ function seedTx(
       batchId,
       bookingDate: "2026-02-03",
       status: "Gebucht",
+      payer: "ISSUER",
       payee: "Vermieter GmbH",
       type: "Ausgang",
       counterpartyIban: IBAN,
@@ -268,8 +269,10 @@ describe("delete cascade", () => {
       .values({
         labelId: catId,
         iban: IBAN,
-        nameKey: "vermieter",
-        name: "Vermieter",
+        payerKey: "issuer",
+        payeeKey: "vermieter",
+        payer: "ISSUER",
+        payee: "Vermieter",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
@@ -317,8 +320,10 @@ describe("pruneOrphanCategories", () => {
       .values({
         labelId: withRule,
         iban: IBAN,
-        nameKey: "x",
-        name: "X",
+        payerKey: "a",
+        payeeKey: "x",
+        payer: "A",
+        payee: "X",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
@@ -351,7 +356,8 @@ describe("learnRule inside transaction (manual assign path)", () => {
         .run()
       const learned = learnRule(tx, {
         counterpartyIban: IBAN,
-        counterpartyName: "Vermieter GmbH",
+        payer: "ISSUER",
+        payee: "Vermieter GmbH",
         labelId: catId,
       })
       expect(learned).not.toBeNull()

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { ChevronDown, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import {
   Card,
@@ -14,6 +14,11 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import {
   Select,
   SelectContent,
@@ -29,6 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { getCategoryColor } from "@/lib/category-colors"
+import { cn } from "@/lib/utils"
 
 interface LabelRow {
   id: number
@@ -42,8 +48,10 @@ interface LabelRuleRow {
   id: number
   labelId: number
   iban: string
-  nameKey: string
-  name: string
+  payerKey: string
+  payeeKey: string
+  payer: string
+  payee: string
   createdAt: string
 }
 
@@ -276,7 +284,10 @@ function EditRuleDialog({
 }) {
   const [labelId, setLabelId] = React.useState(String(rule.labelId))
   const [iban, setIban] = React.useState(rule.iban)
-  const [name, setName] = React.useState(rule.name)
+  // legacy fallback rules have payer '' — leave the field empty rather than
+  // prefilling a misleading default (empty requires deliberate input)
+  const [payer, setPayer] = React.useState(rule.payer)
+  const [payee, setPayee] = React.useState(rule.payee)
   const [busy, setBusy] = React.useState(false)
   const queryClient = useQueryClient()
 
@@ -289,7 +300,8 @@ function EditRuleDialog({
         body: JSON.stringify({
           labelId: Number.parseInt(labelId, 10),
           iban: iban.trim(),
-          name: name.trim(),
+          payer: payer.trim(),
+          payee: payee.trim(),
         }),
       })
       const data = (await res.json()) as { error?: string; message?: string }
@@ -350,12 +362,18 @@ function EditRuleDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <span className="text-xs text-muted-foreground">Name</span>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <span className="text-xs text-muted-foreground">Payer</span>
+            <Input value={payer} onChange={(e) => setPayer(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-xs text-muted-foreground">Payee</span>
+            <Input value={payee} onChange={(e) => setPayee(e.target.value)} />
           </div>
           <p className="text-xs text-muted-foreground">
-            Änderungen wirken erst, wenn du die Regel mit &quot;Anwenden&quot;
-            auf bestehende Transaktionen loslässt.
+            Die Regel matcht nur Transaktionen mit genau dieser
+            Payer/Payee/IBAN-Kombination. Änderungen wirken erst, wenn du die
+            Regel mit &quot;Anwenden&quot; auf bestehende Transaktionen
+            loslässt.
           </p>
         </div>
         <DialogFooter>
@@ -363,7 +381,7 @@ function EditRuleDialog({
             Abbrechen
           </Button>
           <Button
-            disabled={busy || !iban.trim() || !name.trim()}
+            disabled={busy || !iban.trim() || !payer.trim() || !payee.trim()}
             onClick={() => void save()}
           >
             Speichern
@@ -499,7 +517,8 @@ function RulesList({
     return (
       <p className="text-xs text-muted-foreground">
         Keine gelernten Regeln – Regeln entstehen durch manuelle Zuweisung in
-        der Transaktionstabelle.
+        der Transaktionstabelle und matchen die exakte
+        Payer/Payee/IBAN-Kombination.
       </p>
     )
   }
@@ -517,7 +536,12 @@ function RulesList({
           className="flex items-center justify-between gap-2 rounded border px-2 py-1"
         >
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium">{rule.name}</p>
+            <p
+              className="truncate text-xs font-medium"
+              title={`${rule.payer} → ${rule.payee}`}
+            >
+              {rule.payer || "—"} → {rule.payee || "—"}
+            </p>
             <p
               className="truncate text-xs text-muted-foreground"
               title={rule.iban}
@@ -616,9 +640,10 @@ export default function LabelsPage() {
         </h1>
         <p className="text-sm text-muted-foreground">
           Kategorien verwalten. Gelernte Regeln entstehen durch manuelle
-          Zuweisung in der Transaktionstabelle, können bearbeitet werden und
-          schlagen passende Labels dem LLM vor. Mit &quot;Anwenden&quot; wird
-          eine Regel auf alle bestehenden passenden Transaktionen losgelassen.
+          Zuweisung in der Transaktionstabelle, matchen die exakte
+          Payer/Payee/IBAN-Kombination und schlagen dem LLM das Label als vom
+          Menschen gesetzte Regel vor. Mit &quot;Anwenden&quot; wird eine Regel
+          auf alle bestehenden passenden Transaktionen losgelassen.
         </p>
       </div>
 
@@ -673,18 +698,40 @@ export default function LabelsPage() {
                     </Badge>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setExpandedId((id) =>
-                          id === label.id ? null : label.id
-                        )
-                      }
-                    >
-                      {label.ruleCount}{" "}
-                      {label.ruleCount === 1 ? "Regel" : "Regeln"}
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            aria-expanded={expandedId === label.id}
+                            onClick={() =>
+                              setExpandedId((id) =>
+                                id === label.id ? null : label.id
+                              )
+                            }
+                            className="cursor-pointer"
+                          />
+                        }
+                      >
+                        <Badge
+                          variant="outline"
+                          className="font-normal text-muted-foreground tabular-nums"
+                        >
+                          {label.ruleCount}{" "}
+                          {label.ruleCount === 1 ? "Regel" : "Regeln"}
+                          <ChevronDown
+                            data-icon="inline-end"
+                            className={cn(
+                              "transition-transform",
+                              expandedId === label.id && "rotate-180"
+                            )}
+                          />
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Gelernte Regeln anzeigen und bearbeiten
+                      </TooltipContent>
+                    </Tooltip>
                     <Button
                       variant="ghost"
                       size="sm"
