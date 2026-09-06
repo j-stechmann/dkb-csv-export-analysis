@@ -218,6 +218,41 @@ describe("label_rules tuple migration", () => {
     expect(indexes).toContain("label_rules_iban_payer_payee_unique")
   })
 
+  it("ignores evidence whose other side is unusable (stays inert)", () => {
+    const { db } = createLegacyDb()
+    seedCategory(db)
+    db.run(
+      sql`INSERT INTO accounts (iban, name, created_at) VALUES (${IBAN}, 'Girokonto', '2026-01-01')`
+    )
+    // Ausgang evidence for 'edeka' but with an empty payer — adopting its
+    // tuple would leave payer_key '' (a rule that looks revived but never
+    // matches), so the rule must fall back to the inert form instead
+    db.run(
+      sql`INSERT INTO transactions (id, account_id, booking_date, status, payer, payee, type, counterparty_iban, amount_cents, source_hash, created_at, updated_at)
+          VALUES ('tx-3', 1, '2026-02-05', 'Gebucht', '', 'EDEKA', 'Ausgang', ${"de02 1203 0000 0000 2020 51"}, -100, 'h3', '2026-01-01', '2026-01-01')`
+    )
+    db.run(
+      sql`INSERT INTO label_rules (label_id, iban, name_key, name, created_at, updated_at)
+          VALUES (1, ${IBAN}, 'edeka', 'EDEKA', '2026-01-01', '2026-01-01')`
+    )
+
+    migrateSchema(db)
+
+    const rows = db.all<{
+      payer_key: string
+      payee_key: string
+      payer: string
+    }>(sql`SELECT payer_key, payee_key, payer FROM label_rules`) as unknown as {
+      payer_key: string
+      payee_key: string
+      payer: string
+    }[]
+    expect(rows[0].payer_key).toBe("")
+    expect(rows[0].payee_key).toBe("edeka")
+    // legacy display snapshot untouched by the inert fallback
+    expect(rows[0].payer).toBe("")
+  })
+
   it("backfilled tuple actually matches transactions (round-trip)", async () => {
     const { db } = createLegacyDb()
     seedLegacyEvidence(db)

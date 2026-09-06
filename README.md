@@ -109,9 +109,9 @@ loop and may deviate when a transaction contradicts the rule.
 
 Existing rules from earlier versions are migrated: rules whose counterparty
 can be found in your stored transactions adopt its exact payer/payee
-rendering; rules without such evidence become inert (shown with an empty
-Payer field on the labels page) until they are edited or re-learned by the
-next manual assignment.
+rendering; rules without such evidence (or with evidence whose other side
+is empty) become inert (shown with an empty Payer field on the labels page)
+until they are edited or re-learned by the next manual assignment.
 
 **Label management (`/labels` page):**
 

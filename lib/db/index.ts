@@ -371,7 +371,7 @@ function backfillLegacyTuples(db: Db) {
     ).map((r) => `${r.iban}\u0000${r.payer_key}\u0000${r.payee_key}`)
   )
   for (const rule of rules) {
-    // same prefilter idiom as findIbanRuleMatches: SQL strips spaces/case,
+    // same prefilter idiom as findRuleMatches: SQL strips spaces/case,
     // the exact normalized comparison happens TS-side
     const candidates = db.all<{
       type: string
@@ -387,10 +387,17 @@ function backfillLegacyTuples(db: Db) {
       const counterparty = c.type === "Ausgang" ? c.payee : c.payer
       if (counterparty === null) return false
       if (normalizeCounterpartyKey(counterparty) !== rule.nameKey) return false
+      // only adopt a fully usable tuple: evidence whose other side normalizes
+      // to empty counts as no evidence — adopting it would leave an empty key
+      // component (a rule that looks revived but never matches) instead of the
+      // documented inert fallback
+      const payerKey = normalizeCounterpartyKey(c.payer)
+      const payeeKey = normalizeCounterpartyKey(c.payee)
+      if (!payerKey || !payeeKey) return false
       // skip evidence whose full tuple is already claimed by another rule
       // (e.g. a payment and its reversal stored with identical parties):
       // fall through to the inert fallback instead of colliding on UPDATE
-      const tuple = `${rule.iban}\u0000${normalizeCounterpartyKey(c.payer)}\u0000${normalizeCounterpartyKey(c.payee)}`
+      const tuple = `${rule.iban}\u0000${payerKey}\u0000${payeeKey}`
       return !takenTuples.has(tuple)
     })
     if (match) {
