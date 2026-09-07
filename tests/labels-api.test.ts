@@ -29,6 +29,7 @@ function jsonReq(url: string, body: unknown, method = "POST"): NextRequest {
 
 function seedTx(
   overrides: Partial<{
+    payer: string | null
     payee: string
     counterpartyIban: string | null
     type: string
@@ -43,6 +44,7 @@ function seedTx(
       accountId,
       bookingDate: "2026-02-03",
       status: "Gebucht",
+      payer: "Max Mustermann",
       payee: "Vermieter GmbH",
       counterpartyIban: IBAN,
       type: "Ausgang",
@@ -184,9 +186,9 @@ describe("GET /api/labels/[id]/rules", () => {
     db.insert(labelRules)
       .values({
         labelId: id,
-        iban: IBAN,
-        nameKey: "vermieter",
-        name: "Vermieter GmbH",
+        payer: "Max Mustermann",
+        payee: "Vermieter GmbH",
+        counterpartyIban: IBAN,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
@@ -289,9 +291,9 @@ describe("DELETE /api/labels/[id]", () => {
     db.insert(labelRules)
       .values({
         labelId: id,
-        iban: IBAN,
-        nameKey: "vermieter",
-        name: "Vermieter",
+        payer: "Max Mustermann",
+        payee: "Vermieter GmbH",
+        counterpartyIban: IBAN,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
@@ -332,7 +334,7 @@ describe("POST /api/transactions/[id]/label", () => {
       jsonReq("http://test/api/labels", { name: "Miete" })
     )
     const { id: labelId } = (await created.json()) as { id: number }
-    const txId = seedTx({ counterpartyIban: " de02 1203 0000 0000 2020 51 " })
+    const txId = seedTx()
 
     const out = await assignLabel(
       jsonReq(`http://test/api/transactions/${txId}/label`, { labelId }),
@@ -351,8 +353,28 @@ describe("POST /api/transactions/[id]/label", () => {
 
     const rules = db.select().from(labelRules).all()
     expect(rules).toHaveLength(1)
-    expect(rules[0].iban).toBe(IBAN)
-    expect(rules[0].nameKey).toBe("vermieter")
+    expect(rules[0].counterpartyIban).toBe(IBAN)
+    expect(rules[0].payer).toBe("Max Mustermann")
+    expect(rules[0].payee).toBe("Vermieter GmbH")
+  })
+
+  it("does not learn a rule when the transaction lacks payer or IBAN", async () => {
+    const created = await createLabel(
+      jsonReq("http://test/api/labels", { name: "Miete" })
+    )
+    const { id: labelId } = (await created.json()) as { id: number }
+    const noPayer = seedTx({ payer: null })
+    const noIban = seedTx({ counterpartyIban: null })
+
+    for (const txId of [noPayer, noIban]) {
+      const out = await assignLabel(
+        jsonReq(`http://test/api/transactions/${txId}/label`, { labelId }),
+        { params: Promise.resolve({ id: txId }) }
+      )
+      expect(out.status).toBe(200)
+    }
+
+    expect(db.select().from(labelRules).all()).toHaveLength(0)
   })
 
   it("creates a new label inline via labelName", async () => {
@@ -430,9 +452,9 @@ describe("DELETE /api/label-rules/[id]", () => {
       .insert(labelRules)
       .values({
         labelId: catId,
-        iban: IBAN,
-        nameKey: "x",
-        name: "X",
+        payer: "Max Mustermann",
+        payee: "Vermieter GmbH",
+        counterpartyIban: IBAN,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })

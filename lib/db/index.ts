@@ -112,18 +112,15 @@ export function createSchemaSqlite(db: Db) {
     CREATE TABLE IF NOT EXISTS label_rules (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       label_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-      iban TEXT NOT NULL,
-      name_key TEXT NOT NULL,
-      name TEXT NOT NULL,
+      payer TEXT NOT NULL CHECK (payer <> ''),
+      payee TEXT NOT NULL CHECK (payee <> ''),
+      counterparty_iban TEXT NOT NULL CHECK (counterparty_iban <> ''),
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `)
   db.run(
-    `CREATE UNIQUE INDEX IF NOT EXISTS label_rules_iban_name_key_unique ON label_rules (iban, name_key)`
-  )
-  db.run(
-    `CREATE INDEX IF NOT EXISTS label_rules_iban_idx ON label_rules (iban)`
+    `CREATE UNIQUE INDEX IF NOT EXISTS label_rules_triple_unique ON label_rules (payer, payee, counterparty_iban)`
   )
   db.run(
     `CREATE INDEX IF NOT EXISTS label_rules_label_idx ON label_rules (label_id)`
@@ -208,24 +205,29 @@ export function migrateSchema(db: Db) {
       `ALTER TABLE categories ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0`
     )
   }
-  // label_rules: CREATE TABLE IF NOT EXISTS handles fresh files; older DBs
-  // created before this feature also get the table here (idempotent).
+  // label_rules: older DBs carry the previous (iban, name_key) shape — that
+  // schema is gone, so the table is dropped and rebuilt fresh (old rules are
+  // discarded; they regenerate on the next manual assignment). Fresh files
+  // are handled by CREATE TABLE IF NOT EXISTS (idempotent).
+  if (
+    cols("label_rules").length > 0 &&
+    !cols("label_rules").includes("counterparty_iban")
+  ) {
+    db.run(`DROP TABLE label_rules`)
+  }
   db.run(`
     CREATE TABLE IF NOT EXISTS label_rules (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       label_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-      iban TEXT NOT NULL,
-      name_key TEXT NOT NULL,
-      name TEXT NOT NULL,
+      payer TEXT NOT NULL CHECK (payer <> ''),
+      payee TEXT NOT NULL CHECK (payee <> ''),
+      counterparty_iban TEXT NOT NULL CHECK (counterparty_iban <> ''),
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `)
   db.run(
-    `CREATE UNIQUE INDEX IF NOT EXISTS label_rules_iban_name_key_unique ON label_rules (iban, name_key)`
-  )
-  db.run(
-    `CREATE INDEX IF NOT EXISTS label_rules_iban_idx ON label_rules (iban)`
+    `CREATE UNIQUE INDEX IF NOT EXISTS label_rules_triple_unique ON label_rules (payer, payee, counterparty_iban)`
   )
   db.run(
     `CREATE INDEX IF NOT EXISTS label_rules_label_idx ON label_rules (label_id)`

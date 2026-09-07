@@ -81,7 +81,6 @@ Environment (all optional):
 | `LLM_CTX` | `8192` | llama-server context window used by the client-side budget guard |
 | `LLM_MAX_ATTEMPTS` | `5` | per-transaction labeling attempt cap |
 | `LLM_MAX_LABELS_PROMPT` | `200` | max existing labels injected into the prompt |
-| `LLM_MAX_SUGGESTIONS` | `3` | max rule-based suggestions per transaction |
 
 Raising `LLM_BATCH_SIZE` substantially (> ~40) can make the completion
 budget exceed the server's context window (`-c` in `make llm`, 8192 by
@@ -101,9 +100,9 @@ the model could not label end up `failed` ("ohne Kategorie") and are retried
 on their next claimable tick or via the retry button on the Imports page.
 
 **Label rules (suggestions):** manually assigning a label to a transaction in
-the transactions table learns a rule from its counterparty (IBAN + normalized
-name → label). Future transactions of the same counterparty receive up to
-`LLM_MAX_SUGGESTIONS` label suggestions in the prompt; the LLM decides but
+the transactions table learns a rule from its exact (payer, payee, counterparty
+IBAN) combination → label. Future transactions matching all three verbatim
+receive the rule's label as a suggestion in the prompt; the LLM decides but
 must reuse a fitting suggestion verbatim. This gives consistent labels for
 recurring counterparties while the LLM stays in the loop for everything else.
 

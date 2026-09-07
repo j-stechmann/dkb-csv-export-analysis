@@ -13,7 +13,6 @@ const envSchema = z.object({
   LLM_CTX: z.coerce.number().int().min(1024).default(8192),
   LLM_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
   LLM_MAX_LABELS_PROMPT: z.coerce.number().int().min(0).default(200),
-  LLM_MAX_SUGGESTIONS: z.coerce.number().int().min(1).max(10).default(3),
 })
 
 export type AppConfig = z.infer<typeof envSchema>

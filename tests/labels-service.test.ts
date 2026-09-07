@@ -267,9 +267,9 @@ describe("delete cascade", () => {
     db.insert(labelRules)
       .values({
         labelId: catId,
-        iban: IBAN,
-        nameKey: "vermieter",
-        name: "Vermieter",
+        payer: "Max Mustermann",
+        payee: "Vermieter",
+        counterpartyIban: IBAN,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
@@ -316,9 +316,9 @@ describe("pruneOrphanCategories", () => {
     db.insert(labelRules)
       .values({
         labelId: withRule,
-        iban: IBAN,
-        nameKey: "x",
-        name: "X",
+        payer: "Max Mustermann",
+        payee: "X",
+        counterpartyIban: IBAN,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
@@ -350,8 +350,9 @@ describe("learnRule inside transaction (manual assign path)", () => {
         .where(eq(transactions.id, id))
         .run()
       const learned = learnRule(tx, {
+        payer: "Max Mustermann",
+        payee: "Vermieter GmbH",
         counterpartyIban: IBAN,
-        counterpartyName: "Vermieter GmbH",
         labelId: catId,
       })
       expect(learned).not.toBeNull()
@@ -360,7 +361,9 @@ describe("learnRule inside transaction (manual assign path)", () => {
     const rules = db.select().from(labelRules).all()
     expect(rules).toHaveLength(1)
     expect(rules[0].labelId).toBe(catId)
-    expect(rules[0].iban).toBe(IBAN)
+    expect(rules[0].counterpartyIban).toBe(IBAN)
+    expect(rules[0].payer).toBe("Max Mustermann")
+    expect(rules[0].payee).toBe("Vermieter GmbH")
   })
 })
 

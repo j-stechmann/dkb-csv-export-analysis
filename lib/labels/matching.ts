@@ -1,94 +1,87 @@
 import { and, eq, inArray } from "drizzle-orm"
 import { getDb, type Db, type DbTx } from "@/lib/db"
 import { categories, labelRules } from "@/lib/db/schema"
-import {
-  counterpartyDisplayName,
-  isLearnableIbanKey,
-  normalizeCounterpartyKey,
-  normalizeIbanKey,
-} from "@/lib/db/normalize"
-import { getConfig } from "@/lib/config"
 
-export interface SuggestionInput {
+/** A rule key: all three fields must be non-empty, non-whitespace strings. */
+export interface RulePartyInput {
+  payer: string | null
+  payee: string | null
   counterpartyIban: string | null
 }
 
-export interface LearnedRuleInput {
-  counterpartyIban: string | null
-  counterpartyName: string | null
+export interface LearnedRuleInput extends RulePartyInput {
   labelId: number
 }
 
 /**
- * Looks up suggestions for one transaction: ALL rules whose normalized IBAN
- * key matches, deduped by label, ranked usageCount desc → manual before
- * llm → newest rule first, capped at LLM_MAX_SUGGESTIONS.
+ * A rule key is only learnable/matchable when every component carries real
+ * content: non-null and not (trim-)empty. Values are compared and stored
+ * verbatim — no normalization.
  */
-export function suggestLabelIds(
-  db: Db,
+export function isUsableRuleKey(input: {
+  payer: string | null
+  payee: string | null
   counterpartyIban: string | null
-): number[] {
-  const ibanKey = normalizeIbanKey(counterpartyIban)
-  if (!ibanKey) return []
-
-  const rows = db
-    .select({
-      labelId: labelRules.labelId,
-      ruleCreatedAt: labelRules.createdAt,
-      usageCount: categories.usageCount,
-      origin: categories.origin,
-    })
-    .from(labelRules)
-    .innerJoin(categories, eq(categories.id, labelRules.labelId))
-    .where(eq(labelRules.iban, ibanKey))
-    .all()
-
-  const originRank = (origin: string) => (origin === "manual" ? 0 : 1)
-  rows.sort(
-    (a, b) =>
-      b.usageCount - a.usageCount ||
-      originRank(a.origin) - originRank(b.origin) ||
-      b.ruleCreatedAt.localeCompare(a.ruleCreatedAt) ||
-      a.labelId - b.labelId
+}): input is { payer: string; payee: string; counterpartyIban: string } {
+  return (
+    input.payer !== null &&
+    input.payer.trim() !== "" &&
+    input.payee !== null &&
+    input.payee.trim() !== "" &&
+    input.counterpartyIban !== null &&
+    input.counterpartyIban.trim() !== ""
   )
+}
 
-  const seen = new Set<number>()
-  const out: number[] = []
-  const cap = getConfig().LLM_MAX_SUGGESTIONS
-  for (const row of rows) {
-    if (seen.has(row.labelId)) continue
-    seen.add(row.labelId)
-    out.push(row.labelId)
-    if (out.length >= cap) break
-  }
-  return out
+/**
+ * Looks up suggestions for one transaction: the rule whose (payer, payee,
+ * counterpartyIban) triple matches exactly. The unique index allows at most
+ * one rule per triple, so the result is that rule's label or nothing.
+ */
+export function suggestLabelIds(db: Db, input: RulePartyInput): number[] {
+  if (!isUsableRuleKey(input)) return []
+
+  const row = db
+    .select({ labelId: labelRules.labelId })
+    .from(labelRules)
+    .where(
+      and(
+        eq(labelRules.payer, input.payer),
+        eq(labelRules.payee, input.payee),
+        eq(labelRules.counterpartyIban, input.counterpartyIban)
+      )
+    )
+    .get()
+  return row ? [row.labelId] : []
 }
 
 /**
  * Upserts a learned rule (manual assignment path): keyed on
- * (ibanKey, counterpartyNameKey). Re-assignment of the same rendering to a
- * new label replaces the rule (newest wins); sibling renderings keep their
- * own rules. Returns the rule id, or null when the key is not learnable.
+ * (payer, payee, counterpartyIban). Re-learning the same triple for a new
+ * label replaces the rule (newest wins). Returns the rule id, or null when
+ * the transaction lacks payer, payee or counterparty IBAN.
  */
 export function learnRule(
   tx: Db | DbTx,
   input: LearnedRuleInput
 ): number | null {
-  const ibanKey = normalizeIbanKey(input.counterpartyIban)
-  if (!ibanKey || !isLearnableIbanKey(ibanKey)) return null
-  const nameKey = normalizeCounterpartyKey(input.counterpartyName)
-  const name = counterpartyDisplayName(input.counterpartyName)
-  if (!nameKey || !name) return null
+  if (!isUsableRuleKey(input)) return null
 
   const now = new Date().toISOString()
   const existing = tx
     .select({ id: labelRules.id })
     .from(labelRules)
-    .where(and(eq(labelRules.iban, ibanKey), eq(labelRules.nameKey, nameKey)))
+    .where(
+      and(
+        eq(labelRules.payer, input.payer),
+        eq(labelRules.payee, input.payee),
+        eq(labelRules.counterpartyIban, input.counterpartyIban)
+      )
+    )
     .get()
   if (existing) {
     tx.update(labelRules)
-      .set({ labelId: input.labelId, name, updatedAt: now })
+      .set({ labelId: input.labelId, updatedAt: now })
       .where(eq(labelRules.id, existing.id))
       .run()
     return existing.id
@@ -97,9 +90,9 @@ export function learnRule(
     .insert(labelRules)
     .values({
       labelId: input.labelId,
-      iban: ibanKey,
-      nameKey,
-      name,
+      payer: input.payer,
+      payee: input.payee,
+      counterpartyIban: input.counterpartyIban,
       createdAt: now,
       updatedAt: now,
     })
@@ -110,32 +103,39 @@ export function learnRule(
   const reRead = tx
     .select({ id: labelRules.id })
     .from(labelRules)
-    .where(and(eq(labelRules.iban, ibanKey), eq(labelRules.nameKey, nameKey)))
+    .where(
+      and(
+        eq(labelRules.payer, input.payer),
+        eq(labelRules.payee, input.payee),
+        eq(labelRules.counterpartyIban, input.counterpartyIban)
+      )
+    )
     .get()
   return reRead?.id ?? null
 }
 
 /**
  * Batch suggestion lookup: resolves label ids per transaction index.
- * Each distinct IBAN key is queried once, then mapped back to every
- * transaction sharing it.
+ * Each distinct (payer, payee, counterpartyIban) triple is queried once,
+ * then mapped back to every transaction sharing it.
  */
 export function suggestForBatch(
-  inputs: SuggestionInput[]
+  inputs: RulePartyInput[]
 ): Map<number, number[]> {
   const db = getDb()
-  const byIban = new Map<string, number[]>()
+  const byTriple = new Map<string, number[]>()
   const result = new Map<number, number[]>()
   for (let i = 0; i < inputs.length; i++) {
-    const ibanKey = normalizeIbanKey(inputs[i].counterpartyIban)
-    if (!ibanKey) {
+    const input = inputs[i]
+    if (!isUsableRuleKey(input)) {
       result.set(i, [])
       continue
     }
-    let ids = byIban.get(ibanKey)
+    const key = `${input.payer}\u0000${input.payee}\u0000${input.counterpartyIban}`
+    let ids = byTriple.get(key)
     if (!ids) {
-      ids = suggestLabelIds(db, ibanKey)
-      byIban.set(ibanKey, ids)
+      ids = suggestLabelIds(db, input)
+      byTriple.set(key, ids)
     }
     result.set(i, ids)
   }

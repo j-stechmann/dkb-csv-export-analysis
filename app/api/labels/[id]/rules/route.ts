@@ -30,9 +30,9 @@ export async function GET(
     .select({
       id: labelRules.id,
       labelId: labelRules.labelId,
-      iban: labelRules.iban,
-      nameKey: labelRules.nameKey,
-      name: labelRules.name,
+      payer: labelRules.payer,
+      payee: labelRules.payee,
+      counterpartyIban: labelRules.counterpartyIban,
       createdAt: labelRules.createdAt,
     })
     .from(labelRules)

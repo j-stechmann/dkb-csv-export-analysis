@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic"
 
 /**
  * Manual label assignment: sets the category, marks the row labeled and
- * learns a counterparty rule (IBAN + normalized name → label) so future
- * transactions of this counterparty are suggested this label. Runs in one
- * transaction; the label's usageCount increments and its origin flips to
+ * learns a rule (payer + payee + counterparty IBAN → label) so future
+ * transactions matching all three exactly are suggested this label. Runs in
+ * one transaction; the label's usageCount increments and its origin flips to
  * 'manual' (adoption = user approval). Manual assignment wins over in-flight
  * LLM claims via the attempts guard in applyLabelResults/markRowsFailed.
  */
@@ -43,7 +43,6 @@ export async function POST(
       id: transactions.id,
       payer: transactions.payer,
       payee: transactions.payee,
-      type: transactions.type,
       counterpartyIban: transactions.counterpartyIban,
     })
     .from(transactions)
@@ -131,11 +130,12 @@ export async function POST(
       .where(eq(categories.id, categoryId))
       .run()
 
-    // learn rule from the counterparty this transaction is with
-    const counterparty = row.type === "Ausgang" ? row.payee : row.payer
+    // learn rule from this transaction's payer/payee/IBAN verbatim
+    // (learnRule rejects rows missing any of the three)
     learnRule(tx, {
+      payer: row.payer,
+      payee: row.payee,
       counterpartyIban: row.counterpartyIban,
-      counterpartyName: counterparty,
       labelId: categoryId,
     })
   })

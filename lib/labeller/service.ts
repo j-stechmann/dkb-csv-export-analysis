@@ -1,7 +1,6 @@
 import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm"
 import { getDb, type Db, type DbTx } from "@/lib/db"
 import { categories, importBatches, transactions } from "@/lib/db/schema"
-import { normalizeIbanKey } from "@/lib/db/normalize"
 import type { LabelResult } from "@/lib/llm/client"
 import { sanitizeField } from "@/lib/llm/prompt"
 
@@ -298,40 +297,35 @@ export function resetTransactionsForLabelDeletion(
 }
 
 /**
- * Finds transactions whose counterparty IBAN matches `ibanKey` (rule-style
- * normalized comparison) and are labelable by the worker. Counterparty IBANs
- * are stored with interior spaces and export case, so the SQL prefilter
- * (UPPER/REPLACE) casts a wide net and the exact TS-side recheck with
- * normalizeIbanKey decides the match. The prefilter strips ASCII spaces
- * only — exact for everything the CSV parser stores (cleanCell collapses
- * all whitespace, including NBSP/U+202F, into single ASCII spaces before
- * insert); a hypothetical out-of-band writer leaving other whitespace or
- * non-ASCII letters (SQLite UPPER is ASCII-only, unlike JS toUpperCase)
- * would be matched by suggestLabelIds but missed here. NULL/empty
- * counterparty IBANs never match. Only 'Gebucht' rows are returned: the
- * worker never claims anything else, so including 'Nicht gebucht' rows
- * would only inflate counts. With `excludeLabelId`, rows already pointing
- * at that label are skipped (any label_status): re-applying a rule must
- * neither rewrite them nor re-queue them for a redundant LLM call — apply
- * is for switching rows to the rule's label, not for refreshing it.
+ * Finds transactions matching a learned rule exactly: payer, payee and
+ * counterparty IBAN must all equal the rule's values (rule values are never
+ * null/empty; SQL `=` on the transaction columns also excludes NULLs there).
+ * Only 'Gebucht' rows are returned: the worker never claims anything else,
+ * so including 'Nicht gebucht' rows would only inflate counts. With
+ * `excludeLabelId`, rows already pointing at that label are skipped (any
+ * label_status): re-applying a rule must neither rewrite them nor re-queue
+ * them for a redundant LLM call — apply is for switching rows to the rule's
+ * label, not for refreshing it.
  */
-export function findIbanRuleMatches(
+export function findRuleMatches(
   db: Db | DbTx,
-  ibanKey: string,
+  payer: string,
+  payee: string,
+  counterpartyIban: string,
   excludeLabelId?: number
 ): Array<{ id: string; batchId: string | null }> {
-  if (!ibanKey) return []
   const candidates = db
     .select({
       id: transactions.id,
       batchId: transactions.batchId,
-      counterpartyIban: transactions.counterpartyIban,
     })
     .from(transactions)
     .where(
       and(
         eq(transactions.status, "Gebucht"),
-        sql`UPPER(REPLACE(${transactions.counterpartyIban}, ' ', '')) = ${ibanKey}`,
+        eq(transactions.payer, payer),
+        eq(transactions.payee, payee),
+        eq(transactions.counterpartyIban, counterpartyIban),
         excludeLabelId === undefined
           ? undefined
           : or(
@@ -341,9 +335,7 @@ export function findIbanRuleMatches(
       )
     )
     .all()
-  return candidates.filter(
-    (row) => normalizeIbanKey(row.counterpartyIban) === ibanKey
-  )
+  return candidates
 }
 
 /**
@@ -360,8 +352,10 @@ export function findIbanRuleMatches(
  * carrying the rule's label are left untouched instead of re-queued.
  * Returns null if the label was deleted concurrently (nothing written).
  */
-export function applyIbanRuleToTransactions(
-  ibanKey: string,
+export function applyRuleToTransactions(
+  payer: string,
+  payee: string,
+  counterpartyIban: string,
   labelId: number
 ): string[] | null {
   const db = getDb()
@@ -381,7 +375,7 @@ export function applyIbanRuleToTransactions(
       return
     }
 
-    const matched = findIbanRuleMatches(tx, ibanKey, labelId)
+    const matched = findRuleMatches(tx, payer, payee, counterpartyIban, labelId)
     const batchIds = new Set<string>()
     const now = new Date().toISOString()
     for (const row of matched) {
