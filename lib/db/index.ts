@@ -49,6 +49,11 @@ export function setTestDb(db: Db) {
   globalRef.__dkbTestDb = db
 }
 
+/** For tests: forget the default (file) DB singleton, e.g. after changing DATABASE_PATH. */
+export function resetDefaultDbForTest() {
+  globalRef.__dkbDbHolder = undefined
+}
+
 export function createTestDb(): Db {
   const sqlite = new Database(":memory:")
   sqlite.pragma("foreign_keys = ON")
@@ -59,6 +64,19 @@ export function createTestDb(): Db {
 
 /** Create all tables idempotently (drizzle-kit push equivalent, code-first). */
 export function createSchemaSqlite(db: Db) {
+  // label_rules: older DBs carry the previous (iban, name_key) shape — that
+  // schema is gone, so the table is dropped before the new-shape DDL/index
+  // below would fail with "no such column: payer" (old rules are discarded;
+  // they regenerate on the next manual assignment). Fresh files are handled
+  // by CREATE TABLE IF NOT EXISTS (idempotent).
+  {
+    const ruleCols = db
+      .all<{ name: string }>(`PRAGMA table_info(label_rules)`)
+      .map((c) => c.name)
+    if (ruleCols.length > 0 && !ruleCols.includes("counterparty_iban")) {
+      db.run(`DROP TABLE label_rules`)
+    }
+  }
   db.run(`
     CREATE TABLE IF NOT EXISTS accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,16 +223,9 @@ export function migrateSchema(db: Db) {
       `ALTER TABLE categories ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0`
     )
   }
-  // label_rules: older DBs carry the previous (iban, name_key) shape — that
-  // schema is gone, so the table is dropped and rebuilt fresh (old rules are
-  // discarded; they regenerate on the next manual assignment). Fresh files
-  // are handled by CREATE TABLE IF NOT EXISTS (idempotent).
-  if (
-    cols("label_rules").length > 0 &&
-    !cols("label_rules").includes("counterparty_iban")
-  ) {
-    db.run(`DROP TABLE label_rules`)
-  }
+  // label_rules shape migration lives in createSchemaSqlite (it must drop the
+  // old (iban, name_key) table before the new-shape index is created there —
+  // migrateSchema runs after createSchemaSqlite on every code path).
   db.run(`
     CREATE TABLE IF NOT EXISTS label_rules (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
