@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
+import type { CategoryOrigin } from "@/lib/db/status"
 import { eq } from "drizzle-orm"
 import { createTestDb, setTestDb, type Db } from "@/lib/db"
 import { accounts, categories, labelRules } from "@/lib/db/schema"
@@ -14,7 +15,11 @@ const IBAN = "DE02120300000000202051"
 
 let db: Db
 
-function cat(name: string, origin = "manual", usageCount = 0): number {
+function cat(
+  name: string,
+  origin: CategoryOrigin = "manual",
+  usageCount = 0
+): number {
   const existing = db
     .select({ id: categories.id })
     .from(categories)

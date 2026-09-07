@@ -1,10 +1,8 @@
 import type { ParsedTransactionRow } from "@/lib/csv/parser"
 import type { Transaction } from "@/lib/db/schema"
+import { BOOKED, PENDING, type TxStatus } from "@/lib/db/status"
 
 export const MATCH_WINDOW_DAYS = 7
-
-const PENDING = "Nicht gebucht"
-const BOOKED = "Gebucht"
 
 /**
  * DB-side counterpart of an incoming ParsedTransactionRow: minimal generic
@@ -14,7 +12,7 @@ export interface DbMatchRow {
   id: string
   bookingDate: string
   valueDate: string
-  status: string
+  status: TxStatus
   payer: string | null
   payee: string | null
   purpose: string | null
@@ -228,15 +226,34 @@ export function sameBankIdentity(
  * Identical-content pairs (pending and booked) are deliberately absent:
  * the exact-dedupe tier already counts them as duplicates, so they are
  * not consumed here.
+ *
+ * Performance: viableMatch requires equal type AND amount, so DB rows are
+ * bucketed by (type, amountCents) first — the O(N×M) pairing only runs
+ * within a bucket instead of across the whole account history.
  */
 export function matchIncoming(
   dbRows: DbMatchRow[],
   incoming: ParsedTransactionRow[]
 ): FuzzyMatch {
-  const candidates: Candidate[] = []
+  const bucketKey = (type: string, amountCents: number) =>
+    `${type}|${amountCents}`
+  const buckets = new Map<string, DbMatchRow[]>()
   for (const db of dbRows) {
-    for (let i = 0; i < incoming.length; i++) {
-      const inc = incoming[i]
+    const key = bucketKey(db.type, db.amountCents)
+    let bucket = buckets.get(key)
+    if (!bucket) {
+      bucket = []
+      buckets.set(key, bucket)
+    }
+    bucket.push(db)
+  }
+
+  const candidates: Candidate[] = []
+  for (let i = 0; i < incoming.length; i++) {
+    const inc = incoming[i]
+    const bucket = buckets.get(bucketKey(inc.type, inc.amountCents))
+    if (!bucket) continue
+    for (const db of bucket) {
       if (db.status === PENDING) {
         if (inc.status === BOOKED) {
           const c = buildCandidate("upgrade", db, inc, i)
@@ -285,9 +302,23 @@ export function findDbSelfHealPairs(
 ): Array<{ pendingId: string; bookedId: string }> {
   const pending = dbRows.filter((r) => r.status === PENDING)
   const booked = dbRows.filter((r) => r.status === BOOKED)
+  // viableMatch requires equal type AND amount — bucket to avoid the
+  // full pending×booked product on large accounts
+  const bookedByBucket = new Map<string, DbMatchRow[]>()
+  for (const b of booked) {
+    const key = `${b.type}|${b.amountCents}`
+    let bucket = bookedByBucket.get(key)
+    if (!bucket) {
+      bucket = []
+      bookedByBucket.set(key, bucket)
+    }
+    bucket.push(b)
+  }
   const candidates: Candidate[] = []
   for (const p of pending) {
-    for (const b of booked) {
+    const bucket = bookedByBucket.get(`${p.type}|${p.amountCents}`)
+    if (!bucket) continue
+    for (const b of bucket) {
       if (!viableMatch(p, b)) continue
       candidates.push({
         kind: "upgrade",

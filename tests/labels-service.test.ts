@@ -1,3 +1,4 @@
+import type { ImportStage, LabelStatus } from "@/lib/db/status"
 import { describe, it, expect, beforeEach } from "vitest"
 import { eq } from "drizzle-orm"
 import { createTestDb, setTestDb, type Db } from "@/lib/db"
@@ -26,7 +27,7 @@ let db: Db
 let accountId: number
 let batchCounter = 0
 
-function seedBatch(status = "labeling"): string {
+function seedBatch(status: ImportStage = "labeling"): string {
   batchCounter++
   const id = `b${batchCounter}`
   db.insert(importBatches)
@@ -38,7 +39,7 @@ function seedBatch(status = "labeling"): string {
 function seedTx(
   batchId: string,
   overrides: Partial<{
-    labelStatus: string
+    labelStatus: LabelStatus
     labelAttempts: number
     categoryId: number | null
     counterpartyIban: string | null

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Upload, FolderOpen, RefreshCw, FileSpreadsheet } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -15,66 +14,25 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { useActiveImport } from "@/components/active-import-provider"
+import { ErrorState } from "@/components/error-state"
+import { useImportHistory } from "@/hooks/use-queries"
+import { useRetryLabeling, useStartImport } from "@/hooks/use-mutations"
+import { labelProgress, rowProgress, STAGE_LABELS } from "@/lib/import-progress"
 import { cn } from "@/lib/utils"
-
-interface BatchRow {
-  id: string
-  fileName: string
-  status: string
-  error: string | null
-  rowsTotal: number
-  rowsImported: number
-  rowsDuplicate: number
-  rowsUpdated: number
-  labelsTotal: number
-  labelsDone: number
-  labelsFailed: number
-  createdAt: string
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  parsing: "Wird gelesen",
-  importing: "Wird gespeichert",
-  labeling: "Kategorisierung",
-  completed: "Abgeschlossen",
-  failed: "Fehlgeschlagen",
-}
 
 function ImportDropzone() {
   const inputRef = React.useRef<HTMLInputElement>(null)
-  const [isUploading, setIsUploading] = React.useState(false)
   const { startPolling } = useActiveImport()
-  const queryClient = useQueryClient()
+  const { mutate: startImport, isPending: isUploading } = useStartImport()
 
-  const upload = async (file: File) => {
-    setIsUploading(true)
-    try {
-      const body = new FormData()
-      body.append("file", file)
-      const res = await fetch("/api/imports", { method: "POST", body })
-      const data = (await res.json()) as {
-        batchId?: string
-        error?: string
-        message?: string
-      }
-      if (res.status === 202 && data.batchId) {
-        toast.success("Import gestartet", { description: file.name })
-        startPolling(data.batchId)
-        void queryClient.invalidateQueries({ queryKey: ["imports"] })
-      } else if (res.status === 409) {
-        toast.error("Es läuft bereits ein Import.")
-      } else {
-        toast.error("Import fehlgeschlagen", {
-          description: data.error ?? data.message ?? `HTTP ${res.status}`,
-        })
-      }
-    } catch (err) {
-      toast.error("Import fehlgeschlagen", {
-        description: err instanceof Error ? err.message : "Netzwerkfehler",
+  const upload = (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      toast.error("Nur CSV-Dateien werden unterstützt", {
+        description: file.name,
       })
-    } finally {
-      setIsUploading(false)
+      return
     }
+    startImport({ file }, { onSuccess: (data) => startPolling(data.batchId) })
   }
 
   return (
@@ -96,7 +54,7 @@ function ImportDropzone() {
           onDrop={(e) => {
             e.preventDefault()
             const file = e.dataTransfer.files[0]
-            if (file) void upload(file)
+            if (file) upload(file)
           }}
         >
           <Upload className="size-8 text-muted-foreground" />
@@ -110,7 +68,7 @@ function ImportDropzone() {
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0]
-              if (f) void upload(f)
+              if (f) upload(f)
               e.target.value = ""
             }}
           />
@@ -128,51 +86,16 @@ function ImportDropzone() {
 }
 
 function RetryLabelingButton() {
-  const [busy, setBusy] = React.useState(false)
-  const queryClient = useQueryClient()
+  const { mutate: retryLabeling, isPending } = useRetryLabeling()
 
   return (
     <Button
       variant="outline"
       size="sm"
-      disabled={busy}
-      onClick={async () => {
-        setBusy(true)
-        try {
-          const res = await fetch("/api/labels/retry", { method: "POST" })
-          const data = (await res.json()) as {
-            queued?: number
-            message?: string
-          }
-          if (res.status === 202) {
-            if ((data.queued ?? 0) > 0) {
-              toast.success(
-                `Kategorisierung erneut eingeplant: ${data.queued} Transaktionen`,
-                { description: "Die Verarbeitung läuft im Hintergrund." }
-              )
-            } else {
-              toast.info("Keine Transaktionen zum erneuten Versuch vorhanden.")
-            }
-            void queryClient.invalidateQueries({ queryKey: ["imports"] })
-            void queryClient.invalidateQueries({ queryKey: ["import"] })
-            void queryClient.invalidateQueries({ queryKey: ["transactions"] })
-            void queryClient.invalidateQueries({ queryKey: ["analytics"] })
-            void queryClient.invalidateQueries({ queryKey: ["categories"] })
-          } else {
-            toast.error("Erneuter Versuch fehlgeschlagen", {
-              description: data.message ?? `HTTP ${res.status}`,
-            })
-          }
-        } catch {
-          toast.error("Erneuter Versuch fehlgeschlagen", {
-            description: "Netzwerkfehler",
-          })
-        } finally {
-          setBusy(false)
-        }
-      }}
+      disabled={isPending}
+      onClick={() => retryLabeling()}
     >
-      <RefreshCw className={cn("size-4", busy && "animate-spin")} />
+      <RefreshCw className={cn("size-4", isPending && "animate-spin")} />
       Kategorisierung erneut versuchen
     </Button>
   )
@@ -183,20 +106,8 @@ function ActiveImportCard() {
   if (!batch || !activeBatchId) return null
 
   const terminal = batch.status === "completed" || batch.status === "failed"
-  const labelProgress =
-    batch.labelsTotal > 0
-      ? Math.round(
-          ((batch.labelsDone + batch.labelsFailed) / batch.labelsTotal) * 100
-        )
-      : 0
-  const rowProgress =
-    batch.rowsTotal > 0
-      ? Math.round(
-          ((batch.rowsImported + batch.rowsDuplicate + batch.rowsUpdated) /
-            batch.rowsTotal) *
-            100
-        )
-      : 0
+  const labelPct = labelProgress(batch)
+  const rowPct = rowProgress(batch)
 
   return (
     <Card>
@@ -212,7 +123,7 @@ function ActiveImportCard() {
                   : "default"
             }
           >
-            {STATUS_LABELS[batch.status] ?? batch.status}
+            {STAGE_LABELS[batch.status] ?? batch.status}
           </Badge>
         </div>
         <CardDescription>
@@ -231,7 +142,7 @@ function ActiveImportCard() {
                   /{batch.rowsTotal}
                 </span>
               </div>
-              <Progress value={rowProgress} />
+              <Progress value={rowPct} />
             </div>
             <div>
               <div className="mb-1 flex justify-between text-xs text-muted-foreground">
@@ -240,7 +151,7 @@ function ActiveImportCard() {
                   {batch.labelsDone}/{batch.labelsTotal}
                 </span>
               </div>
-              <Progress value={labelProgress} />
+              <Progress value={labelPct} />
             </div>
           </>
         )}
@@ -253,15 +164,7 @@ function ActiveImportCard() {
 }
 
 function HistoryTable() {
-  const { data, isLoading } = useQuery<{ batches: BatchRow[] }>({
-    queryKey: ["imports"],
-    queryFn: async () => {
-      const res = await fetch("/api/imports/history")
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return res.json()
-    },
-    refetchInterval: 5000,
-  })
+  const { data, isLoading, isError, refetch } = useImportHistory()
 
   return (
     <Card>
@@ -271,13 +174,15 @@ function HistoryTable() {
       <CardContent>
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Lädt…</p>
-        ) : (data?.batches.length ?? 0) === 0 ? (
+        ) : isError ? (
+          <ErrorState onRetry={() => void refetch()} />
+        ) : !data || data.length === 0 ? (
           <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
             <FileSpreadsheet className="size-4" /> Noch keine Imports.
           </p>
         ) : (
           <div className="space-y-2">
-            {data!.batches.map((b) => (
+            {data.map((b) => (
               <div
                 key={b.id}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
@@ -305,7 +210,7 @@ function HistoryTable() {
                         : "default"
                   }
                 >
-                  {STATUS_LABELS[b.status] ?? b.status}
+                  {STAGE_LABELS[b.status] ?? b.status}
                 </Badge>
               </div>
             ))}

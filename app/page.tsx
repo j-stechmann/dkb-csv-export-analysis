@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { FilterBar } from "@/components/filter-bar"
-import { KpiRow, useAnalytics } from "@/components/analytics-kpis"
+import { KpiRow } from "@/components/analytics-kpis"
 import {
   BalanceChart,
   CashflowChart,
@@ -11,20 +11,17 @@ import {
 } from "@/components/analytics-charts"
 import { TransactionsTable } from "@/components/transactions-table"
 import { ErrorState } from "@/components/error-state"
-import { EMPTY_FILTERS, type DashboardFilters } from "@/lib/filters"
+import { useAnalytics } from "@/hooks/use-queries"
+import {
+  EMPTY_FILTERS,
+  filtersToParams,
+  type DashboardFilters,
+} from "@/lib/filters"
 
 export default function DashboardPage() {
   const [filters, setFilters] = React.useState<DashboardFilters>(EMPTY_FILTERS)
 
-  const params = React.useMemo(() => {
-    const sp = new URLSearchParams()
-    if (filters.q) sp.set("q", filters.q)
-    if (filters.dateFrom) sp.set("dateFrom", filters.dateFrom)
-    if (filters.dateTo) sp.set("dateTo", filters.dateTo)
-    if (filters.type !== "all") sp.set("type", filters.type)
-    for (const id of filters.categoryIds) sp.append("categoryId", String(id))
-    return sp.toString()
-  }, [filters])
+  const params = React.useMemo(() => filtersToParams(filters), [filters])
 
   const {
     data: analytics,

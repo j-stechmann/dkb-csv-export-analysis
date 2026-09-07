@@ -1,8 +1,25 @@
+import type { Metadata } from "next"
+import { Source_Serif_4 } from "next/font/google"
 import { AppNav } from "@/components/app-nav"
 import { Providers } from "@/components/providers"
 import { LabellerHealthBadge } from "@/components/labeller-health-badge"
 import { ThemeToggle } from "@/components/theme-toggle"
 import "./globals.css"
+
+const fontSerif = Source_Serif_4({
+  subsets: ["latin"],
+  variable: "--font-serif",
+  display: "swap",
+})
+
+export const metadata: Metadata = {
+  title: {
+    default: "DKB Analytics",
+    template: "%s · DKB Analytics",
+  },
+  description:
+    "Analyse von DKB CSV-Exporten: Import, automatische Kategorisierung, Labels und Auswertungen.",
+}
 
 export default function RootLayout({
   children,
@@ -11,7 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="de" suppressHydrationWarning>
-      <body className="font-serif antialiased">
+      <body className={`${fontSerif.variable} font-serif antialiased`}>
         <Providers>
           <div className="flex min-h-svh flex-col">
             <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">

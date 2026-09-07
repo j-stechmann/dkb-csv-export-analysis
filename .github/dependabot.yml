@@ -23,7 +23,7 @@ updates:
         update-types:
           - "version-update:semver-major"
 
-  # Dockerfile base images (node:22-bookworm-slim, oven/bun:1.4.0)
+  # Dockerfile base images (node:24-bookworm-slim, oven/bun:1.4.0)
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

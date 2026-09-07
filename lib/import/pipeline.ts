@@ -1,32 +1,16 @@
-import fs from "node:fs"
-import os from "node:os"
-import path from "node:path"
-import { eq, inArray, sql } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { getDb } from "@/lib/db"
-import { accounts, importBatches, transactions } from "@/lib/db/schema"
-import {
-  parseDkbCsv,
-  peekDkbCsvAccount,
-  CsvParseError,
-  type ParsedTransactionRow,
-} from "@/lib/csv/parser"
-import {
-  computeDedupe,
-  hashTransaction,
-  HASH_VERSION,
-  lowestFreeIndex,
-} from "@/lib/db/dedupe"
-import {
-  findBookedSelfHealPairs,
-  findDbSelfHealPairs,
-  matchIncoming,
-  toDbMatchRow,
-  type DbMatchRow,
-} from "@/lib/db/match"
+import { accounts, importBatches } from "@/lib/db/schema"
+import { sniffBank, CsvParseError } from "@/lib/csv/parser"
+import { runReconcileAndDedupeStage } from "@/lib/import/reconcile"
 import { hasLabelableRows, pruneOrphanCategories } from "@/lib/labeller/service"
+import { STUCK_STAGES, type ImportStage } from "@/lib/db/status"
+import { dkbGlobals, type DkbGlobals } from "@/lib/globals"
 
-export type ImportStage =
-  "parsing" | "importing" | "labeling" | "completed" | "failed"
+export type { ImportStage }
+// re-exported for the API routes and tests that consumed them via pipeline
+export { runReconcileAndDedupeStage } from "@/lib/import/reconcile"
+export type { ReconcileStageResult } from "@/lib/import/reconcile"
 
 export interface StartImportResult {
   batchId: string
@@ -39,20 +23,12 @@ export class ImportInProgressError extends Error {
   }
 }
 
-type JobState = {
-  running: boolean
-  currentBatchId: string | null
-}
-
-const globalRef = globalThis as unknown as {
-  __dkbImportJob?: JobState
-}
-
-function jobState(): JobState {
-  if (!globalRef.__dkbImportJob) {
-    globalRef.__dkbImportJob = { running: false, currentBatchId: null }
+function jobState(): NonNullable<DkbGlobals["__dkbImportJob"]> {
+  const g = dkbGlobals()
+  if (!g.__dkbImportJob) {
+    g.__dkbImportJob = { running: false, currentBatchId: null }
   }
-  return globalRef.__dkbImportJob
+  return g.__dkbImportJob
 }
 
 export function isImportRunning(): boolean {
@@ -65,13 +41,15 @@ export function currentBatchId(): string | null {
 
 /** Peek account info synchronously — no DB writes on failure. */
 export function peekAccount(csvContent: string) {
-  return peekDkbCsvAccount(csvContent)
+  return sniffBank(csvContent).sniff(csvContent)
 }
 
 /**
- * Persist the uploaded file to a temp location and kick the background job.
- * The account/batch rows are created inside the job (after full parse) so
- * a parse failure leaves no orphan rows.
+ * Kick the background import job. The account/batch rows are created
+ * inside the job (after full parse) so a parse failure leaves no orphan
+ * rows. The CSV content is passed through memory — the job body executes
+ * synchronously, so no temp-file round trip is needed (and its disk-full
+ * / cleanup failure modes disappear).
  */
 export function startImport(
   fileName: string,
@@ -83,9 +61,6 @@ export function startImport(
   }
 
   const batchId = crypto.randomUUID()
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "dkb-import-"))
-  const tmpFile = path.join(tmpDir, "upload.csv")
-  fs.writeFileSync(tmpFile, csvContent, "utf8")
 
   // claim the job slot BEFORE running: the job body executes synchronously
   // (no awaits), so setting the flag afterwards would leave it stuck on true
@@ -95,7 +70,7 @@ export function startImport(
   // fire-and-forget with full error containment; the flag reset is chained
   // onto the promise so it lands in a microtask after startImport returns —
   // this stays correct even if the job gains awaits later
-  void runImportJob(batchId, fileName, tmpFile, tmpDir)
+  void runImportJob(batchId, fileName, csvContent)
     .catch((err) => {
       console.error(`[import] unhandled job error batch=${batchId}:`, err)
     })
@@ -110,8 +85,7 @@ export function startImport(
 async function runImportJob(
   batchId: string,
   fileName: string,
-  tmpFile: string,
-  tmpDir: string
+  csvContent: string
 ): Promise<void> {
   const db = getDb()
   try {
@@ -120,15 +94,14 @@ async function runImportJob(
       .values({ id: batchId, fileName, status: "parsing" })
       .run()
 
-    const content = fs.readFileSync(tmpFile, "utf8")
     let parsed
     try {
-      parsed = parseDkbCsv(content)
+      parsed = sniffBank(csvContent).parse(csvContent)
     } catch (err) {
       const message =
         err instanceof CsvParseError
           ? err.message
-          : `parse failed: ${(err as Error).message}`
+          : `parse failed: ${err instanceof Error ? err.message : String(err)}`
       db.update(importBatches)
         .set({
           status: "failed",
@@ -178,14 +151,10 @@ async function runImportJob(
       .run()
 
     // ── stage: fuzzy reconcile + dedupe + insert ─────────────────────
-    const { imported, duplicateCount, updatedCount, totalRows } =
-      runReconcileAndDedupeStage(account.iban, account.id, batchId, parsed.rows)
-
-    if (imported + duplicateCount + updatedCount !== totalRows) {
-      throw new Error(
-        `dedupe invariant violated: imported(${imported}) + duplicates(${duplicateCount}) + updated(${updatedCount}) !== total(${totalRows})`
-      )
-    }
+    // the stage is atomic end-to-end: the dedupe invariant is checked
+    // inside its transaction, so a violation rolls the import back and
+    // lands in the catch below with a clean DB
+    runReconcileAndDedupeStage(account.iban, account.id, batchId, parsed.rows)
 
     // ── stage: labeling (owned by the background worker) ────────────
     // the import job stops here; the label worker drains the batch and
@@ -212,19 +181,13 @@ async function runImportJob(
     db.update(importBatches)
       .set({
         status: "failed",
-        error: (err as Error).message,
+        error: err instanceof Error ? err.message : String(err),
         updatedAt: new Date().toISOString(),
       })
       .where(eq(importBatches.id, batchId))
       .run()
-  } finally {
-    try {
-      fs.rmSync(tmpDir, { recursive: true, force: true })
-    } catch {
-      // best effort
-    }
-    // job-state flags are reset in startImport's .finally() on the promise
   }
+  // job-state flags are reset in startImport's .finally() on the promise
 }
 
 /**
@@ -241,238 +204,8 @@ export function resetStuckBatches(): number {
       error: "interrupted by server restart",
       updatedAt: new Date().toISOString(),
     })
-    .where(inArray(importBatches.status, ["parsing", "importing"]))
+    .where(inArray(importBatches.status, [...STUCK_STAGES]))
     .returning({ id: importBatches.id })
     .all()
   return result.length
-}
-
-/**
- * Manual retry (retry endpoint): give stuck rows a fresh attempt budget.
- * The worker re-claims failed rows below the cap on its own, so resetting
- * those would be a no-op — the rows that actually need this are the ones
- * that exhausted their attempts (failed or crash-left pending): claim filters
- * attempts < cap, so without an attempt reset they are unclaimable forever.
- * Returns the number of revived rows.
- */
-export function resetFailedLabels(maxAttempts: number): number {
-  const db = getDb()
-  const result = db
-    .update(transactions)
-    .set({
-      labelStatus: "pending",
-      labelAttempts: 0,
-      updatedAt: new Date().toISOString(),
-    })
-    .where(
-      sql`${transactions.labelStatus} IN ('failed', 'pending') AND ${transactions.labelAttempts} >= ${maxAttempts}`
-    )
-    .returning({ id: transactions.id })
-    .all()
-  return result.length
-}
-
-export { hashTransaction, HASH_VERSION }
-
-export interface ReconcileStageResult {
-  insertedCount: number
-  updatedCount: number
-  deletedCount: number
-  skippedCount: number
-  duplicateCount: number
-  totalRows: number
-  imported: number
-}
-
-/**
- * Fuzzy pending→booked reconciliation + occurrence-aware dedupe + insert,
- * all mutations in ONE transaction:
- * 1. self-heal: delete DB pending rows that match a DB booked row
- * 2. booked self-heal: delete the newer DB row of stored booked↔booked
- *    re-render pairs (same Kundenreferenz, different content — DKB changed
- *    the payee rendering between export formats)
- * 3. classify incoming rows vs DB (upgrades / skip / refresh; booked
- *    incoming with an already-stored bank identity is a skip)
- * 4. exact dedupe tier on unconsumed rows only
- * 5. apply: deletes → in-place updates (fresh hash + occurrence slot) → inserts
- */
-export function runReconcileAndDedupeStage(
-  accountIban: string,
-  accountId: number,
-  batchId: string,
-  rows: ParsedTransactionRow[]
-): ReconcileStageResult {
-  const db = getDb()
-
-  const dbAccountRows = db
-    .select()
-    .from(transactions)
-    .where(eq(transactions.accountId, accountId))
-    .all()
-
-  const dbMatchRows = dbAccountRows.map(toDbMatchRow)
-
-  const selfHeal = findDbSelfHealPairs(dbMatchRows)
-  const selfHealIds = new Set(selfHeal.map((p) => p.pendingId))
-  const remainingDbRows = dbMatchRows.filter((r) => !selfHealIds.has(r.id))
-
-  // booked↔booked re-renders (same Kundenreferenz, different content):
-  // the newer duplicated copy becomes a delete candidate before matching,
-  // so the incoming file cannot pair with it again
-  const createdAtById = new Map(
-    dbAccountRows.map((r) => [r.id, r.createdAt] as const)
-  )
-  const bookedHeal = findBookedSelfHealPairs(dbMatchRows, createdAtById)
-  const bookedHealIds = new Set(bookedHeal.map((p) => p.deleteId))
-  const effectiveDbRows = remainingDbRows.filter(
-    (r) => !bookedHealIds.has(r.id)
-  )
-
-  const fuzzy = matchIncoming(effectiveDbRows, rows)
-  const consumedIncoming = new Set<number>([
-    ...fuzzy.upgrades.map((m) => m.incomingIndex),
-    ...fuzzy.refreshes.map((m) => m.incomingIndex),
-    ...fuzzy.skips.map((m) => m.incomingIndex),
-  ])
-  const unconsumedRows = rows.filter((_, i) => !consumedIncoming.has(i))
-
-  // occurrence slots per hash from every non-deleted DB row. Rows being
-  // updated keep their old hash occupied on purpose: an identical pending
-  // copy in the same file must count as a duplicate, not insert a phantom.
-  const existingByHash = new Map<string, Set<number>>()
-  for (const r of dbMatchRows) {
-    if (selfHealIds.has(r.id) || bookedHealIds.has(r.id)) continue
-    if (r.sourceHash && typeof r.occurrenceIndex === "number") {
-      let set = existingByHash.get(r.sourceHash)
-      if (!set) {
-        set = new Set()
-        existingByHash.set(r.sourceHash, set)
-      }
-      set.add(r.occurrenceIndex)
-    }
-  }
-
-  interface UpdatePlan {
-    dbRow: DbMatchRow
-    parsed: ParsedTransactionRow
-    newHash: string
-    occurrenceIndex: number
-  }
-  const updateById = new Map(dbMatchRows.map((r) => [r.id, r]))
-  const fuzzyUpdates: UpdatePlan[] = []
-  for (const m of [...fuzzy.upgrades, ...fuzzy.refreshes]) {
-    const parsed = rows[m.incomingIndex]
-    const newHash = hashTransaction(accountIban, parsed)
-    const set = existingByHash.get(newHash) ?? new Set<number>()
-    const occurrenceIndex = lowestFreeIndex(set)
-    set.add(occurrenceIndex)
-    existingByHash.set(newHash, set)
-    fuzzyUpdates.push({
-      dbRow: updateById.get(m.dbId)!,
-      parsed,
-      newHash,
-      occurrenceIndex,
-    })
-  }
-
-  const dedupe = computeDedupe(
-    accountIban,
-    accountId,
-    batchId,
-    unconsumedRows,
-    existingByHash
-  )
-
-  db.transaction((tx) => {
-    for (const pair of selfHeal) {
-      tx.delete(transactions).where(eq(transactions.id, pair.pendingId)).run()
-    }
-
-    for (const pair of bookedHeal) {
-      tx.delete(transactions).where(eq(transactions.id, pair.deleteId)).run()
-    }
-
-    // updated rows keep their id but get a fresh hash + lowest-free
-    // occurrence slot; their old slot is released first
-    for (const u of fuzzyUpdates) {
-      const newHash = hashTransaction(accountIban, u.parsed)
-      const oldSet = existingByHash.get(u.dbRow.sourceHash)
-      oldSet?.delete(u.dbRow.occurrenceIndex)
-      const newSet = existingByHash.get(newHash) ?? new Set<number>()
-      const occ = lowestFreeIndex(newSet)
-      newSet.add(occ)
-      existingByHash.set(newHash, newSet)
-      tx.update(transactions)
-        .set({
-          batchId,
-          bookingDate: u.parsed.bookingDate,
-          valueDate: u.parsed.valueDate,
-          status: u.parsed.status,
-          payer: u.parsed.payer || null,
-          payee: u.parsed.payee || null,
-          purpose: u.parsed.purpose || null,
-          type: u.parsed.type,
-          counterpartyIban: u.parsed.counterpartyIban || null,
-          amountCents: u.parsed.amountCents,
-          creditorId: u.parsed.creditorId || null,
-          mandateRef: u.parsed.mandateRef || null,
-          customerRef: u.parsed.customerRef || null,
-          sourceHash: newHash,
-          occurrenceIndex: occ,
-          hashVersion: HASH_VERSION,
-          labelStatus: "pending",
-          labelAttempts: 0,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(transactions.id, u.dbRow.id))
-        .run()
-    }
-
-    for (const row of dedupe.toInsert) {
-      tx.insert(transactions)
-        .values(row)
-        .onConflictDoNothing({
-          target: [
-            transactions.accountId,
-            transactions.sourceHash,
-            transactions.occurrenceIndex,
-          ],
-        })
-        .run()
-    }
-  })
-
-  const totalInDb = db
-    .select({ count: sql<number>`count(*)` })
-    .from(transactions)
-    .where(eq(transactions.batchId, batchId))
-    .get()
-  // updated rows keep their id but were re-pointed to this batch, so the
-  // raw batch count includes them; imported means newly inserted rows only
-  const updatedCount = fuzzyUpdates.length
-  const skippedCount = fuzzy.skips.length
-  const deletedCount = selfHeal.length + bookedHeal.length
-  const imported = (totalInDb?.count ?? 0) - updatedCount
-  const duplicateCount = skippedCount + dedupe.duplicateCount
-
-  db.update(importBatches)
-    .set({
-      rowsImported: imported,
-      rowsDuplicate: duplicateCount,
-      rowsUpdated: updatedCount,
-      labelsTotal: imported,
-      updatedAt: new Date().toISOString(),
-    })
-    .where(eq(importBatches.id, batchId))
-    .run()
-
-  return {
-    insertedCount: dedupe.toInsert.length,
-    updatedCount,
-    deletedCount,
-    skippedCount,
-    duplicateCount,
-    totalRows: rows.length,
-    imported,
-  }
 }

@@ -29,7 +29,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import type { AnalyticsResponse } from "@/components/analytics-kpis"
+import type {
+  BalancePoint,
+  MonthlyCashflowPoint,
+  SavingsHistory,
+  TopCategoryPoint,
+} from "@/lib/analytics/engine"
 import { getCategoryColor } from "@/lib/category-colors"
 import { formatCentsAsGerman } from "@/lib/money"
 
@@ -47,23 +52,14 @@ const savingsConfig = {
   net: { label: "Saldo", color: "var(--chart-2)" },
 } satisfies ChartConfig
 
+const monthName = (month: string, style: "short" | "long") =>
+  new Intl.DateTimeFormat("de-DE", { month: style, timeZone: "UTC" }).format(
+    new Date(`${month}-01T00:00:00Z`)
+  )
+
 function shortMonth(month: string): string {
-  const [y, m] = month.split("-")
-  const names = [
-    "Jan",
-    "Feb",
-    "Mär",
-    "Apr",
-    "Mai",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Okt",
-    "Nov",
-    "Dez",
-  ]
-  return `${names[Number.parseInt(m, 10) - 1]} ${y.slice(2)}`
+  const [y] = month.split("-")
+  return `${monthName(month, "short")} ${y.slice(2)}`
 }
 
 function euroShort(euros: number): string {
@@ -90,7 +86,7 @@ export function CashflowChart({
   data,
   loading,
 }: {
-  data: AnalyticsResponse["monthlyCashflow"] | undefined
+  data: MonthlyCashflowPoint[] | undefined
   loading: boolean
 }) {
   const chartData = React.useMemo(
@@ -168,29 +164,15 @@ export function CashflowChart({
 }
 
 function fullMonth(month: string): string {
-  const [y, m] = month.split("-")
-  const names = [
-    "Januar",
-    "Februar",
-    "März",
-    "April",
-    "Mai",
-    "Juni",
-    "Juli",
-    "August",
-    "September",
-    "Oktober",
-    "November",
-    "Dezember",
-  ]
-  return `${names[Number.parseInt(m, 10) - 1]} ${y}`
+  const [y] = month.split("-")
+  return `${monthName(month, "long")} ${y}`
 }
 
 export function SavingsChart({
   data,
   loading,
 }: {
-  data: AnalyticsResponse["savingsHistory"] | undefined
+  data: SavingsHistory | null | undefined
   loading: boolean
 }) {
   const chartData = React.useMemo(() => {
@@ -367,7 +349,7 @@ export function BalanceChart({
   data,
   loading,
 }: {
-  data: AnalyticsResponse["balanceTimeline"] | undefined
+  data: BalancePoint[] | undefined
   loading: boolean
 }) {
   const chartData = React.useMemo(
@@ -451,7 +433,7 @@ export function TopCategoriesChart({
   data,
   loading,
 }: {
-  data: AnalyticsResponse["topCategories"] | undefined
+  data: TopCategoryPoint[] | undefined
   loading: boolean
 }) {
   const chartData = React.useMemo(

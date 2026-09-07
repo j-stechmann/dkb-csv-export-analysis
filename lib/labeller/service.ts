@@ -1,7 +1,14 @@
-import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm"
+import { and, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm"
 import { getDb, type Db, type DbTx } from "@/lib/db"
-import { categories, importBatches, transactions } from "@/lib/db/schema"
+import {
+  categories,
+  importBatches,
+  labelRules,
+  transactions,
+} from "@/lib/db/schema"
 import { normalizeIbanKey } from "@/lib/db/normalize"
+import type { CategoryOrigin } from "@/lib/db/status"
+import { getConfig } from "@/lib/config"
 import type { LabelResult } from "@/lib/llm/client"
 import { sanitizeField } from "@/lib/llm/prompt"
 
@@ -10,7 +17,11 @@ import { sanitizeField } from "@/lib/llm/prompt"
  * The single choke point for category writes (LLM apply + manual assign).
  * Runs inside the caller's transaction. Returns the category id.
  */
-export function resolveAndUseCategory(tx: DbTx, name: string): number | null {
+export function resolveAndUseCategory(
+  tx: DbTx,
+  name: string,
+  origin: CategoryOrigin = "llm"
+): number | null {
   const nameKey = normalizeCategoryKey(name)
   let cat = tx
     .select({ id: categories.id })
@@ -23,8 +34,8 @@ export function resolveAndUseCategory(tx: DbTx, name: string): number | null {
       .values({
         name: name.trim(),
         nameKey,
-        language: "de",
-        origin: "llm",
+        language: getConfig().LLM_LANGUAGE,
+        origin,
         usageCount: 0,
       })
       .onConflictDoNothing()
@@ -194,6 +205,34 @@ export function completeDrainedBatches(maxAttempts: number): number {
 }
 
 /**
+ * Manual retry (retry endpoint): give stuck rows a fresh attempt budget.
+ * The worker re-claims failed rows below the cap on its own, so resetting
+ * those would be a no-op — the rows that actually need this are the ones
+ * that exhausted their attempts (failed or crash-left pending): claim filters
+ * attempts < cap, so without an attempt reset they are unclaimable forever.
+ * Returns the number of revived rows.
+ */
+export function resetFailedLabels(maxAttempts: number): number {
+  const db = getDb()
+  const result = db
+    .update(transactions)
+    .set({
+      labelStatus: "pending",
+      labelAttempts: 0,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(
+      and(
+        inArray(transactions.labelStatus, ["failed", "pending"]),
+        gte(transactions.labelAttempts, maxAttempts)
+      )
+    )
+    .returning({ id: transactions.id })
+    .all()
+  return result.length
+}
+
+/**
  * Prune categories that no transaction references AND that carry no learned
  * rules — and only LLM-invented ones. Manual labels and any label still
  * referenced by a learned rule survive so user intent and suggestion
@@ -235,8 +274,8 @@ export function hasLabelableRows(batchId: string): boolean {
  * Resets every transaction currently carrying `categoryId` to unlabeled so
  * the label worker re-labels them after the label is deleted. Also re-points
  * completed owning batches to 'labeling' (only 'completed' — parsing/
- * importing/failed keep their stage semantics) and refreshes their stale
- * labels_total. Returns the affected transaction ids.
+ * importing/failed keep their stage semantics); label counters are
+ * computed on read and self-heal. Returns the affected transaction ids.
  * Passing `existingTx` runs the reset inside that caller's transaction so the
  * reset and the subsequent category delete commit atomically (the DELETE
  * route wraps both to avoid a FK window for concurrent LLM applies).
@@ -275,7 +314,6 @@ export function resetTransactionsForLabelDeletion(
       tx.update(importBatches)
         .set({
           status: "labeling",
-          labelsTotal: sql`(SELECT COUNT(*) FROM transactions t WHERE t.batch_id = import_batches.id AND t.status = 'Gebucht')`,
           updatedAt: now,
         })
         .where(
@@ -352,42 +390,48 @@ export function findIbanRuleMatches(
  * so the label worker re-labels it via the LLM — the rule is injected as a
  * suggestion and the model confirms the final label. Setting categoryId
  * immediately shows the rule's label in the UI while the row is pending.
- * Also re-points completed owning batches to 'labeling' and refreshes their
- * stale labels_total (same bookkeeping as label-deletion reset; done/failed
- * counters are computed on read and self-heal). The match read runs inside
- * the transaction so the reported count matches the rows actually updated
+ * Also re-points completed owning batches to 'labeling' (label counters are
+ * computed on read and self-heal). The rule AND the label are re-read
+ * inside the transaction, so a concurrent rule edit or label delete cannot
+ * cannot slip between the route's read and the apply. The match read also
+ * runs inside so the reported count matches the rows actually updated
  * (concurrent deletes can't sneak between read and write) and rows already
  * carrying the rule's label are left untouched instead of re-queued.
- * Returns null if the label was deleted concurrently (nothing written).
+ * Returns null if the rule or its label is gone (nothing written).
  */
-export function applyIbanRuleToTransactions(
-  ibanKey: string,
-  labelId: number
-): string[] | null {
+export function applyIbanRuleToTransactions(ruleId: number): string[] | null {
   const db = getDb()
 
-  let applied: string[] = []
-  let labelMissing = false
-  const run = (tx: DbTx) => {
+  let applied: string[] | null = null
+  db.transaction((tx) => {
+    // Re-read the rule inside the transaction: a concurrent PATCH to the
+    // rule's iban/label must not apply a stale snapshot once.
+    const rule = tx
+      .select({
+        iban: labelRules.iban,
+        labelId: labelRules.labelId,
+      })
+      .from(labelRules)
+      .where(eq(labelRules.id, ruleId))
+      .get()
+    if (!rule) return
+
     // Re-check the label inside the transaction: a concurrent label delete
     // would otherwise make the per-row updates fail on the category FK.
     const label = tx
       .select({ id: categories.id })
       .from(categories)
-      .where(eq(categories.id, labelId))
+      .where(eq(categories.id, rule.labelId))
       .get()
-    if (!label) {
-      labelMissing = true
-      return
-    }
+    if (!label) return
 
-    const matched = findIbanRuleMatches(tx, ibanKey, labelId)
+    const matched = findIbanRuleMatches(tx, rule.iban, rule.labelId)
     const batchIds = new Set<string>()
     const now = new Date().toISOString()
     for (const row of matched) {
       tx.update(transactions)
         .set({
-          categoryId: labelId,
+          categoryId: rule.labelId,
           labelStatus: "pending",
           labelAttempts: 0,
           updatedAt: now,
@@ -400,7 +444,6 @@ export function applyIbanRuleToTransactions(
       tx.update(importBatches)
         .set({
           status: "labeling",
-          labelsTotal: sql`(SELECT COUNT(*) FROM transactions t WHERE t.batch_id = import_batches.id AND t.status = 'Gebucht')`,
           updatedAt: now,
         })
         .where(
@@ -412,8 +455,7 @@ export function applyIbanRuleToTransactions(
         .run()
     }
     applied = matched.map((r) => r.id)
-  }
-  db.transaction(run)
+  })
 
-  return labelMissing ? null : applied
+  return applied
 }

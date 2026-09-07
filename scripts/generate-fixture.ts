@@ -76,18 +76,9 @@ for (let y = 2024; y <= 2025; y++) {
 const SNAP_DATE = "2024-01-05"
 const SNAP_CENTS = 5_000_00 // 5.000,00 €
 
-let seed = 42
-function rand(max: number): number {
-  // deterministic LCG (reserved for future randomized fixtures)
-  seed = (seed * 1103515245 + 12345) % 2147483648
-  return seed % max
-}
-void rand
-
 for (const month of months) {
   const y = Number.parseInt(month.slice(0, 4))
   const m = Number.parseInt(month.slice(5, 7))
-  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate()
   const day = (d: number) => `${month}-${String(d).padStart(2, "0")}`
 
   // salary on the 1st (exact)

@@ -1,7 +1,5 @@
 "use client"
 
-import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
 import {
   Card,
   CardContent,
@@ -10,62 +8,8 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import type { AnalyticsResult } from "@/lib/api/client"
 import { formatCentsAsGerman } from "@/lib/money"
-
-export interface AnalyticsResponse {
-  kpis: {
-    currentBalanceCents: number | null
-    balanceWithoutSnapshot: boolean
-    avgMonthlyIncomeCents: number | null
-    avgMonthlyExpensesCents: number | null
-    savingsRate: number | null
-    transactionCount: number
-    monthsCounted: number
-  }
-  monthlyCashflow: Array<{
-    month: string
-    incomeCents: number
-    expensesCents: number
-    netCents: number
-  }>
-  balanceTimeline: Array<{ date: string; balanceCents: number }>
-  topCategories: Array<{
-    categoryId: number | null
-    name: string
-    totalCents: number
-    share: number
-    txCount: number
-  }>
-  savingsHistory: {
-    lastMonth: string
-    lastMonthNetCents: number
-    lastMonthIsStale: boolean
-    months: Array<{
-      month: string
-      incomeCents: number
-      expensesCents: number
-      netCents: number
-    }>
-    currentMonth: {
-      month: string
-      incomeCents: number
-      expensesCents: number
-      netCents: number
-    } | null
-  } | null
-}
-
-export function useAnalytics(params: string) {
-  return useQuery<AnalyticsResponse>({
-    queryKey: ["analytics", params],
-    queryFn: async () => {
-      const res = await fetch(`/api/analytics?${params}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return res.json()
-    },
-    placeholderData: (prev) => prev,
-  })
-}
 
 export function euro(cents: number | null | undefined): string {
   if (cents === null || cents === undefined) return "—"
@@ -106,7 +50,7 @@ export function KpiRow({
   analytics,
   loading,
 }: {
-  analytics: AnalyticsResponse | undefined
+  analytics: AnalyticsResult | undefined
   loading: boolean
 }) {
   const k = analytics?.kpis

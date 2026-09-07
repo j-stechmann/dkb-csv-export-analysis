@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useState } from "react"
+import { qk } from "@/lib/api/client"
 import { ThemeProvider } from "@/components/theme-provider"
 import { DragDropProvider } from "@/components/drag-drop-provider"
 import { ActiveImportProvider } from "@/components/active-import-provider"
@@ -10,17 +11,18 @@ import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 5_000,
-            refetchOnWindowFocus: false,
-          },
+  const [queryClient] = useState(() => {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          staleTime: 5_000,
+          refetchOnWindowFocus: false,
         },
-      })
-  )
+      },
+    })
+    client.setQueryDefaults(qk.imports, { refetchInterval: 5_000 })
+    return client
+  })
 
   return (
     <ThemeProvider

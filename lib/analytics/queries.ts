@@ -5,7 +5,6 @@ import {
   eq,
   gte,
   inArray,
-  like,
   lte,
   or,
   sql,
@@ -13,6 +12,12 @@ import {
 } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories, transactions } from "@/lib/db/schema"
+import {
+  LABEL_STATUSES,
+  TX_STATUSES,
+  type LabelStatus,
+  type TxStatus,
+} from "@/lib/db/status"
 
 export interface TransactionFilters {
   q?: string
@@ -21,9 +26,9 @@ export interface TransactionFilters {
   type?: "Ausgang" | "Eingang"
   categoryIds?: number[]
   accountId?: number
-  labelStatus?: "pending" | "labeled" | "failed"
+  labelStatus?: LabelStatus
   /** default 'Gebucht'; 'all' disables the filter */
-  status?: string
+  status?: TxStatus | "all"
   sort?: "booking_date" | "amount_cents" | "payee"
   dir?: "asc" | "desc"
 }
@@ -32,8 +37,12 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 export function parseFilters(sp: URLSearchParams): TransactionFilters {
   const q = sp.get("q")?.trim() || undefined
-  const dateFrom = sp.get("dateFrom") || undefined
-  const dateTo = sp.get("dateTo") || undefined
+  // reject malformed dates instead of feeding garbage into lexical SQL
+  // comparisons (silently wrong/empty results)
+  const rawFrom = sp.get("dateFrom")
+  const rawTo = sp.get("dateTo")
+  const dateFrom = rawFrom && ISO_DATE.test(rawFrom) ? rawFrom : undefined
+  const dateTo = rawTo && ISO_DATE.test(rawTo) ? rawTo : undefined
   const typeRaw = sp.get("type")
   const type =
     typeRaw === "Ausgang" || typeRaw === "Eingang" ? typeRaw : undefined
@@ -47,13 +56,16 @@ export function parseFilters(sp: URLSearchParams): TransactionFilters {
       ? Number.parseInt(accountIdRaw, 10)
       : undefined
   const labelStatusRaw = sp.get("labelStatus")
-  const labelStatus =
-    labelStatusRaw === "pending" ||
-    labelStatusRaw === "labeled" ||
-    labelStatusRaw === "failed"
-      ? labelStatusRaw
-      : undefined
-  const status = sp.get("status") || "Gebucht"
+  const labelStatus = LABEL_STATUSES.includes(labelStatusRaw as LabelStatus)
+    ? (labelStatusRaw as LabelStatus)
+    : undefined
+  const statusRaw = sp.get("status")
+  const status: TxStatus | "all" =
+    statusRaw === "all"
+      ? "all"
+      : TX_STATUSES.includes(statusRaw as TxStatus)
+        ? (statusRaw as TxStatus)
+        : "Gebucht"
   const sortRaw = sp.get("sort")
   const sort =
     sortRaw === "amount_cents" || sortRaw === "payee" ? sortRaw : "booking_date"
@@ -84,10 +96,13 @@ export function buildWhere(f: TransactionFilters): SQL | undefined {
   }
   if (f.q) {
     const escaped = `%${escapeLike(f.q)}%`
+    // drizzle's like() emits no ESCAPE clause, so the backslashes from
+    // escapeLike would be literals — emit the ESCAPE clause explicitly
+    // or searches containing % _ \ match nothing
     const cond = or(
-      like(transactions.payee, escaped),
-      like(transactions.payer, escaped),
-      like(transactions.purpose, escaped)
+      sql`${transactions.payee} LIKE ${escaped} ESCAPE '\\'`,
+      sql`${transactions.payer} LIKE ${escaped} ESCAPE '\\'`,
+      sql`${transactions.purpose} LIKE ${escaped} ESCAPE '\\'`
     )
     if (cond) conditions.push(cond)
   }

@@ -8,6 +8,8 @@ import {
   normalizeCounterpartyKey,
   normalizeIbanKey,
 } from "@/lib/db/normalize"
+import { parseIdParam, isUniqueViolation, badRequest } from "@/lib/api/http"
+import { parseBody, RulePatchSchema } from "@/lib/api/schemas"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -22,26 +24,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const ruleId = Number.parseInt(id, 10)
-  if (!Number.isInteger(ruleId)) {
+  const ruleId = parseIdParam(id)
+  if (ruleId === null) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 })
   }
 
-  const body = (await request.json().catch(() => null)) as {
-    labelId?: unknown
-    iban?: unknown
-    name?: unknown
-  } | null
-  if (
-    typeof body?.labelId !== "number" ||
-    !Number.isInteger(body.labelId) ||
-    typeof body?.iban !== "string" ||
-    typeof body?.name !== "string"
-  ) {
-    return NextResponse.json(
-      { error: "invalid_body", message: "labelId, iban and name are required" },
-      { status: 400 }
-    )
+  const body = await parseBody(RulePatchSchema, request)
+  if (body === null) {
+    return badRequest("invalid_body", "labelId, iban und name werden benötigt")
   }
 
   const db = getDb()
@@ -122,7 +112,7 @@ export async function PATCH(
       .where(eq(labelRules.id, ruleId))
       .run()
   } catch (err) {
-    if (err instanceof Error && err.message.includes("UNIQUE constraint")) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: "rule_conflict", message: "Regel existiert bereits" },
         { status: 409 }
@@ -150,8 +140,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const ruleId = Number.parseInt(id, 10)
-  if (!Number.isInteger(ruleId)) {
+  const ruleId = parseIdParam(id)
+  if (ruleId === null) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 })
   }
 

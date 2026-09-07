@@ -1,7 +1,14 @@
 import { and, eq, gt, gte, lt, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
-import { importBatches, transactions } from "@/lib/db/schema"
+import { categories, importBatches, transactions } from "@/lib/db/schema"
 import { buildWhere, type TransactionFilters } from "@/lib/analytics/queries"
+import {
+  lastDayOfMonth,
+  monthOf,
+  monthsBetween,
+  nextMonth,
+  prevMonth,
+} from "@/lib/analytics/months"
 
 export interface MonthlyCashflowPoint {
   month: string // YYYY-MM
@@ -58,6 +65,19 @@ export interface AnalyticsResult {
   savingsHistory: SavingsHistory | null
 }
 
+/**
+ * Shared monthly income/expense aggregation select — used by both the
+ * cashflow scan and the savings-history window scan so the SUM semantics
+ * can never drift between them.
+ */
+function monthlyAggSelect() {
+  return {
+    month: sql<string>`substr(${transactions.bookingDate}, 1, 7)`,
+    income: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} > 0 THEN ${transactions.amountCents} ELSE 0 END), 0)`,
+    expenses: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} < 0 THEN -${transactions.amountCents} ELSE 0 END), 0)`,
+  }
+}
+
 interface BalanceAnchor {
   snapshotDate: string
   snapshotAmountCents: number
@@ -70,7 +90,8 @@ interface BalanceAnchor {
  */
 function latestAnchor(accountId?: number): BalanceAnchor | null {
   const db = getDb()
-  const rows = db
+  const notNull = sql`${importBatches.snapshotDate} IS NOT NULL AND ${importBatches.snapshotAmountCents} IS NOT NULL`
+  const row = db
     .select({
       snapshotDate: importBatches.snapshotDate,
       snapshotAmountCents: importBatches.snapshotAmountCents,
@@ -78,47 +99,23 @@ function latestAnchor(accountId?: number): BalanceAnchor | null {
     .from(importBatches)
     .where(
       accountId !== undefined
-        ? and(
-            eq(importBatches.accountId, accountId),
-            sql`${importBatches.snapshotDate} IS NOT NULL AND ${importBatches.snapshotAmountCents} IS NOT NULL`
-          )
-        : sql`${importBatches.snapshotDate} IS NOT NULL AND ${importBatches.snapshotAmountCents} IS NOT NULL`
+        ? and(eq(importBatches.accountId, accountId), notNull)
+        : notNull
     )
-    .all()
-  const valid = rows.filter(
-    (r): r is { snapshotDate: string; snapshotAmountCents: number } =>
-      r.snapshotDate !== null && r.snapshotAmountCents !== null
-  )
-  if (valid.length === 0) return null
-  return valid.reduce((latest, r) =>
-    r.snapshotDate > latest.snapshotDate ? r : latest
-  )
-}
-
-function monthOf(isoDate: string): string {
-  return isoDate.slice(0, 7)
-}
-
-/** list of YYYY-MM between two ISO dates, inclusive, zero-filled */
-function monthsBetween(fromIso: string, toIso: string): string[] {
-  const months: string[] = []
-  let [y, m] = fromIso.split("-").map(Number)
-  const [ty, tm] = toIso.split("-").map(Number)
-  while (y < ty || (y === ty && m <= tm)) {
-    months.push(`${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`)
-    m++
-    if (m > 12) {
-      m = 1
-      y++
-    }
+    .orderBy(sql`${importBatches.snapshotDate} DESC`)
+    .limit(1)
+    .get()
+  if (
+    row === undefined ||
+    row.snapshotDate === null ||
+    row.snapshotAmountCents === null
+  ) {
+    return null
   }
-  return months
-}
-
-/** day-of-month of the last calendar day of the month containing iso */
-function lastDayOfMonth(iso: string): string {
-  const [y, m] = iso.split("-").map(Number)
-  return String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")
+  return {
+    snapshotDate: row.snapshotDate,
+    snapshotAmountCents: row.snapshotAmountCents,
+  }
 }
 
 /**
@@ -138,11 +135,7 @@ export function computeAnalytics(
   const flowWhere = buildWhere(f)
 
   const monthlyRows = db
-    .select({
-      month: sql<string>`substr(${transactions.bookingDate}, 1, 7)`,
-      income: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} > 0 THEN ${transactions.amountCents} ELSE 0 END), 0)`,
-      expenses: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} < 0 THEN -${transactions.amountCents} ELSE 0 END), 0)`,
-    })
+    .select(monthlyAggSelect())
     .from(transactions)
     .where(flowWhere)
     .groupBy(sql`substr(${transactions.bookingDate}, 1, 7)`)
@@ -194,6 +187,15 @@ export function computeAnalytics(
       firstFullMonth = nextMonth(firstFullMonth)
     }
 
+    // data-bounded averages: months past the last month with bookings are
+    // structural zeros (e.g. dateTo=2026-12 with data ending 2025-12) and
+    // must not dilute the averages — only months the data actually covers
+    // count. bounds.min/max are from the same filtered set, so when dateTo
+    // extends past the data, latestBookingMonth < monthOf(maxDate).
+    const latestBookingMonth = monthOf(bounds?.max ?? maxDate)
+    const avgEndMonth =
+      lastFullMonth < latestBookingMonth ? lastFullMonth : latestBookingMonth
+
     const byMonth = new Map(monthlyRows.map((r) => [r.month, r]))
     for (const m of allMonths) {
       const row = byMonth.get(m)
@@ -209,7 +211,7 @@ export function computeAnalytics(
 
     // averages over full months only (partial end months excluded)
     const fullMonths = allMonths.filter(
-      (m) => m <= lastFullMonth && m >= firstFullMonth
+      (m) => m <= avgEndMonth && m >= firstFullMonth
     )
     monthsCounted = fullMonths.length
     const sumIncome = fullMonths.reduce(
@@ -240,12 +242,12 @@ export function computeAnalytics(
   const catRows = db
     .select({
       categoryId: transactions.categoryId,
-      name: sql<string>`COALESCE(categories.name, '')`,
+      name: sql<string>`COALESCE(${categories.name}, '')`,
       total: sql<number>`COALESCE(SUM(-${transactions.amountCents}), 0)`,
       count: sql<number>`COUNT(*)`,
     })
     .from(transactions)
-    .leftJoin(sql`categories`, sql`${transactions.categoryId} = categories.id`)
+    .leftJoin(categories, eq(transactions.categoryId, categories.id))
     .where(and(flowWhere, sql`${transactions.amountCents} < 0`))
     .groupBy(transactions.categoryId)
     .orderBy(sql`SUM(-${transactions.amountCents}) DESC`)
@@ -309,11 +311,7 @@ export function computeAnalytics(
     // single bounded scan: the 6-month window plus the running month
     // (bookings dated after `today` inside later months are irrelevant)
     const rows = db
-      .select({
-        month: sql<string>`substr(${transactions.bookingDate}, 1, 7)`,
-        income: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} > 0 THEN ${transactions.amountCents} ELSE 0 END), 0)`,
-        expenses: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.amountCents} < 0 THEN -${transactions.amountCents} ELSE 0 END), 0)`,
-      })
+      .select(monthlyAggSelect())
       .from(transactions)
       .where(
         and(
@@ -504,18 +502,4 @@ export function computeAnalytics(
     topCategories,
     savingsHistory,
   }
-}
-
-function prevMonth(month: string): string {
-  const [y, m] = month.split("-").map(Number)
-  const ny = m === 1 ? y - 1 : y
-  const nm = m === 1 ? 12 : m - 1
-  return `${String(ny).padStart(4, "0")}-${String(nm).padStart(2, "0")}`
-}
-
-function nextMonth(month: string): string {
-  const [y, m] = month.split("-").map(Number)
-  const ny = m === 12 ? y + 1 : y
-  const nm = m === 12 ? 1 : m + 1
-  return `${String(ny).padStart(4, "0")}-${String(nm).padStart(2, "0")}`
 }

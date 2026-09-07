@@ -46,7 +46,10 @@ function tx(overrides: Partial<PromptTransaction> = {}): PromptTransaction {
 }
 
 describe("LlmClient.labelBatch", () => {
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
 
   it("parses a clean positional response", async () => {
     vi.stubGlobal(
@@ -457,7 +460,10 @@ describe("LlmClient.labelBatch", () => {
 })
 
 describe("LlmClient.health", () => {
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
 
   it("reports ok on 200", async () => {
     vi.stubGlobal(
@@ -473,6 +479,22 @@ describe("LlmClient.health", () => {
       vi.fn(async () => {
         throw new Error("nope")
       })
+    )
+    expect(await new LlmClient("http://test").health()).toBe("unreachable")
+  })
+
+  it("reports degraded on a 5xx (busy/broken server)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("boom", { status: 503 }))
+    )
+    expect(await new LlmClient("http://test").health()).toBe("degraded")
+  })
+
+  it("reports unreachable on a 4xx (miswired base URL)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("no", { status: 404 }))
     )
     expect(await new LlmClient("http://test").health()).toBe("unreachable")
   })

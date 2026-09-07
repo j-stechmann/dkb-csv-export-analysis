@@ -65,17 +65,28 @@ export class LlmClient {
     return (this.baseUrl ?? this.cfg.LLM_BASE_URL).replace(/\/+$/, "")
   }
 
-  /** Cheap reachability probe used as the worker's health gate. */
+  /**
+   * Cheap reachability probe used as the worker's health gate. A 4xx
+   * response means the endpoint is wired wrong (wrong base URL, wrong
+   * server) — reported as "unreachable", not "degraded", so a
+   * misconfiguration is distinguishable from a busy server.
+   */
   async health(): Promise<LlmHealth> {
     try {
       const res = await fetch(`${this.root}/health`, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(this.healthTimeoutMs()),
       })
       if (res.ok) return "ok"
+      if (res.status >= 400 && res.status < 500) return "unreachable"
       return "degraded"
     } catch {
       return "unreachable"
     }
+  }
+
+  /** Health probes must be fast: min(5s, the configured request timeout). */
+  private healthTimeoutMs(): number {
+    return Math.min(5000, this.cfg.LLM_TIMEOUT_MS)
   }
 
   /**

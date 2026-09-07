@@ -1,3 +1,4 @@
+import type { LabelStatus } from "@/lib/db/status"
 import { describe, it, expect, beforeEach } from "vitest"
 import { eq } from "drizzle-orm"
 import { NextRequest } from "next/server"
@@ -32,7 +33,7 @@ function seedTx(
     payee: string
     counterpartyIban: string | null
     type: string
-    labelStatus: string
+    labelStatus: LabelStatus
     categoryId: number | null
   }> = {}
 ): string {

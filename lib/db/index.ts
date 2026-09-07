@@ -1,9 +1,13 @@
 import fs from "node:fs"
 import path from "node:path"
+import { sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/better-sqlite3"
 import Database from "better-sqlite3"
 import * as schema from "./schema"
 import { getConfig } from "@/lib/config"
+import { hashTransaction, HASH_VERSION } from "./dedupe"
+import type { TxStatus } from "./status"
+import { dkbGlobals } from "@/lib/globals"
 
 export type Db = ReturnType<typeof createDb>
 /** Transaction callback parameter type (for helpers receiving `tx`). */
@@ -20,13 +24,7 @@ function createDb() {
   return drizzle(sqlite, { schema })
 }
 
-type DbHolder = { __dkbDb?: Db }
-
-const globalRef = globalThis as unknown as {
-  __dkbDbHolder?: DbHolder
-  __dkbTestDb?: Db
-}
-
+const globalRef = dkbGlobals()
 export function getDb(): Db {
   if (process.env.VITEST && globalRef.__dkbTestDb) {
     return globalRef.__dkbTestDb
@@ -57,7 +55,7 @@ export function createTestDb(): Db {
   return db
 }
 
-/** Create all tables idempotently (drizzle-kit push equivalent, code-first). */
+/** Create all tables idempotently (code-first DDL; schema-parity test locks it to the drizzle schema). */
 export function createSchemaSqlite(db: Db) {
   db.run(`
     CREATE TABLE IF NOT EXISTS accounts (
@@ -83,9 +81,6 @@ export function createSchemaSqlite(db: Db) {
       rows_imported INTEGER NOT NULL DEFAULT 0,
       rows_duplicate INTEGER NOT NULL DEFAULT 0,
       rows_updated INTEGER NOT NULL DEFAULT 0,
-      labels_total INTEGER NOT NULL DEFAULT 0,
-      labels_done INTEGER NOT NULL DEFAULT 0,
-      labels_failed INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       completed_at TEXT
@@ -208,26 +203,124 @@ export function migrateSchema(db: Db) {
       `ALTER TABLE categories ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0`
     )
   }
-  // label_rules: CREATE TABLE IF NOT EXISTS handles fresh files; older DBs
-  // created before this feature also get the table here (idempotent).
-  db.run(`
-    CREATE TABLE IF NOT EXISTS label_rules (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      label_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-      iban TEXT NOT NULL,
-      name_key TEXT NOT NULL,
-      name TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+  // label counters are computed on read; the persisted columns had no
+  // consistent writer and no reader — drop them from older DBs
+  if (cols("import_batches").includes("labels_total")) {
+    db.run(`ALTER TABLE import_batches DROP COLUMN labels_total`)
+  }
+  if (cols("import_batches").includes("labels_done")) {
+    db.run(`ALTER TABLE import_batches DROP COLUMN labels_done`)
+  }
+  if (cols("import_batches").includes("labels_failed")) {
+    db.run(`ALTER TABLE import_batches DROP COLUMN labels_failed`)
+  }
+  rehashV1Transactions(db)
+}
+
+/**
+ * One-shot migration from hash version 1 (content hash missing
+ * counterparty_iban) to the current version. Guarded by PRAGMA user_version.
+ * Legacy rows are re-hashed from their stored fields, oldest first, and
+ * claim fresh occurrence slots per (account, new hash) — the dense
+ * reassignment preserves the multiset semantics of identical-content rows
+ * (all survive, distinct slots, same as a fresh import). Orphan rows
+ * without an account (FK corruption) are dropped.
+ */
+function rehashV1Transactions(db: Db) {
+  const version = Number(
+    db.all<{ user_version: number }>(`PRAGMA user_version`)[0]?.user_version ??
+      0
+  )
+  if (version >= HASH_VERSION) return
+
+  const legacy = db.all<{
+    id: string
+    account_id: number
+    counterparty_iban: string | null
+    created_at: string
+    booking_date: string
+    value_date: string | null
+    status: TxStatus
+    payer: string | null
+    payee: string | null
+    purpose: string | null
+    type: string
+    amount_cents: number
+    creditor_id: string | null
+    mandate_ref: string | null
+    customer_ref: string | null
+  }>(
+    `SELECT id, account_id, counterparty_iban, created_at, booking_date, value_date,
+            status, payer, payee, purpose, type, amount_cents, creditor_id,
+            mandate_ref, customer_ref
+     FROM transactions
+     WHERE hash_version < ${HASH_VERSION}
+     ORDER BY created_at ASC, id ASC`
+  )
+
+  if (legacy.length > 0) {
+    const ibanByAccountId = new Map(
+      db
+        .all<{ id: number; iban: string }>(`SELECT id, iban FROM accounts`)
+        .map((a) => [a.id, a.iban])
     )
-  `)
-  db.run(
-    `CREATE UNIQUE INDEX IF NOT EXISTS label_rules_iban_name_key_unique ON label_rules (iban, name_key)`
-  )
-  db.run(
-    `CREATE INDEX IF NOT EXISTS label_rules_iban_idx ON label_rules (iban)`
-  )
-  db.run(
-    `CREATE INDEX IF NOT EXISTS label_rules_label_idx ON label_rules (label_id)`
-  )
+
+    // occupied slots per "accountId|newHash"; current-version rows keep
+    // their exact slots (the unique index already guarantees one row per
+    // (account, hash, occurrence))
+    const slots = new Map<string, Set<number>>()
+    const occupied = new Set(
+      db
+        .all<{
+          account_id: number
+          source_hash: string
+          occurrence_index: number
+        }>(
+          `SELECT account_id, source_hash, occurrence_index FROM transactions WHERE hash_version >= ${HASH_VERSION}`
+        )
+        .map((r) => `${r.account_id}|${r.source_hash}|${r.occurrence_index}`)
+    )
+    const claimSlot = (key: string): number => {
+      let set = slots.get(key)
+      if (!set) {
+        set = new Set()
+        slots.set(key, set)
+      }
+      let c = 0
+      while (set.has(c) || occupied.has(`${key}|${c}`)) c++
+      set.add(c)
+      return c
+    }
+
+    db.transaction((tx) => {
+      for (const r of legacy) {
+        const accountIban = ibanByAccountId.get(r.account_id)
+        if (!accountIban) {
+          // account vanished (FK corruption): drop the orphan row
+          tx.run(sql`DELETE FROM transactions WHERE id = ${r.id}`)
+          continue
+        }
+        const newHash = hashTransaction(accountIban, {
+          bookingDate: r.booking_date,
+          valueDate: r.value_date ?? "",
+          status: r.status,
+          payer: r.payer ?? "",
+          payee: r.payee ?? "",
+          purpose: r.purpose ?? "",
+          type: r.type,
+          counterpartyIban: r.counterparty_iban ?? "",
+          amountCents: r.amount_cents,
+          creditorId: r.creditor_id ?? "",
+          mandateRef: r.mandate_ref ?? "",
+          customerRef: r.customer_ref ?? "",
+        })
+        const slot = claimSlot(`${r.account_id}|${newHash}`)
+        tx.run(sql`UPDATE transactions
+                   SET source_hash = ${newHash}, occurrence_index = ${slot}, hash_version = ${HASH_VERSION}
+                   WHERE id = ${r.id}`)
+      }
+    })
+  }
+
+  db.run(`PRAGMA user_version = ${HASH_VERSION}`)
 }

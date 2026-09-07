@@ -1,3 +1,4 @@
+import type { ImportStage, LabelStatus, TxStatus } from "@/lib/db/status"
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
 import { eq } from "drizzle-orm"
 import { createTestDb, setTestDb, type Db } from "@/lib/db"
@@ -6,10 +7,13 @@ import {
   startImport,
   isImportRunning,
   resetStuckBatches,
-  resetFailedLabels,
 } from "@/lib/import/pipeline"
 import { tick } from "@/lib/labeller/worker"
-import { completeDrainedBatches, markRowsFailed } from "@/lib/labeller/service"
+import {
+  completeDrainedBatches,
+  markRowsFailed,
+  resetFailedLabels,
+} from "@/lib/labeller/service"
 
 const ACC_IBAN = "DE02120300000000202051"
 const ACC_NAME = "Girokonto"
@@ -32,7 +36,7 @@ let db: Db
 let accountId: number
 let batchCounter = 0
 
-function seedBatch(status = "labeling"): string {
+function seedBatch(status: ImportStage = "labeling"): string {
   batchCounter++
   const id = `b${batchCounter}`
   db.insert(importBatches)
@@ -44,9 +48,9 @@ function seedBatch(status = "labeling"): string {
 function seedTx(
   batchId: string,
   overrides: Partial<{
-    labelStatus: string
+    labelStatus: LabelStatus
     labelAttempts: number
-    status: string
+    status: TxStatus
   }> = {}
 ): string {
   const id = `tx-${crypto.randomUUID()}`

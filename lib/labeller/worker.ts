@@ -14,18 +14,14 @@ import {
   completeDrainedBatches,
   markRowsFailed,
 } from "@/lib/labeller/service"
+import { dkbGlobals, type DkbGlobals } from "@/lib/globals"
 
-type WorkerState = { ticking: boolean }
-
-const globalRef = globalThis as unknown as {
-  __dkbLabellerWorker?: WorkerState
-}
-
-function workerState(): WorkerState {
-  if (!globalRef.__dkbLabellerWorker) {
-    globalRef.__dkbLabellerWorker = { ticking: false }
+function workerState(): NonNullable<DkbGlobals["__dkbLabellerWorker"]> {
+  const g = dkbGlobals()
+  if (!g.__dkbLabellerWorker) {
+    g.__dkbLabellerWorker = { ticking: false }
   }
-  return globalRef.__dkbLabellerWorker
+  return g.__dkbLabellerWorker
 }
 
 export function isWorkerTicking(): boolean {
@@ -82,23 +78,38 @@ function counterpartyFor(row: ClaimedRow): string {
   return row.type === "Ausgang" ? (row.payee ?? "") : (row.payer ?? "")
 }
 
+/** Cheap pre-check for the health gate: any claimable row at all? */
+function hasClaimableRows(maxAttempts: number): boolean {
+  const db = getDb()
+  const row = db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(
+      and(
+        inArray(transactions.labelStatus, ["pending", "failed"]),
+        eq(transactions.status, "Gebucht"),
+        lt(transactions.labelAttempts, maxAttempts)
+      )
+    )
+    .limit(1)
+    .get()
+  return row !== undefined
+}
+
 /**
- * One worker pass: health gate → claim a batch → resolve rule suggestions →
- * label via llama-server → persist results → mark unapplied rows failed.
- * Errors are contained per pass — a failing call marks its rows failed
- * (attempts already incremented), and any other failure (including the
- * synchronous DB calls) is logged instead of escaping as an unhandled
- * rejection. Never kills the worker loop.
+ * One worker pass: claimable pre-check → health gate → claim a batch →
+ * resolve rule suggestions → label via llama-server → persist results →
+ * mark unapplied rows failed. Errors are contained per pass — a failing
+ * call marks its rows failed (attempts already incremented), and any other
+ * failure (including the synchronous DB calls) is logged instead of
+ * escaping as an unhandled rejection. Never kills the worker loop.
  */
 export async function tick(): Promise<void> {
   const state = workerState()
   if (state.ticking) return
   state.ticking = true
   try {
-    const importState = globalThis as unknown as {
-      __dkbImportJob?: { running: boolean }
-    }
-    if (importState.__dkbImportJob?.running) return
+    if (dkbGlobals().__dkbImportJob?.running) return
 
     const cfg = getConfig()
 
@@ -106,6 +117,11 @@ export async function tick(): Promise<void> {
     // absence of labelable pending rows (also covers all-Nicht-gebucht
     // batches and rows that exhausted their attempts)
     completeDrainedBatches(cfg.LLM_MAX_ATTEMPTS)
+
+    // claimable check BEFORE the health probe: it's a cheap local SQLite
+    // read, while health is an HTTP round trip — gating the probe on it
+    // keeps an idle system from polling the LLM server every tick
+    if (!hasClaimableRows(cfg.LLM_MAX_ATTEMPTS)) return
 
     const client = new LlmClient()
     // health gate: without it an LLM outage would burn every row's attempt
@@ -196,19 +212,22 @@ function existingLabelsForPrompt(cfg: ReturnType<typeof getConfig>): string[] {
   return rows.map((r) => r.name)
 }
 
+/** Tick interval of the background worker loop. */
+const TICK_INTERVAL_MS = 3000
+
 /** Start the periodic worker loop (idempotent across dev hot-reloads). */
 export function startLabelWorker(): void {
-  const g = globalThis as unknown as { __dkbLabellerWorkerStarted?: boolean }
+  const g = dkbGlobals()
   if (g.__dkbLabellerWorkerStarted) return
   g.__dkbLabellerWorkerStarted = true
 
   const initialTimer = setTimeout(() => {
     void tick()
-  }, 3000)
+  }, TICK_INTERVAL_MS)
   initialTimer.unref?.()
 
   const interval = setInterval(() => {
     void tick()
-  }, 3000)
+  }, TICK_INTERVAL_MS)
   interval.unref?.()
 }

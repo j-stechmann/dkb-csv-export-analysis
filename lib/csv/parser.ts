@@ -4,6 +4,7 @@ import {
   parseGermanDateToIso,
   normalizeWhitespace,
 } from "@/lib/money"
+import { TX_STATUSES, type TxStatus } from "@/lib/db/status"
 
 export class CsvParseError extends Error {
   constructor(
@@ -18,7 +19,7 @@ export class CsvParseError extends Error {
 export interface ParsedTransactionRow {
   bookingDate: string
   valueDate: string
-  status: string
+  status: TxStatus
   payer: string
   payee: string
   purpose: string
@@ -45,6 +46,18 @@ export interface ParsedAccountInfo {
   snapshotAmountCents: number | null
 }
 
+/**
+ * Bank export format adapter. `sniff` decides whether a file belongs to
+ * this bank (cheap preamble check); `parse` does the full fail-fast parse.
+ * New bank formats implement this interface and register in `BANK_ADAPTERS`
+ * — the import pipeline never needs to know bank specifics.
+ */
+export interface BankAdapter {
+  readonly id: string
+  sniff(content: string): ParsedAccountInfo
+  parse(content: string): ParsedCsv
+}
+
 const EXPECTED_HEADERS = [
   "Buchungsdatum",
   "Wertstellung",
@@ -68,10 +81,6 @@ function cleanCell(v: string | undefined): string {
   return normalizeWhitespace(v ?? "")
 }
 
-function cleanCellRaw(v: string | undefined): string {
-  return (v ?? "").normalize("NFC").trim()
-}
-
 /**
  * Extract account info from the preamble (before the header row).
  * Row 1: "Girokonto;DE02120300000000202051;..."
@@ -88,7 +97,7 @@ function parsePreamble(rowsBeforeHeader: string[][]): ParsedAccountInfo {
   if (!accountName) {
     throw new CsvParseError("preamble row 1: missing account name")
   }
-  if (!accountIban || !/^[A-Z]{2}[0-9A-Z]{10,30}$/.test(accountIban)) {
+  if (!accountIban || !/^[A-Z]{2}[0-9A-Z]{10,32}$/.test(accountIban)) {
     throw new CsvParseError(
       `preamble row 1: invalid or missing account IBAN "${accountIban}"`
     )
@@ -101,7 +110,7 @@ function parsePreamble(rowsBeforeHeader: string[][]): ParsedAccountInfo {
   )
   if (saldoRow) {
     const label = cleanCell(saldoRow[0])
-    const dateMatch = /Kontostand vom (\d{2}\.\d{2}\.\d{4})/.exec(label)
+    const dateMatch = /Kontostand vom (\d{2}\.\d{2}\.\d{4})/i.exec(label)
     if (!dateMatch) {
       throw new CsvParseError(`cannot parse Kontostand date from "${label}"`)
     }
@@ -114,6 +123,22 @@ function parsePreamble(rowsBeforeHeader: string[][]): ParsedAccountInfo {
   }
 
   return { accountName, accountIban, snapshotDate, snapshotAmountCents }
+}
+
+/**
+ * Locate the header row by exact cell match (never raw line search —
+ * quoted preamble fields could contain the marker text).
+ */
+function findHeaderRow(rows: string[][]): number {
+  const idx = rows.findIndex((row) =>
+    row.some((cell) => cleanCell(cell) === "Buchungsdatum")
+  )
+  if (idx === -1) {
+    throw new CsvParseError(
+      'header row not found: no cell equals "Buchungsdatum"'
+    )
+  }
+  return idx
 }
 
 /**
@@ -141,16 +166,7 @@ export function parseDkbCsv(content: string): ParsedCsv {
 
   const rows = result.data as string[][]
 
-  // Locate header row by exact cell match (never raw line search —
-  // quoted preamble fields could contain the marker text).
-  const headerIdx = rows.findIndex((row) =>
-    row.some((cell) => cleanCell(cell) === "Buchungsdatum")
-  )
-  if (headerIdx === -1) {
-    throw new CsvParseError(
-      'header row not found: no cell equals "Buchungsdatum"'
-    )
-  }
+  const headerIdx = findHeaderRow(rows)
 
   const header = rows[headerIdx].map(cleanCell)
   const col = new Map<string, number>()
@@ -170,7 +186,6 @@ export function parseDkbCsv(content: string): ParsedCsv {
     const raw = rows[i]
     // skip rows where every cell is empty (DKB pads with ;;;;)
     if (raw.every((c) => !c || !c.trim())) continue
-    const lineNo = i + 1
 
     const get = (name: string) => {
       const idx = col.get(name)!
@@ -213,10 +228,18 @@ export function parseDkbCsv(content: string): ParsedCsv {
       )
     }
 
+    const statusCell = cleanCell(get("Status")) || "Gebucht"
+    if (!TX_STATUSES.includes(statusCell as TxStatus)) {
+      throw new CsvParseError(
+        `row ${i + 1}: invalid Status "${statusCell}" (expected Gebucht|Nicht gebucht)`,
+        i + 1
+      )
+    }
+
     parsedRows.push({
       bookingDate,
       valueDate,
-      status: cleanCell(get("Status")) || "Gebucht",
+      status: statusCell as TxStatus,
       payer: cleanCell(get("Zahlungspflichtige*r")),
       payee: cleanCell(get("Zahlungsempfänger*in")),
       purpose: normalizeWhitespace(get("Verwendungszweck")),
@@ -248,13 +271,35 @@ export function peekDkbCsvAccount(content: string): ParsedAccountInfo {
     throw new CsvParseError(`CSV syntax error: ${result.errors[0].message}`)
   }
   const rows = result.data as string[][]
-  const headerIdx = rows.findIndex((row) =>
-    row.some((cell) => cleanCell(cell) === "Buchungsdatum")
-  )
-  if (headerIdx === -1) {
-    throw new CsvParseError(
-      "header row not found in first 10 rows: not a DKB export?"
-    )
-  }
+  const headerIdx = findHeaderRow(rows)
   return parsePreamble(rows.slice(0, headerIdx))
+}
+
+/** The DKB CSV format (header-name mapping, German dates/amounts). */
+export const dkbAdapter: BankAdapter = {
+  id: "dkb-csv",
+  sniff: peekDkbCsvAccount,
+  parse: parseDkbCsv,
+}
+
+/**
+ * Registered bank adapters, tried in order by `sniffBank`. Adding a new
+ * bank export format means implementing BankAdapter and appending here.
+ */
+const BANK_ADAPTERS: BankAdapter[] = [dkbAdapter]
+
+/** Detect the bank format of an upload; throws CsvParseError if none match. */
+export function sniffBank(content: string): BankAdapter {
+  let firstError: unknown
+  for (const adapter of BANK_ADAPTERS) {
+    try {
+      adapter.sniff(content)
+      return adapter
+    } catch (err) {
+      firstError = firstError ?? err
+    }
+  }
+  throw firstError instanceof CsvParseError
+    ? firstError
+    : new CsvParseError("no known bank format matched this file")
 }

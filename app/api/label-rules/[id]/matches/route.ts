@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { labelRules } from "@/lib/db/schema"
 import { findIbanRuleMatches } from "@/lib/labeller/service"
+import { parseIdParam } from "@/lib/api/http"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -13,15 +14,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const ruleId = Number.parseInt(id, 10)
-  if (!Number.isInteger(ruleId)) {
+  const ruleId = parseIdParam(id)
+  if (ruleId === null) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 })
   }
 
   const db = getDb()
   const rule = db
     .select({
-      id: labelRules.id,
       iban: labelRules.iban,
       labelId: labelRules.labelId,
     })

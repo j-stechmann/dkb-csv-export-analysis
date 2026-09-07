@@ -2,7 +2,11 @@ import { createHash } from "node:crypto"
 import type { ParsedTransactionRow } from "@/lib/csv/parser"
 import type { NewTransaction } from "@/lib/db/schema"
 
-export const HASH_VERSION = 1
+/**
+ * v2: counterparty_iban joined the content hash. Rows stored under v1
+ * hashes are re-hashed once by migrateSchema (guarded by PRAGMA user_version).
+ */
+export const HASH_VERSION = 2
 
 export interface DedupeResult {
   toInsert: NewTransaction[]
@@ -18,6 +22,62 @@ export function lowestFreeIndex(occupied: Set<number>): number {
   let candidate = 0
   while (occupied.has(candidate)) candidate++
   return candidate
+}
+
+/**
+ * Occurrence slots per source hash: which occurrence indices are occupied
+ * in the DB (per account). Shared by the reconcile plan and apply phases so
+ * both compute identical slots for the same state transitions.
+ *
+ * Invariant: while planning updates, a row being updated KEEPS its old
+ * slot occupied on purpose — an identical pending copy in the same file
+ * must count as a duplicate, not insert a phantom. The old slot is
+ * released only when the update is applied.
+ */
+export class OccurrenceSlots {
+  private readonly byHash = new Map<string, Set<number>>()
+
+  static fromRows(
+    rows: Array<{ sourceHash: string; occurrenceIndex: number }>
+  ): OccurrenceSlots {
+    const slots = new OccurrenceSlots()
+    for (const r of rows) slots.add(r.sourceHash, r.occurrenceIndex)
+    return slots
+  }
+
+  private add(hash: string, occurrence: number): void {
+    this.slotsFor(hash).add(occurrence)
+  }
+
+  private slotsFor(hash: string): Set<number> {
+    let set = this.byHash.get(hash)
+    if (!set) {
+      set = new Set()
+      this.byHash.set(hash, set)
+    }
+    return set
+  }
+
+  /** Reserve the lowest free slot under `hash` and return it. */
+  occupyLowest(hash: string): number {
+    const set = this.slotsFor(hash)
+    const candidate = lowestFreeIndex(set)
+    set.add(candidate)
+    return candidate
+  }
+
+  /** Release a slot (update path: the row moves to a fresh hash). */
+  release(hash: string, occurrence: number): void {
+    this.byHash.get(hash)?.delete(occurrence)
+  }
+
+  /**
+   * View of occupied slots per hash — shared with computeDedupe, which
+   * both reads and mutates the sets (inserted slots stay occupied).
+   */
+  raw(): Map<string, Set<number>> {
+    return this.byHash
+  }
 }
 
 /**
@@ -56,7 +116,10 @@ export function computeDedupe(
   }
 
   for (const hash of hashOrder) {
-    const group = groups.get(hash)!
+    const group = groups.get(hash)
+    if (!group) {
+      throw new Error(`computeDedupe: missing group for hash ${hash}`)
+    }
     const existingOcc = existingByHash.get(hash) ?? new Set<number>()
     const incomingCount = group.length
     const existingCount = existingOcc.size
@@ -72,6 +135,9 @@ export function computeDedupe(
     while (toPlace > 0) {
       const candidate = lowestFreeIndex(existingOcc)
       const row = group[duplicateHere + placed]
+      if (!row) {
+        throw new Error(`computeDedupe: missing row ${placed} for ${hash}`)
+      }
       toInsert.push(
         rowToNewTransaction(row, accountId, batchId, hash, candidate)
       )
@@ -121,6 +187,8 @@ export function rowToNewTransaction(
  * SHA-256 over hash_version + account + normalized content fields.
  * Both party names are included (direction-dependent counterparty would
  * otherwise be ambiguous). Account scoping prevents cross-account merges.
+ * The counterparty IBAN is part of the content (v2): two rows differing
+ * only in IBAN are distinct transactions, not duplicates.
  */
 export function hashTransaction(
   accountIban: string,
@@ -137,6 +205,7 @@ export function hashTransaction(
     row.purpose,
     row.type,
     row.status,
+    row.counterpartyIban,
     row.creditorId,
     row.mandateRef,
     row.customerRef,

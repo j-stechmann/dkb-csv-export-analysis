@@ -1,3 +1,4 @@
+import type { ImportStage, LabelStatus, TxStatus } from "@/lib/db/status"
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
 import { eq } from "drizzle-orm"
 import { NextRequest } from "next/server"
@@ -72,7 +73,7 @@ function seedRule(
     .get().id
 }
 
-function seedBatch(status = "labeling"): string {
+function seedBatch(status: ImportStage = "labeling"): string {
   batchCounter++
   const id = `b${batchCounter}`
   db.insert(importBatches)
@@ -84,9 +85,9 @@ function seedBatch(status = "labeling"): string {
 function seedTx(
   batchId: string | null,
   overrides: Partial<{
-    status: string
+    status: TxStatus
     counterpartyIban: string | null
-    labelStatus: string
+    labelStatus: LabelStatus
     labelAttempts: number
     categoryId: number | null
   }> = {}
@@ -418,10 +419,6 @@ describe("POST /api/label-rules/[id]/apply", () => {
     const completedId = seedBatch("completed")
     const labelingId = seedBatch("labeling")
     const failedId = seedBatch("failed")
-    db.update(importBatches)
-      .set({ labelsTotal: 3 })
-      .where(eq(importBatches.id, completedId))
-      .run()
     const c = seedTx(completedId, {
       labelStatus: "labeled",
       labelAttempts: 1,
@@ -456,10 +453,10 @@ describe("POST /api/label-rules/[id]/apply", () => {
     expect(getBatch(labelingId)!.status).toBe("labeling")
     expect(getBatch(failedId)!.status).toBe("failed")
 
+    // counters are computed from live rows: every Gebucht row of the
+    // completed batch is pending again (Gebucht count, not matched count)
     const counters = computeLabelCounters(completedId)
     expect(counters).toEqual({ labelsTotal: 1, labelsDone: 0, labelsFailed: 0 })
-    // stored labels_total was refreshed (Gebucht count, not matched count)
-    expect(getBatch(completedId)!.labelsTotal).toBe(1)
   })
 
   it("leaves failed and parsing batches untouched but rows claimable", async () => {

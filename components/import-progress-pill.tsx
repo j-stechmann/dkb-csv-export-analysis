@@ -5,38 +5,15 @@ import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useActiveImport } from "@/components/active-import-provider"
-
-const STAGE_LABELS: Record<string, string> = {
-  parsing: "CSV wird gelesen…",
-  importing: "Transaktionen werden gespeichert…",
-  labeling: "Kategorien werden ermittelt…",
-  completed: "Import abgeschlossen",
-  failed: "Import fehlgeschlagen",
-}
+import { labelProgress, rowProgress, STAGE_LABELS } from "@/lib/import-progress"
 
 export function ImportProgressPill() {
   const { batch, clearActive } = useActiveImport()
   if (!batch) return null
 
   const terminal = batch.status === "completed" || batch.status === "failed"
-  const labelProgress =
-    batch.labelsTotal > 0
-      ? Math.round(
-          ((batch.labelsDone + batch.labelsFailed) / batch.labelsTotal) * 100
-        )
-      : batch.status === "labeling"
-        ? 0
-        : 100
-  const rowProgress =
-    batch.rowsTotal > 0
-      ? Math.round(
-          ((batch.rowsImported + batch.rowsDuplicate + batch.rowsUpdated) /
-            batch.rowsTotal) *
-            100
-        )
-      : batch.status === "importing" || batch.status === "parsing"
-        ? 0
-        : 100
+  const labels = labelProgress(batch)
+  const rows = rowProgress(batch)
 
   return (
     <div className="fixed bottom-4 left-1/2 z-[90] w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border bg-background/95 p-4 shadow-lg backdrop-blur">
@@ -77,7 +54,7 @@ export function ImportProgressPill() {
                   / {batch.rowsTotal}
                 </span>
               </div>
-              <Progress value={rowProgress} />
+              <Progress value={rows} />
             </div>
           ) : null}
           {batch.status === "labeling" || batch.status === "importing" ? (
@@ -91,7 +68,7 @@ export function ImportProgressPill() {
                     : ""}
                 </span>
               </div>
-              <Progress value={labelProgress} />
+              <Progress value={labels} />
             </div>
           ) : null}
         </div>

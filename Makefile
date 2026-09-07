@@ -222,7 +222,7 @@ llm-status:
 
 # ── quality gates ────────────────────────────────────────────────────────────
 test:
-	bunx vitest run
+	bun run test
 
 check:
 	bun run typecheck

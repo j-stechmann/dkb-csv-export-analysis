@@ -1,3 +1,4 @@
+import path from "node:path"
 import { z } from "zod"
 
 const envSchema = z.object({
@@ -29,7 +30,12 @@ export function getConfig(): AppConfig {
         .join("; ")
       throw new Error(`Invalid environment configuration: ${issues}`)
     }
-    cached = parsed.data
+    // relative DATABASE_PATH is resolved against the process CWD once so a
+    // later working-directory change cannot silently open a fresh DB
+    cached = {
+      ...parsed.data,
+      DATABASE_PATH: path.resolve(parsed.data.DATABASE_PATH),
+    }
   }
   return cached
 }

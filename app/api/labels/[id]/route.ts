@@ -7,6 +7,7 @@ import {
   isValidLabelName,
   resetTransactionsForLabelDeletion,
 } from "@/lib/labeller/service"
+import { parseIdParam, isUniqueViolation } from "@/lib/api/http"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -16,8 +17,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const labelId = Number.parseInt(id, 10)
-  if (!Number.isInteger(labelId)) {
+  const labelId = parseIdParam(id)
+  if (labelId === null) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 })
   }
 
@@ -29,8 +30,7 @@ export async function PATCH(
     return NextResponse.json(
       {
         error: "invalid_name",
-        message:
-          "name must be 1–64 UTF-8 bytes and free of | < > index= markers",
+        message: "Label-Name: 1–64 UTF-8 Bytes, ohne | < > index= Marker",
       },
       { status: 400 }
     )
@@ -55,7 +55,7 @@ export async function PATCH(
       .get()
     if (clash) {
       return NextResponse.json(
-        { error: "name_conflict", message: "label name already exists" },
+        { error: "name_conflict", message: "Label existiert bereits" },
         { status: 409 }
       )
     }
@@ -71,9 +71,9 @@ export async function PATCH(
       .where(eq(categories.id, labelId))
       .run()
   } catch (err) {
-    if (err instanceof Error && err.message.includes("UNIQUE constraint")) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
-        { error: "name_conflict", message: "label name already exists" },
+        { error: "name_conflict", message: "Label-Name existiert bereits" },
         { status: 409 }
       )
     }
@@ -88,8 +88,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const labelId = Number.parseInt(id, 10)
-  if (!Number.isInteger(labelId)) {
+  const labelId = parseIdParam(id)
+  if (labelId === null) {
     return NextResponse.json({ error: "invalid_id" }, { status: 400 })
   }
 
@@ -104,7 +104,7 @@ export async function DELETE(
   }
 
   // 1. reset affected transactions so the worker re-labels them via the LLM
-  //    (also re-points completed batches + refreshes labels_total)
+  //    (also re-points completed owning batches to 'labeling')
   // 2. delete: rules cascade (FK ON DELETE CASCADE), FK satisfied since no
   //    transaction references the label anymore
   // Both steps run in ONE transaction: a concurrent LLM apply landing between

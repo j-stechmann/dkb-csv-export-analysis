@@ -335,7 +335,7 @@ describe("booked↔booked re-render dedupe (DKB format change)", () => {
     )
     // fake an older createdAt for batch1's row
     db.run(
-      `UPDATE transactions SET created_at = '2025-12-21T00:00:00.000Z' WHERE id = '${oldId}'`
+      sql`UPDATE transactions SET created_at = '2025-12-21T00:00:00.000Z' WHERE id = ${oldId}`
     )
 
     const batch2 = startBatch("b2")

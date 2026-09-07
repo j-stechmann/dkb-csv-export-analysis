@@ -3,21 +3,12 @@
 import * as React from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-
-export interface ImportBatchState {
-  id: string
-  fileName: string
-  status: "parsing" | "importing" | "labeling" | "completed" | "failed"
-  error: string | null
-  rowsTotal: number
-  rowsImported: number
-  rowsDuplicate: number
-  rowsUpdated: number
-  labelsTotal: number
-  labelsDone: number
-  labelsFailed: number
-  createdAt: string
-}
+import {
+  ApiRequestError,
+  apiFetch,
+  type ImportBatchState,
+} from "@/lib/api/client"
+import { invalidateAfterImport } from "@/hooks/use-invalidate"
 
 interface ActiveImportContextValue {
   activeBatchId: string | null
@@ -39,8 +30,8 @@ export function useActiveImport() {
 
 /**
  * Tracks the most recent import batch: polls /api/imports/[id] every second
- * while it is in a non-terminal state, invalidates analytics queries on
- * completion, and keeps the last terminal state visible until dismissed.
+ * while it is in a non-terminal state, invalidates queries on completion,
+ * and keeps the last terminal state visible until dismissed.
  */
 export function ActiveImportProvider({
   children,
@@ -54,9 +45,12 @@ export function ActiveImportProvider({
     queryKey: ["import", activeBatchId],
     enabled: activeBatchId !== null,
     queryFn: async () => {
-      const res = await fetch(`/api/imports/${activeBatchId}`)
-      if (!res.ok) return null
-      return (await res.json()) as ImportBatchState
+      try {
+        return await apiFetch<ImportBatchState>(`/api/imports/${activeBatchId}`)
+      } catch (err) {
+        if (err instanceof ApiRequestError) return null
+        throw err
+      }
     },
     refetchInterval: (query) => {
       const status = query.state.data?.status
@@ -73,16 +67,13 @@ export function ActiveImportProvider({
           batch.rowsUpdated > 0 ? `, ${batch.rowsUpdated} aktualisiert` : ""
         } (${batch.fileName})`,
       })
-      void queryClient.invalidateQueries({ queryKey: ["analytics"] })
-      void queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      void queryClient.invalidateQueries({ queryKey: ["categories"] })
-      void queryClient.invalidateQueries({ queryKey: ["labels"] })
+      invalidateAfterImport(queryClient)
     }
     if (batch.status === "failed" && prevStatus.current !== "failed") {
       toast.error("Import fehlgeschlagen", {
         description: batch.error ?? batch.fileName,
       })
-      void queryClient.invalidateQueries({ queryKey: ["imports"] })
+      invalidateAfterImport(queryClient)
     }
     prevStatus.current = batch.status
   }, [batch, queryClient])

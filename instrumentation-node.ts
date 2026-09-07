@@ -3,8 +3,10 @@
  * Imported conditionally from instrumentation.ts so the Edge bundle never
  * touches better-sqlite3.
  */
+import { dkbGlobals } from "@/lib/globals"
+
 export async function registerNode() {
-  const g = globalThis as unknown as { __dkbInstrumented?: boolean }
+  const g = dkbGlobals()
   if (g.__dkbInstrumented) return
   g.__dkbInstrumented = true
 

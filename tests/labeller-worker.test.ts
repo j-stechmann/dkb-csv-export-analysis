@@ -1,3 +1,4 @@
+import type { ImportStage, LabelStatus, TxStatus } from "@/lib/db/status"
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
 import { eq } from "drizzle-orm"
 import { createTestDb, setTestDb, type Db } from "@/lib/db"
@@ -11,7 +12,7 @@ import {
 import { claimLabelRows, isWorkerTicking, tick } from "@/lib/labeller/worker"
 import { computeLabelCounters } from "@/lib/import/counters"
 import { applyLabelResults, markRowsFailed } from "@/lib/labeller/service"
-import { resetFailedLabels } from "@/lib/import/pipeline"
+import { resetFailedLabels } from "@/lib/labeller/service"
 import { getConfig } from "@/lib/config"
 
 const ACC_IBAN = "DE02120300000000202051"
@@ -21,7 +22,7 @@ let db: Db
 let accountId: number
 let batchCounter = 0
 
-function seedBatch(status = "labeling"): string {
+function seedBatch(status: ImportStage = "labeling"): string {
   batchCounter++
   const id = `b${batchCounter}`
   db.insert(importBatches)
@@ -33,9 +34,9 @@ function seedBatch(status = "labeling"): string {
 function seedTx(
   batchId: string,
   overrides: Partial<{
-    labelStatus: string
+    labelStatus: LabelStatus
     labelAttempts: number
-    status: string
+    status: TxStatus
     counterpartyIban: string | null
   }> = {}
 ): string {
@@ -163,7 +164,10 @@ function stubLlmFetch(label: string | null) {
 }
 
 describe("tick", () => {
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
 
   it("marks rows failed when the LLM errors and completes the batch", async () => {
     const batchId = seedBatch()

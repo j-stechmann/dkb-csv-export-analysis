@@ -1,9 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { useActiveImport } from "@/components/active-import-provider"
+import { useStartImport } from "@/hooks/use-mutations"
 
 interface DragDropContextValue {
   isDragging: boolean
@@ -23,52 +23,21 @@ export function useIsDraggingFile() {
  */
 export function DragDropProvider({ children }: { children: React.ReactNode }) {
   const [isDragging, setIsDragging] = React.useState(false)
-  const [isUploading, setIsUploading] = React.useState(false)
   const dragCounter = React.useRef(0)
   const { startPolling } = useActiveImport()
+  const { mutate: startImport, isPending: isUploading } = useStartImport()
 
   const uploadFile = React.useCallback(
-    async (file: File) => {
+    (file: File) => {
       if (!file.name.toLowerCase().endsWith(".csv")) {
         toast.error("Nur CSV-Dateien werden unterstützt", {
           description: file.name,
         })
         return
       }
-      setIsUploading(true)
-      try {
-        const body = new FormData()
-        body.append("file", file)
-        const res = await fetch("/api/imports", { method: "POST", body })
-        const data = (await res.json()) as {
-          batchId?: string
-          error?: string
-          message?: string
-        }
-        if (res.status === 202 && data.batchId) {
-          toast.success("Import gestartet", {
-            description: `${file.name} wird verarbeitet`,
-          })
-          startPolling(data.batchId)
-        } else if (res.status === 409) {
-          toast.error("Import läuft bereits", {
-            description:
-              "Bitte warten, bis der aktuelle Import abgeschlossen ist.",
-          })
-        } else {
-          toast.error("Import fehlgeschlagen", {
-            description: data.error ?? data.message ?? `HTTP ${res.status}`,
-          })
-        }
-      } catch (err) {
-        toast.error("Upload fehlgeschlagen", {
-          description: (err as Error).message,
-        })
-      } finally {
-        setIsUploading(false)
-      }
+      startImport({ file }, { onSuccess: (data) => startPolling(data.batchId) })
     },
-    [startPolling]
+    [startImport, startPolling]
   )
 
   React.useEffect(() => {
@@ -93,7 +62,7 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
       dragCounter.current = 0
       setIsDragging(false)
       const file = e.dataTransfer.files[0]
-      if (file) void uploadFile(file)
+      if (file) uploadFile(file)
     }
 
     window.addEventListener("dragenter", onDragEnter)

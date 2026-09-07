@@ -5,6 +5,12 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core"
+import type {
+  CategoryOrigin,
+  ImportStage,
+  LabelStatus,
+  TxStatus,
+} from "./status"
 
 export const accounts = sqliteTable(
   "accounts",
@@ -25,8 +31,7 @@ export const importBatches = sqliteTable(
     id: text("id").primaryKey(),
     fileName: text("file_name").notNull(),
     accountId: integer("account_id").references(() => accounts.id),
-    /** parsing | importing | labeling | completed | failed */
-    status: text("status").notNull().default("parsing"),
+    status: text("status").notNull().default("parsing").$type<ImportStage>(),
     error: text("error"),
     snapshotDate: text("snapshot_date"),
     snapshotAmountCents: integer("snapshot_amount_cents"),
@@ -34,9 +39,9 @@ export const importBatches = sqliteTable(
     rowsImported: integer("rows_imported").notNull().default(0),
     rowsDuplicate: integer("rows_duplicate").notNull().default(0),
     rowsUpdated: integer("rows_updated").notNull().default(0),
-    labelsTotal: integer("labels_total").notNull().default(0),
-    labelsDone: integer("labels_done").notNull().default(0),
-    labelsFailed: integer("labels_failed").notNull().default(0),
+    /** label counters are computed on read (lib/import/counters.ts) — the
+     *  persisted labels_total/done/failed columns were removed in a
+     *  migration because they had no consistent writer and no reader */
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
@@ -55,8 +60,7 @@ export const categories = sqliteTable(
     name: text("name").notNull(),
     nameKey: text("name_key").notNull(),
     language: text("language").notNull(),
-    /** manual (user-created/renamed/assigned) | llm (invented by the model) */
-    origin: text("origin").notNull().default("llm"),
+    origin: text("origin").notNull().default("llm").$type<CategoryOrigin>(),
     /** how often the label was applied/assigned (apply + assign events, not a live transaction count) */
     usageCount: integer("usage_count").notNull().default(0),
     createdAt: text("created_at")
@@ -103,7 +107,7 @@ export const transactions = sqliteTable(
     batchId: text("batch_id").references(() => importBatches.id),
     bookingDate: text("booking_date").notNull(),
     valueDate: text("value_date"),
-    status: text("status").notNull().default("Gebucht"),
+    status: text("status").notNull().default("Gebucht").$type<TxStatus>(),
     payer: text("payer"),
     payee: text("payee"),
     purpose: text("purpose"),
@@ -114,8 +118,10 @@ export const transactions = sqliteTable(
     mandateRef: text("mandate_ref"),
     customerRef: text("customer_ref"),
     categoryId: integer("category_id").references(() => categories.id),
-    /** pending | labeled | failed */
-    labelStatus: text("label_status").notNull().default("pending"),
+    labelStatus: text("label_status")
+      .notNull()
+      .default("pending")
+      .$type<LabelStatus>(),
     labelAttempts: integer("label_attempts").notNull().default(0),
     sourceHash: text("source_hash").notNull(),
     occurrenceIndex: integer("occurrence_index").notNull().default(0),

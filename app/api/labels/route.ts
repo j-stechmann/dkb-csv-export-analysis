@@ -3,6 +3,9 @@ import { eq, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories } from "@/lib/db/schema"
 import { normalizeCategoryKey, isValidLabelName } from "@/lib/labeller/service"
+import { getConfig } from "@/lib/config"
+import { parseBody, LabelCreateSchema } from "@/lib/api/schemas"
+import { badRequest, conflict } from "@/lib/api/http"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -24,18 +27,12 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json().catch(() => null)) as {
-    name?: unknown
-  } | null
-  const name = typeof body?.name === "string" ? body.name.trim() : ""
-  if (!isValidLabelName(name)) {
-    return NextResponse.json(
-      {
-        error: "invalid_name",
-        message:
-          "name must be 1–64 UTF-8 bytes and free of | < > index= markers",
-      },
-      { status: 400 }
+  const body = await parseBody(LabelCreateSchema, request)
+  const name = body?.name ?? ""
+  if (!body || !isValidLabelName(name)) {
+    return badRequest(
+      "invalid_name",
+      "Label-Name: 1–64 UTF-8 Bytes, ohne | < > index= Marker"
     )
   }
 
@@ -47,10 +44,7 @@ export async function POST(request: NextRequest) {
     .where(eq(categories.nameKey, nameKey))
     .get()
   if (existing) {
-    return NextResponse.json(
-      { error: "name_conflict", message: "label already exists" },
-      { status: 409 }
-    )
+    return conflict("name_conflict", "Label existiert bereits")
   }
 
   const inserted = db
@@ -58,7 +52,7 @@ export async function POST(request: NextRequest) {
     .values({
       name,
       nameKey,
-      language: "de",
+      language: getConfig().LLM_LANGUAGE,
       origin: "manual",
       usageCount: 0,
     })
@@ -67,10 +61,7 @@ export async function POST(request: NextRequest) {
     .get()
 
   if (!inserted) {
-    return NextResponse.json(
-      { error: "name_conflict", message: "label already exists" },
-      { status: 409 }
-    )
+    return conflict("name_conflict", "Label existiert bereits")
   }
   return NextResponse.json({ id: inserted.id, name }, { status: 201 })
 }

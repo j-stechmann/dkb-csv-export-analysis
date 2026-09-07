@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
-import { resetFailedLabels } from "@/lib/import/pipeline"
+import { resetFailedLabels } from "@/lib/labeller/service"
 import { getConfig } from "@/lib/config"
+import { toErrorMessage } from "@/lib/api/http"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -17,7 +18,7 @@ export async function POST() {
   } catch (err) {
     console.error("[api/labels/retry] error:", err)
     return NextResponse.json(
-      { error: "retry_failed", message: (err as Error).message },
+      { error: "retry_failed", message: toErrorMessage(err) },
       { status: 500 }
     )
   }
