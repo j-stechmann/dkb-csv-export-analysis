@@ -27,7 +27,7 @@ Three coordinated mechanisms in [lib/llm/client.ts](../../lib/llm/client.ts) /
 3. **Retry taxonomy** (ported from a Rust client): timeouts are **never**
    retried (including mid-body-read aborts); network errors, 429/5xx, and
    malformed payloads are retried with backoff `200ms · 4^(attempt-1) +
-jitter`, capped by `LLM_MAX_RETRIES`; other HTTP statuses fail
+jitter [0, base/4]`, capped by `LLM_MAX_RETRIES`; other HTTP statuses fail
    immediately. `return await` discipline keeps rejections inside the retry
    loop.
 

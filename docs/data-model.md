@@ -106,7 +106,7 @@ at-most-one-rule-per-triple by construction. See
 | -------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------ |
 | `id`                                                                 | TEXT PK              | UUID                                                                                 |
 | `account_id`                                                         | INTEGER FK NOT NULL  |                                                                                      |
-| `batch_id`                                                           | INTEGER FK           | nullable                                                                             |
+| `batch_id`                                                           | TEXT FK              | nullable — UUID of `import_batches.id`                                               |
 | `booking_date` / `value_date`                                        | TEXT NOT NULL / TEXT | ISO dates                                                                            |
 | `status`                                                             | TEXT                 | `Gebucht` or `Nicht gebucht`, verbatim from DKB                                      |
 | `payer` / `payee` / `purpose`                                        | TEXT                 | nullable, whitespace-normalized at parse time                                        |

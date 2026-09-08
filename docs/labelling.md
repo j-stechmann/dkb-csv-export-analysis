@@ -94,7 +94,8 @@ completions to `${LLM_BASE_URL}/v1/chat/completions`
 | Other HTTP status                                           | immediate `LlmHttpError`                        |
 | Malformed payload (missing content, unparseable JSON)       | retried like 5xx                                |
 
-Backoff: `200ms · 4^(attempt-1) + jitter [0, 50ms]`, capped by
+Backoff: `200ms · 4^(attempt-1) + jitter [0, base/4]` (first retry jitters
+up to 50 ms, later retries scale with the base), capped by
 `LLM_MAX_RETRIES` (default 2). On timeout the caller marks claimed rows
 failed — there are no fallback labels
 ([ADR-0013](adr/adr-0013-no-fallback-labels.md)).

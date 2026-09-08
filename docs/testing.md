@@ -53,7 +53,8 @@ manifest **to the cent** ([ADR-0021](adr/adr-0021-oracle-fixture-testing.md)):
 
 A **second fixture** (`fixture-pending-resolved.csv`) drives the
 reconciliation test: all 24 pending rows re-exported as booked (+2 days,
-February clamped to the 28th — still inside the ±7-day window), exactly one
+February clamped to month end (29.02.24 / 28.02.25) — still inside the ±7-day
+window), exactly one
 with changed content (the upgrade-with-changes path), 10 verbatim booked
 copies (exact-dedupe tier), 1 verbatim pending copy, 5 brand-new bookings —
 with expected counts recorded in its manifest.

@@ -97,7 +97,7 @@ overlay; drops validate the `.csv` extension and POST the file as
 
 ### `/labels`
 
-Label CRUD (create form, rename dialog — which flips `origin` to `manuell` —
+Label CRUD (create form, rename dialog — which flips `origin` to `manual` —
 and a delete dialog that spells out the consequences: transactions lose their
 category and get re-labeled by the LLM, learned rules are removed). Each
 label lists its learned rules with edit/delete plus the **apply dialog**,
