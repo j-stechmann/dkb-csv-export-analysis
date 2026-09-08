@@ -8,8 +8,9 @@ export const dynamic = "force-dynamic"
 
 /**
  * Edits a learned rule: target label, payer, payee and counterparty IBAN.
- * All three key fields are required and stored verbatim (no normalization);
- * a rule must never carry null or empty components.
+ * All three key fields are required and trimmed, so stored values match the
+ * cleanCell'd transaction columns exactly; a rule must never carry null or
+ * empty components.
  */
 export async function PATCH(
   request: NextRequest,
@@ -43,14 +44,10 @@ export async function PATCH(
     )
   }
 
-  const payer = body.payer
-  const payee = body.payee
-  const counterpartyIban = body.counterpartyIban
-  if (
-    payer.trim() === "" ||
-    payee.trim() === "" ||
-    counterpartyIban.trim() === ""
-  ) {
+  const payer = body.payer.trim()
+  const payee = body.payee.trim()
+  const counterpartyIban = body.counterpartyIban.trim()
+  if (payer === "" || payee === "" || counterpartyIban === "") {
     return NextResponse.json(
       {
         error: "invalid_body",

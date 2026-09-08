@@ -138,7 +138,7 @@ beforeEach(() => {
 })
 
 describe("PATCH /api/label-rules/[id]", () => {
-  it("edits label, payer, payee and iban verbatim", async () => {
+  it("trims payer, payee and iban to match CSV-parsed values", async () => {
     const labelA = seedLabel("Miete")
     const labelB = seedLabel("Strom")
     const ruleId = seedRule(labelA)
@@ -148,7 +148,7 @@ describe("PATCH /api/label-rules/[id]", () => {
         labelId: labelB,
         payer: " Stadtwerke AG ",
         payee: "Max Mustermann",
-        counterpartyIban: "DE89370400440532013000",
+        counterpartyIban: " DE89370400440532013000 ",
       }),
       ruleParams(ruleId)
     )
@@ -156,7 +156,7 @@ describe("PATCH /api/label-rules/[id]", () => {
 
     const rule = db.select().from(labelRules).all()[0]
     expect(rule.labelId).toBe(labelB)
-    expect(rule.payer).toBe(" Stadtwerke AG ")
+    expect(rule.payer).toBe("Stadtwerke AG")
     expect(rule.payee).toBe("Max Mustermann")
     expect(rule.counterpartyIban).toBe("DE89370400440532013000")
   })

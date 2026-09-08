@@ -15,8 +15,8 @@ export interface LearnedRuleInput extends RulePartyInput {
 
 /**
  * A rule key is only learnable/matchable when every component carries real
- * content: non-null and not (trim-)empty. Values are compared and stored
- * verbatim — no normalization.
+ * content: non-null/undefined and not (trim-)empty. Values are compared and
+ * stored verbatim — no normalization.
  */
 export function isUsableRuleKey(input: {
   payer: string | null
@@ -24,11 +24,11 @@ export function isUsableRuleKey(input: {
   counterpartyIban: string | null
 }): input is { payer: string; payee: string; counterpartyIban: string } {
   return (
-    input.payer !== null &&
+    input.payer != null &&
     input.payer.trim() !== "" &&
-    input.payee !== null &&
+    input.payee != null &&
     input.payee.trim() !== "" &&
-    input.counterpartyIban !== null &&
+    input.counterpartyIban != null &&
     input.counterpartyIban.trim() !== ""
   )
 }
