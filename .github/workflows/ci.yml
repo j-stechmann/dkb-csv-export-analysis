@@ -50,3 +50,13 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      - name: Check docs links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # offline: only relative file links are checked, no network requests
+          args: >-
+            --offline --no-progress
+            --exclude-path node_modules
+            --exclude-path .next
+            'docs/**/*.md' 'README.md' 'CONTRIBUTING.md'

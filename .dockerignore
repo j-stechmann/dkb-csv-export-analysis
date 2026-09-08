@@ -11,6 +11,9 @@ data
 *.db-wal
 *.db-shm
 .env*
+models
+.llm-model
+Makefile.local
 
 # not needed by the build
 tests
