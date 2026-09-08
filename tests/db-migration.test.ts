@@ -8,7 +8,14 @@ import { getDb, resetDefaultDbForTest, type Db } from "@/lib/db"
 import { resetConfigCache } from "@/lib/config"
 
 let tmpDir: string | null = null
+const tmpDirs: string[] = []
 let db: Db | null = null
+
+function makeTmpDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  tmpDirs.push(dir)
+  return dir
+}
 
 // DDL of the previous release: label_rules keyed on (iban, name_key).
 const OLD_LABEL_RULES_DDL = `
@@ -51,10 +58,11 @@ function withFileDbPath(filePath: string, fn: () => void) {
   try {
     fn()
   } finally {
+    ;(db as Db | null)?.$client.close()
+    db = null
     process.env.DATABASE_PATH = original
     resetConfigCache()
     resetDefaultDbForTest()
-    db = null
   }
 }
 
@@ -64,15 +72,16 @@ function rawConnection(): Database.Database {
 
 afterAll(() => {
   db?.$client.close()
-  if (tmpDir) {
-    fs.rmSync(tmpDir, { recursive: true, force: true })
-    tmpDir = null
+  for (const dir of tmpDirs) {
+    fs.rmSync(dir, { recursive: true, force: true })
   }
+  tmpDirs.length = 0
+  tmpDir = null
 })
 
 describe("file DB migration: old (iban, name_key) label_rules shape", () => {
   it("getDb() drops and rebuilds label_rules instead of crashing", () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "dkb-migration-"))
+    tmpDir = makeTmpDir("dkb-migration-")
     createOldShapeFileDb(path.join(tmpDir, "dkb.db"))
 
     withFileDbPath(path.join(tmpDir, "dkb.db"), () => {
@@ -107,7 +116,7 @@ describe("file DB migration: old (iban, name_key) label_rules shape", () => {
   })
 
   it("rebuilt table enforces the triple unique index", () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "dkb-migration-"))
+    tmpDir = makeTmpDir("dkb-migration-")
     const dbPath = path.join(tmpDir, "dkb.db")
     createOldShapeFileDb(dbPath)
 
@@ -138,7 +147,7 @@ describe("file DB migration: old (iban, name_key) label_rules shape", () => {
   })
 
   it("fresh (empty) file DB still creates the full schema via getDb()", () => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "dkb-fresh-"))
+    tmpDir = makeTmpDir("dkb-fresh-")
     const dbPath = path.join(tmpDir, "fresh.db")
 
     withFileDbPath(dbPath, () => {
