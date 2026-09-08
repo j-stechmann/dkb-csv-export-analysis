@@ -4,11 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import Database from "better-sqlite3"
 import * as schema from "@/lib/db/schema"
-import {
-  getDb,
-  resetDefaultDbForTest,
-  type Db,
-} from "@/lib/db"
+import { getDb, resetDefaultDbForTest, type Db } from "@/lib/db"
 import { resetConfigCache } from "@/lib/config"
 
 let tmpDir: string | null = null
@@ -101,9 +97,9 @@ describe("file DB migration: old (iban, name_key) label_rules shape", () => {
       ).map((i) => i.name)
       expect(indexes).toContain("label_rules_triple_unique")
 
-      const n = raw.prepare<[], { n: number }>(
-        `SELECT COUNT(*) AS n FROM label_rules`
-      ).get()!.n
+      const n = raw
+        .prepare<[], { n: number }>(`SELECT COUNT(*) AS n FROM label_rules`)
+        .get()!.n
       expect(n).toBe(0)
     } finally {
       raw.close()
@@ -151,11 +147,12 @@ describe("file DB migration: old (iban, name_key) label_rules shape", () => {
 
     const raw = new Database(dbPath)
     try {
-      const tables = (
-        raw.prepare<[], { name: string }>(
+      const tables = raw
+        .prepare<[], { name: string }>(
           `SELECT name FROM sqlite_master WHERE type = 'table'`
-        ).all()
-      ).map((r) => r.name)
+        )
+        .all()
+        .map((r) => r.name)
       for (const expected of [
         "accounts",
         "import_batches",
