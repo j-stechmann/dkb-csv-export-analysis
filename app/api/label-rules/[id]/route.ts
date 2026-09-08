@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from "next/server"
 import { and, eq, ne } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories, labelRules } from "@/lib/db/schema"
+import { normalizeWhitespace } from "@/lib/money"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
  * Edits a learned rule: target label, payer, payee and counterparty IBAN.
- * All three key fields are required and trimmed, so stored values match the
+ * All three key fields are required and whitespace-normalized (via the same
+ * normalizeWhitespace the CSV parser uses), so stored values match the
  * cleanCell'd transaction columns exactly; a rule must never carry null or
  * empty components.
  */
@@ -44,9 +46,9 @@ export async function PATCH(
     )
   }
 
-  const payer = body.payer.trim()
-  const payee = body.payee.trim()
-  const counterpartyIban = body.counterpartyIban.trim()
+  const payer = normalizeWhitespace(body.payer)
+  const payee = normalizeWhitespace(body.payee)
+  const counterpartyIban = normalizeWhitespace(body.counterpartyIban)
   if (payer === "" || payee === "" || counterpartyIban === "") {
     return NextResponse.json(
       {
