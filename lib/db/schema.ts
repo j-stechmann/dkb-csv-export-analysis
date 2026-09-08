@@ -95,6 +95,9 @@ export const labelRules = sqliteTable(
       t.counterpartyIban
     ),
     index("label_rules_label_idx").on(t.labelId),
+    // Runtime enforcement comes from the hand-written DDL in lib/db/index.ts;
+    // these check() defs only matter for drizzle-kit push and must stay in
+    // sync with it.
     check("label_rules_payer_not_empty", sql`${t.payer} <> ''`),
     check("label_rules_payee_not_empty", sql`${t.payee} <> ''`),
     check(

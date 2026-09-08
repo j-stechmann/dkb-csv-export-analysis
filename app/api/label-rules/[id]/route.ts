@@ -53,7 +53,7 @@ export async function PATCH(
     return NextResponse.json(
       {
         error: "invalid_body",
-        message: "payer, payee and counterpartyIban dürfen nicht leer sein",
+        message: "payer, payee and counterpartyIban must not be empty",
       },
       { status: 400 }
     )

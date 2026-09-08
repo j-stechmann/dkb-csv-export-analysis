@@ -131,7 +131,11 @@ export function suggestForBatch(
       result.set(i, [])
       continue
     }
-    const key = `${input.payer}\u0000${input.payee}\u0000${input.counterpartyIban}`
+    const key = JSON.stringify([
+      input.payer,
+      input.payee,
+      input.counterpartyIban,
+    ])
     let ids = byTriple.get(key)
     if (!ids) {
       ids = suggestLabelIds(db, input)
