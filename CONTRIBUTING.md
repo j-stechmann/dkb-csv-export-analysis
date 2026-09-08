@@ -5,13 +5,13 @@ This repo follows a **git-flow** model: all development happens on `develop`,
 
 ## Branches
 
-| Branch | Purpose | Protection |
-|---|---|---|
-| `master` | Production code, tagged releases (`vX.Y.Z`) | PR required, CI (`ci` check) required and up to date with head, no force-push/deletion, enforced for admins |
-| `develop` | Integration branch — always buildable | CI (`ci` check) required and up to date with head, no force-push/deletion |
-| `feat/*`, `fix/*`, `chore/*`, `refactor/*` | Short-lived work branches | — |
-| `release/*` | Stabilization + version bump for one release | — |
-| `hotfix/*` | Urgent fixes from `master` | — |
+| Branch                                     | Purpose                                      | Protection                                                                                                  |
+| ------------------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `master`                                   | Production code, tagged releases (`vX.Y.Z`)  | PR required, CI (`ci` check) required and up to date with head, no force-push/deletion, enforced for admins |
+| `develop`                                  | Integration branch — always buildable        | CI (`ci` check) required and up to date with head, no force-push/deletion                                   |
+| `feat/*`, `fix/*`, `chore/*`, `refactor/*` | Short-lived work branches                    | —                                                                                                           |
+| `release/*`                                | Stabilization + version bump for one release | —                                                                                                           |
+| `hotfix/*`                                 | Urgent fixes from `master`                   | —                                                                                                           |
 
 Both protected branches are subject to the **same required `ci` status check**
 defined in `.github/workflows/ci.yml` (lint, format, typecheck, test, build).
@@ -33,6 +33,18 @@ defined in `.github/workflows/ci.yml` (lint, format, typecheck, test, build).
    `.github/dependabot.yml`); minor/patch updates auto-merge after CI via
    `.github/workflows/dependabot-auto-merge.yml`.
 
+## Documentation
+
+Extensive docs live in [`docs/`](docs/README.md) (guides + ADRs).
+
+- A PR that **changes behavior must update the guide/ADR it crosses** — in
+  the same PR. Code comments remain the source of truth; docs describe
+  intent.
+- Refresh the `Last reviewed against vX.Y` footer of every guide you touch.
+- New architecture-level decisions get a new ADR in `docs/adr/` (next free
+  number, `docs/README.md` index entry); see the existing files for the
+  format.
+
 ## Releases (`develop` → `master`)
 
 1. Create a release branch from `develop`:
@@ -42,7 +54,9 @@ defined in `.github/workflows/ci.yml` (lint, format, typecheck, test, build).
    ```
 
 2. Bump `package.json` version and write the `CHANGELOG.md` entry (move the
-   `Unreleased` section under the new `vX.Y.Z` heading).
+   `Unreleased` section under the new `vX.Y.Z` heading). Refresh the
+   `Last reviewed against vX.Y` footers on docs touched since the last
+   release.
 3. Open a PR from `release/*` into `develop`, let CI pass, merge.
 4. Fast-forward `master` to `develop` via a second PR (`release/*` → `master`)
    or locally: `git switch master && git merge --ff-only develop && git push`.
