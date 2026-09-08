@@ -107,7 +107,9 @@ describe("file DB migration: old (iban, name_key) label_rules shape", () => {
   })
 
   it("rebuilt table enforces the triple unique index", () => {
-    const dbPath = path.join(tmpDir!, "dkb.db")
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "dkb-migration-"))
+    const dbPath = path.join(tmpDir, "dkb.db")
+    createOldShapeFileDb(dbPath)
 
     withFileDbPath(dbPath, () => {
       db = getDb()
