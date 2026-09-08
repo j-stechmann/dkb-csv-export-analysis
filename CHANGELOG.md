@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+- Git-flow is now in place: `develop` is the integration branch for all work
+  (features, fixes, Dependabot PRs); `master` holds only released code.
+  See `CONTRIBUTING.md`.
+
 ## v1.8.0
 
 ### Breaking
