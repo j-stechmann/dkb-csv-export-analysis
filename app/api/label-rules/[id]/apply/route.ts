@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { labelRules } from "@/lib/db/schema"
-import { applyIbanRuleToTransactions } from "@/lib/labeller/service"
+import { applyRuleToTransactions } from "@/lib/labeller/service"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -27,7 +27,9 @@ export async function POST(
   const rule = db
     .select({
       id: labelRules.id,
-      iban: labelRules.iban,
+      payer: labelRules.payer,
+      payee: labelRules.payee,
+      counterpartyIban: labelRules.counterpartyIban,
       labelId: labelRules.labelId,
     })
     .from(labelRules)
@@ -40,7 +42,12 @@ export async function POST(
     )
   }
 
-  const affected = applyIbanRuleToTransactions(rule.iban, rule.labelId)
+  const affected = applyRuleToTransactions(
+    rule.payer,
+    rule.payee,
+    rule.counterpartyIban,
+    rule.labelId
+  )
   if (affected === null) {
     // Label deleted between the rule read and the apply transaction (label
     // deletion cascades to rules, so the rule itself is gone too).

@@ -41,9 +41,9 @@ interface LabelRow {
 interface LabelRuleRow {
   id: number
   labelId: number
-  iban: string
-  nameKey: string
-  name: string
+  payer: string
+  payee: string
+  counterpartyIban: string
   createdAt: string
 }
 
@@ -275,8 +275,9 @@ function EditRuleDialog({
   onClose: () => void
 }) {
   const [labelId, setLabelId] = React.useState(String(rule.labelId))
-  const [iban, setIban] = React.useState(rule.iban)
-  const [name, setName] = React.useState(rule.name)
+  const [payer, setPayer] = React.useState(rule.payer)
+  const [payee, setPayee] = React.useState(rule.payee)
+  const [iban, setIban] = React.useState(rule.counterpartyIban)
   const [busy, setBusy] = React.useState(false)
   const queryClient = useQueryClient()
 
@@ -288,8 +289,9 @@ function EditRuleDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           labelId: Number.parseInt(labelId, 10),
-          iban: iban.trim(),
-          name: name.trim(),
+          payer: payer.trim(),
+          payee: payee.trim(),
+          counterpartyIban: iban.trim(),
         }),
       })
       const data = (await res.json()) as { error?: string; message?: string }
@@ -342,16 +344,24 @@ function EditRuleDialog({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <span className="text-xs text-muted-foreground">IBAN</span>
+            <span className="text-xs text-muted-foreground">
+              Zahlungspflichtige*r
+            </span>
             <Input
-              value={iban}
+              value={payer}
               autoFocus
-              onChange={(e) => setIban(e.target.value)}
+              onChange={(e) => setPayer(e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
-            <span className="text-xs text-muted-foreground">Name</span>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <span className="text-xs text-muted-foreground">
+              Zahlungsempfänger*in
+            </span>
+            <Input value={payee} onChange={(e) => setPayee(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-xs text-muted-foreground">IBAN</span>
+            <Input value={iban} onChange={(e) => setIban(e.target.value)} />
           </div>
           <p className="text-xs text-muted-foreground">
             Änderungen wirken erst, wenn du die Regel mit &quot;Anwenden&quot;
@@ -363,7 +373,7 @@ function EditRuleDialog({
             Abbrechen
           </Button>
           <Button
-            disabled={busy || !iban.trim() || !name.trim()}
+            disabled={busy || !payer.trim() || !payee.trim() || !iban.trim()}
             onClick={() => void save()}
           >
             Speichern
@@ -517,12 +527,14 @@ function RulesList({
           className="flex items-center justify-between gap-2 rounded border px-2 py-1"
         >
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium">{rule.name}</p>
+            <p className="truncate text-xs font-medium">
+              {rule.payer} → {rule.payee}
+            </p>
             <p
               className="truncate text-xs text-muted-foreground"
-              title={rule.iban}
+              title={rule.counterpartyIban}
             >
-              {rule.iban}
+              {rule.counterpartyIban}
             </p>
           </div>
           <div className="flex shrink-0 items-center">

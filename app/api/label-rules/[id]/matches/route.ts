@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { labelRules } from "@/lib/db/schema"
-import { findIbanRuleMatches } from "@/lib/labeller/service"
+import { findRuleMatches } from "@/lib/labeller/service"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -22,7 +22,9 @@ export async function GET(
   const rule = db
     .select({
       id: labelRules.id,
-      iban: labelRules.iban,
+      payer: labelRules.payer,
+      payee: labelRules.payee,
+      counterpartyIban: labelRules.counterpartyIban,
       labelId: labelRules.labelId,
     })
     .from(labelRules)
@@ -35,6 +37,12 @@ export async function GET(
   // Same exclusion as apply, so the preview count matches what applying
   // would actually reset (rows already at the rule's label are skipped).
   return NextResponse.json({
-    count: findIbanRuleMatches(db, rule.iban, rule.labelId).length,
+    count: findRuleMatches(
+      db,
+      rule.payer,
+      rule.payee,
+      rule.counterpartyIban,
+      rule.labelId
+    ).length,
   })
 }

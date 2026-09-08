@@ -123,10 +123,15 @@ export async function tick(): Promise<void> {
       claimed.map((r): [string, number] => [r.id, r.labelAttempts])
     )
 
-    // multi-suggestions: all learned rules for each claimed row's IBAN key
+    // multi-suggestions: all learned rules matching each claimed row's
+    // (payer, payee, counterpartyIban) triple
     const db = getDb()
     const suggestionMap = suggestForBatch(
-      claimed.map((r) => ({ counterpartyIban: r.counterpartyIban }))
+      claimed.map((r) => ({
+        payer: r.payer,
+        payee: r.payee,
+        counterpartyIban: r.counterpartyIban,
+      }))
     )
     const allSuggestionIds = [...new Set([...suggestionMap.values()].flat())]
     const labelNames = resolveLabelNames(db, allSuggestionIds)

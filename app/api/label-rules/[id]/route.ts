@@ -2,20 +2,17 @@ import { NextRequest, NextResponse } from "next/server"
 import { and, eq, ne } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories, labelRules } from "@/lib/db/schema"
-import {
-  counterpartyDisplayName,
-  isLearnableIbanKey,
-  normalizeCounterpartyKey,
-  normalizeIbanKey,
-} from "@/lib/db/normalize"
+import { normalizeWhitespace } from "@/lib/money"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * Edits a learned rule: target label, counterparty IBAN and display name.
- * Keys are normalized the same way learning normalizes them; a name change
- * re-derives the nameKey so the rule stays consistent with future learning.
+ * Edits a learned rule: target label, payer, payee and counterparty IBAN.
+ * All three key fields are required and whitespace-normalized (via the same
+ * normalizeWhitespace the CSV parser uses), so stored values match the
+ * cleanCell'd transaction columns exactly; a rule must never carry null or
+ * empty components.
  */
 export async function PATCH(
   request: NextRequest,
@@ -29,17 +26,35 @@ export async function PATCH(
 
   const body = (await request.json().catch(() => null)) as {
     labelId?: unknown
-    iban?: unknown
-    name?: unknown
+    payer?: unknown
+    payee?: unknown
+    counterpartyIban?: unknown
   } | null
   if (
     typeof body?.labelId !== "number" ||
     !Number.isInteger(body.labelId) ||
-    typeof body?.iban !== "string" ||
-    typeof body?.name !== "string"
+    typeof body?.payer !== "string" ||
+    typeof body?.payee !== "string" ||
+    typeof body?.counterpartyIban !== "string"
   ) {
     return NextResponse.json(
-      { error: "invalid_body", message: "labelId, iban and name are required" },
+      {
+        error: "invalid_body",
+        message: "labelId, payer, payee and counterpartyIban are required",
+      },
+      { status: 400 }
+    )
+  }
+
+  const payer = normalizeWhitespace(body.payer)
+  const payee = normalizeWhitespace(body.payee)
+  const counterpartyIban = normalizeWhitespace(body.counterpartyIban)
+  if (payer === "" || payee === "" || counterpartyIban === "") {
+    return NextResponse.json(
+      {
+        error: "invalid_body",
+        message: "payer, payee and counterpartyIban must not be empty",
+      },
       { status: 400 }
     )
   }
@@ -66,38 +81,16 @@ export async function PATCH(
     )
   }
 
-  const ibanKey = normalizeIbanKey(body.iban)
-  if (!ibanKey || !isLearnableIbanKey(ibanKey)) {
-    return NextResponse.json(
-      {
-        error: "invalid_iban",
-        message: "IBAN zu kurz oder nicht erkennbar",
-      },
-      { status: 400 }
-    )
-  }
-
-  const name = counterpartyDisplayName(body.name)
-  const nameKey = normalizeCounterpartyKey(body.name)
-  if (!name || !nameKey) {
-    return NextResponse.json(
-      {
-        error: "invalid_name",
-        message: "Name darf nicht leer sein",
-      },
-      { status: 400 }
-    )
-  }
-
-  // advisory pre-check excluding the rule itself (editing only the display
-  // name must not self-conflict) — the try/catch below covers the race.
+  // advisory pre-check excluding the rule itself — the try/catch below
+  // covers the race.
   const clash = db
     .select({ id: labelRules.id })
     .from(labelRules)
     .where(
       and(
-        eq(labelRules.iban, ibanKey),
-        eq(labelRules.nameKey, nameKey),
+        eq(labelRules.payer, payer),
+        eq(labelRules.payee, payee),
+        eq(labelRules.counterpartyIban, counterpartyIban),
         ne(labelRules.id, ruleId)
       )
     )
@@ -114,9 +107,9 @@ export async function PATCH(
     db.update(labelRules)
       .set({
         labelId: body.labelId,
-        iban: ibanKey,
-        nameKey,
-        name,
+        payer,
+        payee,
+        counterpartyIban,
         updatedAt: now,
       })
       .where(eq(labelRules.id, ruleId))
@@ -135,9 +128,9 @@ export async function PATCH(
     .select({
       id: labelRules.id,
       labelId: labelRules.labelId,
-      iban: labelRules.iban,
-      nameKey: labelRules.nameKey,
-      name: labelRules.name,
+      payer: labelRules.payer,
+      payee: labelRules.payee,
+      counterpartyIban: labelRules.counterpartyIban,
     })
     .from(labelRules)
     .where(eq(labelRules.id, ruleId))

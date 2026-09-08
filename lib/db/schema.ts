@@ -1,10 +1,12 @@
 import {
+  check,
   index,
   integer,
   sqliteTable,
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core"
+import { sql } from "drizzle-orm"
 
 export const accounts = sqliteTable(
   "accounts",
@@ -73,12 +75,12 @@ export const labelRules = sqliteTable(
     labelId: integer("label_id")
       .notNull()
       .references(() => categories.id, { onDelete: "cascade" }),
-    /** normalized counterparty IBAN (or IBAN-like key) of learned transactions */
-    iban: text("iban").notNull(),
-    /** normalized counterparty name key of learned transactions */
-    nameKey: text("name_key").notNull(),
-    /** counterparty name as learned (display snapshot) */
-    name: text("name").notNull(),
+    /** payer of the learned transactions (verbatim CSV value, never empty) */
+    payer: text("payer").notNull(),
+    /** payee of the learned transactions (verbatim CSV value, never empty) */
+    payee: text("payee").notNull(),
+    /** counterparty IBAN of the learned transactions (verbatim, never empty) */
+    counterpartyIban: text("counterparty_iban").notNull(),
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
@@ -87,9 +89,21 @@ export const labelRules = sqliteTable(
       .$defaultFn(() => new Date().toISOString()),
   },
   (t) => [
-    uniqueIndex("label_rules_iban_name_key_unique").on(t.iban, t.nameKey),
-    index("label_rules_iban_idx").on(t.iban),
+    uniqueIndex("label_rules_triple_unique").on(
+      t.payer,
+      t.payee,
+      t.counterpartyIban
+    ),
     index("label_rules_label_idx").on(t.labelId),
+    // Runtime enforcement comes from the hand-written DDL in lib/db/index.ts;
+    // these check() defs only matter for drizzle-kit push and must stay in
+    // sync with it.
+    check("label_rules_payer_not_empty", sql`${t.payer} <> ''`),
+    check("label_rules_payee_not_empty", sql`${t.payee} <> ''`),
+    check(
+      "label_rules_counterparty_iban_not_empty",
+      sql`${t.counterpartyIban} <> ''`
+    ),
   ]
 )
 

@@ -36,6 +36,8 @@ function seedTx(
     labelStatus: string
     labelAttempts: number
     status: string
+    payer: string | null
+    payee: string | null
     counterpartyIban: string | null
   }> = {}
 ): string {
@@ -47,8 +49,10 @@ function seedTx(
       batchId,
       bookingDate: "2026-02-03",
       status: "Gebucht",
+      payer: "Max Mustermann",
       payee: "REWE",
       type: "Ausgang",
+      counterpartyIban: "DE02120300000000202051",
       amountCents: -100,
       sourceHash: `hash-${id}`,
       labelStatus: "pending",
@@ -212,10 +216,12 @@ describe("tick", () => {
   it("suggests labels from learned rules and prefers them in the prompt", async () => {
     const batchId = seedBatch()
     const id = seedTx(batchId, {
-      counterpartyIban: "de02 1203 0000 0000 2020 51",
+      payer: "Max Mustermann",
+      payee: "REWE",
+      counterpartyIban: "DE02120300000000202051",
     })
 
-    // learn a rule for this IBAN (normalized key strips spaces + uppercases)
+    // learn a rule for this exact (payer, payee, IBAN) triple
     const cat = db
       .insert(categories)
       .values({
@@ -229,9 +235,9 @@ describe("tick", () => {
     db.insert(labelRules)
       .values({
         labelId: cat.id,
-        iban: "DE02120300000000202051",
-        nameKey: "vermieter",
-        name: "Vermieter",
+        payer: "Max Mustermann",
+        payee: "REWE",
+        counterpartyIban: "DE02120300000000202051",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
