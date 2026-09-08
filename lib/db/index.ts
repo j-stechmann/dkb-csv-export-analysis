@@ -68,7 +68,8 @@ export function createSchemaSqlite(db: Db) {
   // schema is gone, so the table is dropped before the new-shape DDL/index
   // below would fail with "no such column: payer" (old rules are discarded;
   // they regenerate on the next manual assignment). Fresh files are handled
-  // by CREATE TABLE IF NOT EXISTS (idempotent).
+  // by CREATE TABLE IF NOT EXISTS (idempotent). The same check lives in
+  // migrateSchema so a hot-reloaded singleton heals without a restart.
   {
     const ruleCols = db
       .all<{ name: string }>(`PRAGMA table_info(label_rules)`)
@@ -223,9 +224,18 @@ export function migrateSchema(db: Db) {
       `ALTER TABLE categories ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0`
     )
   }
-  // label_rules shape migration lives in createSchemaSqlite (it must drop the
-  // old (iban, name_key) table before the new-shape index is created there —
-  // migrateSchema runs after createSchemaSqlite on every code path).
+  // label_rules: older DBs carry the previous (iban, name_key) shape — that
+  // schema is gone, so the table is dropped before any new-shape DDL/index
+  // would fail with "no such column: payer" (old rules are discarded; they
+  // regenerate on the next manual assignment). Fresh files are handled by
+  // CREATE TABLE IF NOT EXISTS (idempotent). Runs here (not only in
+  // createSchemaSqlite) so a hot-reloaded singleton also heals the file DB.
+  {
+    const ruleCols = cols("label_rules")
+    if (ruleCols.length > 0 && !ruleCols.includes("counterparty_iban")) {
+      db.run(`DROP TABLE label_rules`)
+    }
+  }
   db.run(`
     CREATE TABLE IF NOT EXISTS label_rules (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
