@@ -8,6 +8,15 @@
   (features, fixes, Dependabot PRs); `master` holds only released code.
   See `CONTRIBUTING.md`.
 
+### Added
+
+- Categories now have **permanent, unique** colors, stored in a new
+  `categories.color` column (unique index). Colors are allocated at creation
+  (curated 12-color oklch palette first, then procedural unique colors) and
+  backfilled deterministically for existing DBs on startup. The chart, table
+  badges, filter dots, and label lists all render the stored color; the old
+  id-hash remains only as a legacy fallback.
+
 ## v1.8.0
 
 ### Breaking

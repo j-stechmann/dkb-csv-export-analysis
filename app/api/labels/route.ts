@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories } from "@/lib/db/schema"
 import { normalizeCategoryKey, isValidLabelName } from "@/lib/labeller/service"
+import { pickCategoryColor } from "@/lib/category-colors"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -15,6 +16,7 @@ export async function GET() {
       name: categories.name,
       origin: categories.origin,
       usageCount: categories.usageCount,
+      color: categories.color,
       ruleCount: sql<number>`(SELECT COUNT(*) FROM label_rules r WHERE r.label_id = ${categories.id})`,
     })
     .from(categories)
@@ -53,18 +55,29 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const inserted = db
-    .insert(categories)
-    .values({
-      name,
-      nameKey,
-      language: "de",
-      origin: "manual",
-      usageCount: 0,
-    })
-    .onConflictDoNothing()
-    .returning({ id: categories.id })
-    .get()
+  // Allocation + insert in one transaction so two concurrent creates can't
+  // pick the same color (the unique index is the last line of defense).
+  const inserted = db.transaction((tx) => {
+    const used = tx
+      .select({ color: categories.color })
+      .from(categories)
+      .all()
+      .map((r) => r.color)
+      .filter((c): c is string => c !== null)
+    return tx
+      .insert(categories)
+      .values({
+        name,
+        nameKey,
+        language: "de",
+        origin: "manual",
+        usageCount: 0,
+        color: pickCategoryColor(used),
+      })
+      .onConflictDoNothing()
+      .returning({ id: categories.id })
+      .get()
+  })
 
   if (!inserted) {
     return NextResponse.json(

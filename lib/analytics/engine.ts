@@ -18,6 +18,8 @@ export interface BalancePoint {
 export interface TopCategoryPoint {
   categoryId: number | null
   name: string // 'Unlabeled' bucket for null categories
+  /** stored permanent color (null for the Unlabeled bucket / legacy rows) */
+  color: string | null
   totalCents: number
   share: number
   txCount: number
@@ -241,6 +243,7 @@ export function computeAnalytics(
     .select({
       categoryId: transactions.categoryId,
       name: sql<string>`COALESCE(categories.name, '')`,
+      color: sql<string | null>`categories.color`,
       total: sql<number>`COALESCE(SUM(-${transactions.amountCents}), 0)`,
       count: sql<number>`COUNT(*)`,
     })
@@ -261,6 +264,7 @@ export function computeAnalytics(
     .map((r) => ({
       categoryId: r.categoryId,
       name: r.categoryId === null ? "Unlabeled" : r.name,
+      color: r.categoryId === null ? null : r.color,
       totalCents: r.total,
       share: totalExpenses > 0 ? r.total / totalExpenses : 0,
       txCount: r.count,

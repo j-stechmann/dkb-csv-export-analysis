@@ -1,9 +1,11 @@
 import fs from "node:fs"
 import path from "node:path"
 import { drizzle } from "drizzle-orm/better-sqlite3"
+import { sql } from "drizzle-orm"
 import Database from "better-sqlite3"
 import * as schema from "./schema"
 import { getConfig } from "@/lib/config"
+import { pickCategoryColor } from "@/lib/category-colors"
 
 export type Db = ReturnType<typeof createDb>
 /** Transaction callback parameter type (for helpers receiving `tx`). */
@@ -121,12 +123,25 @@ export function createSchemaSqlite(db: Db) {
       language TEXT NOT NULL,
       origin TEXT NOT NULL DEFAULT 'llm',
       usage_count INTEGER NOT NULL DEFAULT 0,
+      color TEXT,
       created_at TEXT NOT NULL
     )
   `)
   db.run(
     `CREATE UNIQUE INDEX IF NOT EXISTS categories_name_key_unique ON categories (name_key)`
   )
+  // Only when the table already has the column — old-shape DBs get it via
+  // migrateSchema (which also creates the index after backfilling colors).
+  {
+    const categoryCols = db
+      .all<{ name: string }>(`PRAGMA table_info(categories)`)
+      .map((c) => c.name)
+    if (categoryCols.includes("color")) {
+      db.run(
+        `CREATE UNIQUE INDEX IF NOT EXISTS categories_color_unique ON categories (color)`
+      )
+    }
+  }
   db.run(`
     CREATE TABLE IF NOT EXISTS label_rules (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -222,6 +237,31 @@ export function migrateSchema(db: Db) {
   if (!cols("categories").includes("usage_count")) {
     db.run(
       `ALTER TABLE categories ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0`
+    )
+  }
+  if (!cols("categories").includes("color")) {
+    db.run(`ALTER TABLE categories ADD COLUMN color TEXT`)
+    // Backfill deterministically (id ASC): the first categories get the
+    // curated palette, later ones get procedurally generated unique colors.
+    const existing = db
+      .all<{ id: number }>(`SELECT id FROM categories ORDER BY id ASC`)
+      .map((r) => r.id)
+    const used: string[] = []
+    for (const id of existing) {
+      const color = pickCategoryColor(used)
+      db.run(sql`UPDATE categories SET color = ${color} WHERE id = ${id}`)
+      used.push(color)
+    }
+  }
+  // Enforce color uniqueness on DBs that predate the column. SQLite ignores
+  // NULLs in unique indexes, so legacy NULL backfills don't clash.
+  if (
+    !db
+      .all<{ name: string }>(`PRAGMA index_list(categories)`)
+      .some((i) => i.name === "categories_color_unique")
+  ) {
+    db.run(
+      `CREATE UNIQUE INDEX IF NOT EXISTS categories_color_unique ON categories (color)`
     )
   }
   // label_rules: older DBs carry the previous (iban, name_key) shape — that

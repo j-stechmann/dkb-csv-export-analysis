@@ -85,6 +85,7 @@ The label vocabulary ("Kategorien" in the UI).
 | `language`    | TEXT       | from `LLM_LANGUAGE`                                                                                             |
 | `origin`      | TEXT       | `llm` (invented by the model) or `manual` (user-created/renamed/assigned); decides prune behavior               |
 | `usage_count` | INTEGER    | bumped on apply/assign events — not a live transaction count                                                    |
+| `color`       | TEXT       | permanent unique display color (oklch); NULL only as legacy fallback, unique index `categories_color_unique`    |
 
 ### `label_rules`
 

@@ -132,6 +132,7 @@ export interface TransactionPage {
     amountCents: number
     categoryId: number | null
     categoryName: string | null
+    categoryColor: string | null
     labelStatus: string
   }>
   total: number
@@ -168,6 +169,7 @@ export function queryTransactions(
       amountCents: transactions.amountCents,
       categoryId: transactions.categoryId,
       categoryName: categories.name,
+      categoryColor: categories.color,
       labelStatus: transactions.labelStatus,
     })
     .from(transactions)
