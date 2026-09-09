@@ -126,6 +126,34 @@ describe("POST /api/labels", () => {
     expect(out.status).toBe(409)
   })
 
+  it("maps a color-index conflict to 500 instead of a false name conflict", async () => {
+    // onConflictDoNothing swallows which unique index fired: a racing
+    // same-name create leaves a row to reread (→ 409), a color collision
+    // caught by the unique index leaves none (→ 500). The trigger
+    // reproduces the color-index path without racing a real writer.
+    db.run(
+      `CREATE TRIGGER simulate_color_race BEFORE INSERT ON categories
+       WHEN NEW.color = 'oklch(0.62 0.17 250)'
+       BEGIN
+         SELECT RAISE(IGNORE);
+       END`
+    )
+    const out = await createLabel(
+      jsonReq("http://test/api/labels", { name: "Farbtest" })
+    )
+    expect(out.status).toBe(500)
+    expect((await out.json()) as { error: string }).toMatchObject({
+      error: "insert_failed",
+    })
+    expect(
+      db
+        .select()
+        .from(categories)
+        .where(eq(categories.nameKey, "farbtest"))
+        .get()
+    ).toBeUndefined()
+  })
+
   it("rejects empty or oversized names with 400", async () => {
     expect(
       (await createLabel(jsonReq("http://test/api/labels", { name: "" })))

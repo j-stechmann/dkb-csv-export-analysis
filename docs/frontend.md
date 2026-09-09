@@ -132,7 +132,7 @@ allocated at creation inside the insert transaction
 ([lib/category-colors.ts](../lib/category-colors.ts)
 `pickCategoryColor`): the first unused entry of the curated 12-color oklch
 palette, then procedurally generated colors (golden-ratio hue walk, never
-gray, kept perceptually distant from used colors). Existing DBs are
+gray, picking the candidate farthest from all used colors). Existing DBs are
 backfilled deterministically in `id ASC` order on startup. `null`
 (unlabeled) is gray. The badge mixes the color via a CSS custom property +
 `color-mix()` (`@utility category-badge` in `app/globals.css`). Rendering

@@ -43,6 +43,15 @@ describe("pickCategoryColor", () => {
     const used = [CATEGORY_PALETTE[0], CATEGORY_PALETTE[1]]
     expect(pickCategoryColor(used)).toBe(pickCategoryColor(used))
   })
+
+  it("picks the procedural candidate farthest from used colors", () => {
+    const used = [...CATEGORY_PALETTE]
+    // j=1..200 walk with hue 222.5/307.5/…; the untaken candidate with the
+    // largest gap to the nearest palette hue is j=3 (hue 307.5, lightness
+    // far from the palette's cluster). Regression guard for farthest-point
+    // selection replacing the never-firing closeness veto.
+    expect(pickCategoryColor(used)).toBe("oklch(0.698 0.146 307.5)")
+  })
 })
 
 describe("getCategoryColor", () => {

@@ -36,55 +36,61 @@ function hueDistance(a: number, b: number): number {
   return d > 180 ? 360 - d : d
 }
 
-function isTooClose(candidate: Oklch, existing: Oklch): boolean {
-  return (
-    hueDistance(candidate.h, existing.h) < 20 &&
-    Math.abs(candidate.l - existing.l) < 0.1
-  )
+/** Distance combining circular hue (degrees) and lightness (scaled to match). */
+function colorDistance(a: Oklch, b: Oklch): number {
+  return Math.hypot(hueDistance(a.h, b.h), (a.l - b.l) * 180)
 }
+
+const WALK_WINDOW = 200
+const WALK_LIMIT = 10_000
 
 /**
  * Pick a display color for a new category: the first curated palette entry
- * not yet in use; beyond the palette, procedurally generate unique colors
- * (golden-ratio hue walk, never gray). `used` = colors already assigned.
+ * not yet in use; beyond the palette, the golden-angle hue walk candidate
+ * farthest from every used color (never gray, hard string-uniqueness).
+ * `used` = colors already assigned.
  */
 export function pickCategoryColor(used: string[]): string {
   const taken = new Set(used)
-  const parsed = used
-    .map(parseOklch)
-    .filter((c): c is Oklch => c !== null && c.c >= 0.05)
 
   for (const palette of CATEGORY_PALETTE) {
     if (!taken.has(palette)) return palette
   }
 
   // Procedural fallback: candidate j walks the hue circle via the golden
-  // angle (maximally spread), with lightness/chroma from a second sequence.
+  // angle, with lightness/chroma from a second sequence. The palette spans
+  // every hue at similar lightness, so no candidate is strictly free of
+  // close neighbors once all 12 entries are used — instead of a closeness
+  // veto, the untaken candidate with the largest gap to the nearest used
+  // color wins (farthest-point sampling).
+  const parsed = used
+    .map(parseOklch)
+    .filter((c): c is Oklch => c !== null && c.c >= 0.05)
   const candidateAt = (j: number): Oklch => ({
     l: 0.6 + 0.1 * ((j * GOLDEN * 7) % 1),
     c: 0.14 + 0.06 * ((j * GOLDEN * 13) % 1),
     h: (j * GOLDEN * 360) % 360,
   })
-  let fallback: Oklch | null = null
-  for (let j = 1; j <= 100; j++) {
+  let best: string | null = null
+  let bestDistance = -1
+  for (let j = 1; j <= WALK_WINDOW; j++) {
     const candidate = candidateAt(j)
     const key = formatOklch(candidate)
     if (taken.has(key)) continue
-    if (!parsed.some((p) => isTooClose(candidate, p))) return key
-    fallback ??= candidate
+    const nearest = Math.min(...parsed.map((p) => colorDistance(candidate, p)))
+    if (nearest > bestDistance) {
+      bestDistance = nearest
+      best = key
+    }
   }
-  if (fallback) return formatOklch(fallback)
-  // Exhausted (absurdly many near-identical hues): relax the closeness rule,
-  // keep only hard string-uniqueness.
-  for (let j = 101; j <= 1000; j++) {
+  if (best) return best
+  // Walk window exhausted (hundreds of categories): continue the walk
+  // deterministically, keeping only hard string-uniqueness.
+  for (let j = WALK_WINDOW + 1; j <= WALK_LIMIT; j++) {
     const key = formatOklch(candidateAt(j))
     if (!taken.has(key)) return key
   }
-  return formatOklch({
-    l: 0.6,
-    c: 0.14,
-    h: (Date.now() % 1000) * 0.36,
-  })
+  throw new Error("category color space exhausted")
 }
 
 function formatOklch({ l, c, h }: Oklch): string {

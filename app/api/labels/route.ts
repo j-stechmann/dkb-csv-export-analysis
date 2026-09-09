@@ -80,6 +80,21 @@ export async function POST(request: NextRequest) {
   })
 
   if (!inserted) {
+    // onConflictDoNothing doesn't say which index fired: reread by nameKey to
+    // distinguish a concurrent same-name create (409) from a color-allocation
+    // collision the unique index caught (500; unreachable with the fully
+    // synchronous single-process driver, defended against anyway).
+    const reread = db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.nameKey, nameKey))
+      .get()
+    if (!reread) {
+      return NextResponse.json(
+        { error: "insert_failed", message: "could not create label" },
+        { status: 500 }
+      )
+    }
     return NextResponse.json(
       { error: "name_conflict", message: "label already exists" },
       { status: 409 }
