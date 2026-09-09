@@ -7,17 +7,12 @@ import { pickCategoryColor } from "@/lib/category-colors"
 
 /**
  * Pick a not-yet-used color from the categories table (inside tx).
- * Returns null when the table has no color column (pre-migration).
  */
-function nextCategoryColor(tx: DbTx): string | null {
-  try {
-    const rows = tx.select({ color: categories.color }).from(categories).all()
-    return pickCategoryColor(
-      rows.map((r) => r.color).filter((c): c is string => c !== null)
-    )
-  } catch {
-    return null
-  }
+function nextCategoryColor(tx: DbTx): string {
+  const rows = tx.select({ color: categories.color }).from(categories).all()
+  return pickCategoryColor(
+    rows.map((r) => r.color).filter((c): c is string => c !== null)
+  )
 }
 
 /**

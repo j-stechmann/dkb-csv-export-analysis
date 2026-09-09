@@ -391,6 +391,24 @@ describe("POST /api/transactions/[id]/label", () => {
     expect(cat.origin).toBe("manual")
   })
 
+  it("allocates a unique color when creating a label inline via labelName", async () => {
+    await createLabel(jsonReq("http://test/api/labels", { name: "Miete" }))
+    const txId = seedTx()
+    const out = await assignLabel(
+      jsonReq(`http://test/api/transactions/${txId}/label`, {
+        labelName: "Sonstiges",
+      }),
+      { params: Promise.resolve({ id: txId }) }
+    )
+    expect(out.status).toBe(200)
+
+    const cats = db.select().from(categories).all()
+    expect(cats).toHaveLength(2)
+    expect(cats[0].color).not.toBeNull()
+    expect(cats[1].color).not.toBeNull()
+    expect(cats[1].color).not.toBe(cats[0].color)
+  })
+
   it("rejects labelName over 64 UTF-8 bytes with 400", async () => {
     const txId = seedTx()
     const out = await assignLabel(

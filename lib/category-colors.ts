@@ -55,18 +55,19 @@ export function pickCategoryColor(used: string[]): string {
     .filter((c): c is Oklch => c !== null && c.c >= 0.05)
 
   for (const palette of CATEGORY_PALETTE) {
-    if (palette !== UNLABELED_COLOR && !taken.has(palette)) return palette
+    if (!taken.has(palette)) return palette
   }
 
   // Procedural fallback: candidate j walks the hue circle via the golden
   // angle (maximally spread), with lightness/chroma from a second sequence.
+  const candidateAt = (j: number): Oklch => ({
+    l: 0.6 + 0.1 * ((j * GOLDEN * 7) % 1),
+    c: 0.14 + 0.06 * ((j * GOLDEN * 13) % 1),
+    h: (j * GOLDEN * 360) % 360,
+  })
   let fallback: Oklch | null = null
   for (let j = 1; j <= 100; j++) {
-    const candidate: Oklch = {
-      l: 0.6 + 0.1 * ((j * GOLDEN * 7) % 1),
-      c: 0.14 + 0.06 * ((j * GOLDEN * 13) % 1),
-      h: (j * GOLDEN * 360) % 360,
-    }
+    const candidate = candidateAt(j)
     const key = formatOklch(candidate)
     if (taken.has(key)) continue
     if (!parsed.some((p) => isTooClose(candidate, p))) return key
@@ -76,11 +77,7 @@ export function pickCategoryColor(used: string[]): string {
   // Exhausted (absurdly many near-identical hues): relax the closeness rule,
   // keep only hard string-uniqueness.
   for (let j = 101; j <= 1000; j++) {
-    const key = formatOklch({
-      l: 0.6 + 0.1 * ((j * GOLDEN * 7) % 1),
-      c: 0.14 + 0.06 * ((j * GOLDEN * 13) % 1),
-      h: (j * GOLDEN * 360) % 360,
-    })
+    const key = formatOklch(candidateAt(j))
     if (!taken.has(key)) return key
   }
   return formatOklch({

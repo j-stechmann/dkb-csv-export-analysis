@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db"
 import { categories, transactions } from "@/lib/db/schema"
 import { normalizeCategoryKey, isValidLabelName } from "@/lib/labeller/service"
 import { learnRule } from "@/lib/labels/matching"
+import { pickCategoryColor } from "@/lib/category-colors"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -84,18 +85,29 @@ export async function POST(
     if (existing) {
       categoryId = existing.id
     } else {
-      const inserted = db
-        .insert(categories)
-        .values({
-          name: labelName.trim(),
-          nameKey,
-          language: "de",
-          origin: "manual",
-          usageCount: 0,
-        })
-        .onConflictDoNothing()
-        .returning({ id: categories.id })
-        .get()
+      // Allocation + insert in one transaction so concurrent creates can't
+      // pick the same color (the unique index is the last line of defense).
+      const inserted = db.transaction((tx) => {
+        const used = tx
+          .select({ color: categories.color })
+          .from(categories)
+          .all()
+          .map((r) => r.color)
+          .filter((c): c is string => c !== null)
+        return tx
+          .insert(categories)
+          .values({
+            name: labelName.trim(),
+            nameKey,
+            language: "de",
+            origin: "manual",
+            usageCount: 0,
+            color: pickCategoryColor(used),
+          })
+          .onConflictDoNothing()
+          .returning({ id: categories.id })
+          .get()
+      })
       if (!inserted) {
         const reread = db
           .select({ id: categories.id })

@@ -220,7 +220,12 @@ export function ensureSchema() {
  * Idempotent migrations: column additions for tables that already exist on
  * disk (CREATE TABLE IF NOT EXISTS never alters a live table). Re-checked on
  * every getDb() so a hot-reload picks up new columns without a restart.
+ * The color backfill is skipped once settled per db instance (WeakSet): a
+ * hot-reload creates a fresh singleton, so the check always runs when it
+ * can find work, and the per-request COUNT scan only costs one boot.
  */
+const colorHealSettled = new WeakSet<object>()
+
 export function migrateSchema(db: Db) {
   const cols = (table: string) =>
     db.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name)
@@ -239,19 +244,50 @@ export function migrateSchema(db: Db) {
       `ALTER TABLE categories ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0`
     )
   }
-  if (!cols("categories").includes("color")) {
-    db.run(`ALTER TABLE categories ADD COLUMN color TEXT`)
-    // Backfill deterministically (id ASC): the first categories get the
-    // curated palette, later ones get procedurally generated unique colors.
-    const existing = db
-      .all<{ id: number }>(`SELECT id FROM categories ORDER BY id ASC`)
-      .map((r) => r.id)
-    const used: string[] = []
-    for (const id of existing) {
-      const color = pickCategoryColor(used)
-      db.run(sql`UPDATE categories SET color = ${color} WHERE id = ${id}`)
-      used.push(color)
+  {
+    // Allocation + backfill in one transaction: SQLite DDL is transactional,
+    // so a crash mid-backfill rolls the ALTER back and the next boot re-runs
+    // it. NULL rows are healed on every boot (not only when the column first
+    // appears) so legacy or interrupted backfills never render the
+    // collision-prone hash fallback forever.
+    const hasColorCol = cols("categories").includes("color")
+    if (hasColorCol && colorHealSettled.has(db)) {
+      // Column exists, no NULLs possible: every insert path allocates a
+      // color and the transactional backfill healed all legacy rows once.
+    } else {
+      const nullCount = hasColorCol
+        ? (db.all<{ n: number }>(
+            `SELECT COUNT(*) AS n FROM categories WHERE color IS NULL`
+          )[0]?.n ?? 0)
+        : 0
+      if (!hasColorCol || nullCount > 0) {
+        db.transaction((tx) => {
+          if (!hasColorCol) {
+            tx.run(`ALTER TABLE categories ADD COLUMN color TEXT`)
+          }
+          // Backfill deterministically (id ASC): the first categories get the
+          // curated palette, later ones get procedurally generated unique
+          // colors. Existing non-NULL colors count as taken.
+          const existing = tx
+            .all<{ id: number }>(
+              `SELECT id FROM categories WHERE color IS NULL ORDER BY id ASC`
+            )
+            .map((r) => r.id)
+          const used = tx
+            .all<{ color: string | null }>(
+              `SELECT color FROM categories WHERE color IS NOT NULL`
+            )
+            .map((r) => r.color)
+            .filter((c): c is string => c !== null)
+          for (const id of existing) {
+            const color = pickCategoryColor(used)
+            tx.run(sql`UPDATE categories SET color = ${color} WHERE id = ${id}`)
+            used.push(color)
+          }
+        })
+      }
     }
+    colorHealSettled.add(db)
   }
   // Enforce color uniqueness on DBs that predate the column. SQLite ignores
   // NULLs in unique indexes, so legacy NULL backfills don't clash.
