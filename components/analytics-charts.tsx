@@ -30,7 +30,7 @@ import {
   YAxis,
 } from "recharts"
 import type { AnalyticsResponse } from "@/components/analytics-kpis"
-import { getCategoryColor } from "@/lib/category-colors"
+import { resolveCategoryColor } from "@/lib/category-colors"
 import { formatCentsAsGerman } from "@/lib/money"
 
 const cashflowConfig = {
@@ -460,7 +460,7 @@ export function TopCategoriesChart({
         name: c.name,
         value: c.totalCents / 100,
         share: c.share,
-        fill: getCategoryColor(c.categoryId),
+        fill: resolveCategoryColor(c.categoryId, c.color),
       })),
     [data]
   )

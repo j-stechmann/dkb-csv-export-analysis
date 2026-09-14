@@ -13,18 +13,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { EMPTY_FILTERS, type DashboardFilters } from "@/lib/filters"
-import { getCategoryColor } from "@/lib/category-colors"
+import { resolveCategoryColor } from "@/lib/category-colors"
 
 interface CategoryOption {
   id: number
   name: string
+  color: string | null
 }
 
-function CategoryDot({ id }: { id: number }) {
+function CategoryDot({ id, color }: { id: number; color: string | null }) {
   return (
     <span
       className="inline-block size-2 shrink-0 self-center rounded-full"
-      style={{ backgroundColor: getCategoryColor(id) }}
+      style={{ backgroundColor: resolveCategoryColor(id, color) }}
       aria-hidden
     />
   )
@@ -144,14 +145,19 @@ export function FilterBar({
         }
       >
         <SelectTrigger className="w-48">
-          {selectedCategory && <CategoryDot id={selectedCategory.id} />}
+          {selectedCategory && (
+            <CategoryDot
+              id={selectedCategory.id}
+              color={selectedCategory.color}
+            />
+          )}
           <SelectValue placeholder="Kategorie" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Alle Kategorien</SelectItem>
           {(categories ?? []).map((c) => (
             <SelectItem key={c.id} value={String(c.id)}>
-              <CategoryDot id={c.id} />
+              <CategoryDot id={c.id} color={c.color} />
               {c.name}
             </SelectItem>
           ))}

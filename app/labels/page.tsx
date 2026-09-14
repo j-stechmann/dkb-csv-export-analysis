@@ -28,13 +28,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { getCategoryColor } from "@/lib/category-colors"
+import { resolveCategoryColor } from "@/lib/category-colors"
 
 interface LabelRow {
   id: number
   name: string
   origin: string
   usageCount: number
+  color: string | null
   ruleCount: number
 }
 
@@ -671,7 +672,10 @@ export default function LabelsPage() {
                       className="size-3 shrink-0 rounded-full"
                       style={
                         {
-                          "--category-color": getCategoryColor(label.id),
+                          "--category-color": resolveCategoryColor(
+                            label.id,
+                            label.color
+                          ),
                         } as React.CSSProperties
                       }
                     />

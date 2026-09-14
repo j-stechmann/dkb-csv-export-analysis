@@ -33,7 +33,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { filtersToParams, type DashboardFilters } from "@/lib/filters"
-import { getCategoryColor } from "@/lib/category-colors"
+import { resolveCategoryColor } from "@/lib/category-colors"
 import { ErrorState } from "@/components/error-state"
 import { cn } from "@/lib/utils"
 
@@ -50,6 +50,7 @@ interface TxRow {
   amountCents: number
   categoryId: number | null
   categoryName: string | null
+  categoryColor: string | null
   labelStatus: string
 }
 
@@ -96,7 +97,10 @@ function CategoryCell({ row }: { row: TxRow }) {
       className="category-badge font-normal"
       style={
         {
-          "--category-color": getCategoryColor(row.categoryId),
+          "--category-color": resolveCategoryColor(
+            row.categoryId,
+            row.categoryColor
+          ),
         } as React.CSSProperties
       }
     >
@@ -109,6 +113,7 @@ interface LabelOption {
   id: number
   name: string
   origin: string
+  color: string | null
 }
 
 function AssignLabelDialog({
@@ -238,7 +243,10 @@ function AssignLabelDialog({
                 className="size-2.5 shrink-0 rounded-full"
                 style={
                   {
-                    "--category-color": getCategoryColor(label.id),
+                    "--category-color": resolveCategoryColor(
+                      label.id,
+                      label.color
+                    ),
                   } as React.CSSProperties
                 }
               />

@@ -14,6 +14,7 @@ export async function GET() {
       name: categories.name,
       origin: categories.origin,
       usageCount: categories.usageCount,
+      color: categories.color,
       count: sql<number>`COUNT(${transactions.id})`,
     })
     .from(categories)
@@ -22,7 +23,8 @@ export async function GET() {
       categories.id,
       categories.name,
       categories.origin,
-      categories.usageCount
+      categories.usageCount,
+      categories.color
     )
     .orderBy(categories.name)
     .all()
