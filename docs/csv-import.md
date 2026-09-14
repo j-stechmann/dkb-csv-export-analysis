@@ -1,6 +1,6 @@
 # CSV import
 
-_Last reviewed against v1.8.0._
+_Last reviewed against v1.9.0._
 
 The import path turns a DKB CSV export into deduplicated, reconciled
 transactions and hands them to the label worker. Everything in this guide is

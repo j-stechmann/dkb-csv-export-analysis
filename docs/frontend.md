@@ -1,6 +1,6 @@
 # Frontend
 
-_Last reviewed against v1.8.0._
+_Last reviewed against v1.9.0._
 
 Every page is a **client component**: the entire UI is a live dashboard
 driven by filters, polling, and toasts, with no server-rendered data

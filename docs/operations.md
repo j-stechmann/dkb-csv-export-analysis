@@ -1,6 +1,6 @@
 # Operations
 
-_Last reviewed against v1.8.0._
+_Last reviewed against v1.9.0._
 
 Running, configuring, and shipping the app. Setup basics live in the root
 [README](../README.md); this guide covers what is behind the commands and
