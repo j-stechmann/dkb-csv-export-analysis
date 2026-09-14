@@ -115,7 +115,10 @@ export async function POST(
           .where(eq(categories.nameKey, nameKey))
           .get()
         if (!reread) {
-          return NextResponse.json({ error: "insert_failed" }, { status: 500 })
+          return NextResponse.json(
+            { error: "insert_failed", message: "could not create label" },
+            { status: 500 }
+          )
         }
         categoryId = reread.id
       } else {
