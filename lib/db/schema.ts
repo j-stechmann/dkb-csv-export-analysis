@@ -61,11 +61,16 @@ export const categories = sqliteTable(
     origin: text("origin").notNull().default("llm"),
     /** how often the label was applied/assigned (apply + assign events, not a live transaction count) */
     usageCount: integer("usage_count").notNull().default(0),
+    /** permanent display color; unique across labels (NULL only as legacy/backfill fallback) */
+    color: text("color"),
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
   },
-  (t) => [uniqueIndex("categories_name_key_unique").on(t.nameKey)]
+  (t) => [
+    uniqueIndex("categories_name_key_unique").on(t.nameKey),
+    uniqueIndex("categories_color_unique").on(t.color),
+  ]
 )
 
 export const labelRules = sqliteTable(

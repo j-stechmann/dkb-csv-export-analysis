@@ -3,6 +3,17 @@ import { getDb, type Db, type DbTx } from "@/lib/db"
 import { categories, importBatches, transactions } from "@/lib/db/schema"
 import type { LabelResult } from "@/lib/llm/client"
 import { sanitizeField } from "@/lib/llm/prompt"
+import { pickCategoryColor } from "@/lib/category-colors"
+
+/**
+ * Pick a not-yet-used color from the categories table (inside tx).
+ */
+function nextCategoryColor(tx: DbTx): string {
+  const rows = tx.select({ color: categories.color }).from(categories).all()
+  return pickCategoryColor(
+    rows.map((r) => r.color).filter((c): c is string => c !== null)
+  )
+}
 
 /**
  * Resolve-or-create a category by name and bump its usageCount.
@@ -25,6 +36,7 @@ export function resolveAndUseCategory(tx: DbTx, name: string): number | null {
         language: "de",
         origin: "llm",
         usageCount: 0,
+        color: nextCategoryColor(tx),
       })
       .onConflictDoNothing()
       .returning({ id: categories.id })

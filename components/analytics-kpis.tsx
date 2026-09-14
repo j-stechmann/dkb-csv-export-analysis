@@ -32,6 +32,7 @@ export interface AnalyticsResponse {
   topCategories: Array<{
     categoryId: number | null
     name: string
+    color: string | null
     totalCents: number
     share: number
     txCount: number
