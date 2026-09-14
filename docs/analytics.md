@@ -1,6 +1,6 @@
 # Analytics
 
-_Last reviewed against v1.8.0._
+_Last reviewed against v1.9.0._
 
 All KPIs, charts, and the transactions table are computed from **one shared
 filter pipeline** ([lib/analytics/queries.ts](../lib/analytics/queries.ts)),
