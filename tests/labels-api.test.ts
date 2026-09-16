@@ -74,7 +74,8 @@ beforeEach(() => {
 
 describe("GET /api/labels", () => {
   it("lists labels with usageCount, origin and ruleCount", async () => {
-    db.insert(categories)
+    const miete = db
+      .insert(categories)
       .values({
         name: "Miete",
         nameKey: "miete",
@@ -82,6 +83,31 @@ describe("GET /api/labels", () => {
         origin: "manual",
         usageCount: 3,
       })
+      .returning()
+      .get()
+    // Regression: the correlated subquery must resolve categories.id to the
+    // outer table (SQLite would otherwise shadow it with label_rules.id,
+    // counting only rules whose row id coincidentally equals the label id).
+    // Two rules with distinct rule ids guarantee a non-coincidental count.
+    db.insert(labelRules)
+      .values([
+        {
+          labelId: miete.id,
+          payer: "Max Mustermann",
+          payee: "Vermieter GmbH",
+          counterpartyIban: IBAN,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          labelId: miete.id,
+          payer: "Max Mustermann",
+          payee: "Vermieter GmbH",
+          counterpartyIban: "DE02500105170137075072962",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ])
       .run()
 
     const res = await listLabels()
@@ -100,7 +126,7 @@ describe("GET /api/labels", () => {
       name: "Miete",
       origin: "manual",
       usageCount: 3,
-      ruleCount: 0,
+      ruleCount: 2,
     })
   })
 })

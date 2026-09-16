@@ -17,7 +17,12 @@ export async function GET() {
       origin: categories.origin,
       usageCount: categories.usageCount,
       color: categories.color,
-      ruleCount: sql<number>`(SELECT COUNT(*) FROM label_rules r WHERE r.label_id = ${categories.id})`,
+      // Table-qualified reference: drizzle renders ${categories.id} as
+      // unqualified "id" in a single-table select, and inside the subquery
+      // scope SQLite resolves it to the inner label_rules.id — yielding
+      // counts only where a rule's row id coincidentally equals the label id
+      // (usually 0, always wrong).
+      ruleCount: sql<number>`(SELECT COUNT(*) FROM label_rules r WHERE r.label_id = categories.id)`,
     })
     .from(categories)
     .orderBy(sql`usage_count DESC, name ASC`)
