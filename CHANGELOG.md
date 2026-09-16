@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.9.1
+
+### Fixed
+
+- `GET /api/labels` reported wrong `ruleCount` values (usually 0): the
+  correlated subquery's unqualified `"id"` resolved to the inner
+  `label_rules.id` instead of the outer `categories.id` (SQLite column
+  shadowing). The reference is now table-qualified, and a regression test
+  seeds two rules to catch any future masking.
+
 ## v1.9.0
 
 ### Changed
