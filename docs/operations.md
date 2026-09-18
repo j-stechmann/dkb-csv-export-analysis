@@ -47,17 +47,24 @@ interactive download offer fails fast when stdin is not a TTY (CI/pipes).
 All configuration is environment-based, read once via zod-validated
 `getConfig()` ([lib/config.ts](../lib/config.ts)):
 
-| Variable                | Default                 | Purpose                                                |
-| ----------------------- | ----------------------- | ------------------------------------------------------ |
-| `DATABASE_PATH`         | `./data/dkb.db`         | SQLite file (WAL sidecars alongside)                   |
-| `LLM_BASE_URL`          | `http://127.0.0.1:8080` | llama-server base URL                                  |
-| `LLM_LANGUAGE`          | `de`                    | ISO 639-1 label language                               |
-| `LLM_BATCH_SIZE`        | `20` (1–100)            | items per LLM request; > ~40 risks exceeding `LLM_CTX` |
-| `LLM_MAX_RETRIES`       | `2`                     | transient-failure retries (timeouts never retry)       |
-| `LLM_TIMEOUT_MS`        | `300000`                | per-request timeout                                    |
-| `LLM_CTX`               | `8192`                  | must match the server's `-c` flag (budget guard)       |
-| `LLM_MAX_ATTEMPTS`      | `5`                     | per-transaction labeling attempt cap                   |
-| `LLM_MAX_LABELS_PROMPT` | `200` (0 disables)      | existing labels injected into prompts                  |
+| Variable                | Default                     | Purpose                                                    |
+| ----------------------- | --------------------------- | ---------------------------------------------------------- |
+| `DATABASE_PATH`         | `./data/dkb.db`             | SQLite file (WAL sidecars alongside)                       |
+| `LLM_BASE_URL`          | `http://127.0.0.1:8080`     | llama-server base URL                                      |
+| `LLM_LANGUAGE`          | `de`                        | ISO 639-1 label language                                   |
+| `LLM_BATCH_SIZE`        | `20` (1–100)                | items per LLM request; > ~40 risks exceeding `LLM_CTX`     |
+| `LLM_MAX_RETRIES`       | `2`                         | transient-failure retries (timeouts never retry)           |
+| `LLM_TIMEOUT_MS`        | `300000`                    | per-request timeout                                        |
+| `LLM_CTX`               | `8192`                      | must match the server's `-c` flag (budget guard)           |
+| `LLM_MAX_ATTEMPTS`      | `5`                         | per-transaction labeling attempt cap                       |
+| `LLM_MAX_LABELS_PROMPT` | `200` (0 disables)          | existing labels injected into prompts                      |
+| `OIDC_ISSUER_URL`       | — (required)                | OIDC issuer (well-known discovery); any compliant provider |
+| `OIDC_CLIENT_ID`        | — (required)                | OIDC client id                                             |
+| `OIDC_CLIENT_SECRET`    | — (required)                | OIDC client secret (confidential client)                   |
+| `OIDC_SCOPES`           | `openid profile email`      | scopes requested at the authorization endpoint             |
+| `SESSION_TTL_SECONDS`   | `604800` (7 days)           | signed session cookie lifetime                             |
+| `SESSION_SECRET`        | falls back to client secret | HS256 key for session cookies (min 32 chars)               |
+| `APP_ORIGIN`            | derived from request        | public origin for redirects behind a reverse proxy         |
 
 See the root README for the full Docker Compose example (app + llama-server
 on one network, named volume for `/app/data`).
@@ -101,16 +108,24 @@ Process rules (git-flow, Conventional Commits, release/hotfix flows) live in
 
 ## Security & privacy posture
 
-This is a **local-first, no-auth** app that deliberately handles sensitive
-bank data simply ([ADR-0031](adr/adr-0031-no-auth-local-first-privacy.md)):
+This is a **local-first, multi-user** app ([ADR-0032](adr/adr-0032-multi-user-oidc.md),
+superseding the no-auth posture of [ADR-0031](adr/adr-0031-no-auth-local-first-privacy.md)):
 
-- No authentication, no sessions, no middleware — the threat model is a
-  single user's machine, not a shared deployment. Do not expose it to untrusted
-  networks.
-- All bank data stays local: SQLite in `data/` (gitignored), model in
-  `models/` (gitignored), no telemetry. The **only network egress** is the
-  model download from Hugging Face (`make model`) and the LLM calls to
-  llama-server, which is bound to `127.0.0.1` in local dev.
+- **Mandatory OIDC login** (PKCE + state + nonce, signed HttpOnly session
+  cookie). `proxy.ts` gates everything except `/auth/*`, `/api/llm/health`
+  (shallow healthcheck, [ADR-0028]) and static assets. Users are
+  JIT-provisioned on first login keyed on `(issuer, subject)` — no allowlist;
+  the provider is trusted to gate identities.
+- **Per-user data isolation**: every table row carries `user_id`; queries,
+  import jobs and label-worker claims are user-scoped. Learned rules and
+  labels are per user.
+- The v1→v2 migration **drops pre-user tables** (fresh start for everyone —
+  legacy single-user data is not attributed to any owner).
+- Data locality remains ([ADR-0031](adr/adr-0031-no-auth-local-first-privacy.md)):
+  all bank data stays local (SQLite in `data/`, model in `models/`, no
+  telemetry). The only network egress is the model download from Hugging Face
+  (`make model`), LLM calls to llama-server (127.0.0.1 in local dev), and the
+  OIDC provider round-trips you configured.
 - `.gitignore` and `.dockerignore` exclude `data/`, `*.db*`, `.env*`,
   `models/`, `.llm-model`, `Makefile.local` — bank data and machine state
   never leave the machine.

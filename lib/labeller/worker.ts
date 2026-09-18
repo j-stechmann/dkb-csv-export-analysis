@@ -34,6 +34,7 @@ export function isWorkerTicking(): boolean {
 
 export interface ClaimedRow {
   id: string
+  userId: number
   amountCents: number
   payer: string | null
   payee: string | null
@@ -124,15 +125,30 @@ export async function tick(): Promise<void> {
     )
 
     // multi-suggestions: all learned rules matching each claimed row's
-    // (payer, payee, counterpartyIban) triple
+    // (payer, payee, counterpartyIban) triple — per owner, since one claim
+    // batch can span users. Suggestion lookup is grouped by user.
     const db = getDb()
-    const suggestionMap = suggestForBatch(
-      claimed.map((r) => ({
-        payer: r.payer,
-        payee: r.payee,
-        counterpartyIban: r.counterpartyIban,
-      }))
-    )
+    const byUser = new Map<number, number[]>()
+    for (let i = 0; i < claimed.length; i++) {
+      const userId = claimed[i].userId
+      const indices = byUser.get(userId) ?? []
+      indices.push(i)
+      byUser.set(userId, indices)
+    }
+    const suggestionMap = new Map<number, number[]>()
+    for (const [userId, indices] of byUser) {
+      const userSuggestions = suggestForBatch(
+        userId,
+        indices.map((i) => ({
+          payer: claimed[i].payer,
+          payee: claimed[i].payee,
+          counterpartyIban: claimed[i].counterpartyIban,
+        }))
+      )
+      for (const [localIdx, ids] of userSuggestions) {
+        suggestionMap.set(indices[localIdx], ids)
+      }
+    }
     const allSuggestionIds = [...new Set([...suggestionMap.values()].flat())]
     const labelNames = resolveLabelNames(db, allSuggestionIds)
 
@@ -154,7 +170,7 @@ export async function tick(): Promise<void> {
     try {
       const results = await client.labelBatch(
         items.map(toPromptTransaction),
-        existingLabelsForPrompt(cfg)
+        existingLabelsForPrompt(cfg, [...byUser.keys()])
       )
       applyLabelResults(results, claimedAttempts)
       // no fallback labels: claimed rows with no applied result (empty or
@@ -179,22 +195,45 @@ export async function tick(): Promise<void> {
 
     completeDrainedBatches(cfg.LLM_MAX_ATTEMPTS)
   } catch (err) {
+    // invalid env config (missing OIDC_* etc.) would otherwise repeat every
+    // tick — log it once; a fixed config heals on the next tick
+    if (err instanceof Error && err.message.startsWith("Invalid environment")) {
+      if (!configFailureLogged) {
+        configFailureLogged = true
+        console.error("[label worker] paused:", err.message)
+      }
+      return
+    }
     console.error("[label worker] tick failed:", err)
   } finally {
     state.ticking = false
   }
 }
 
+let configFailureLogged = false
+
+export function resetWorkerConfigFailureForTest() {
+  configFailureLogged = false
+}
+
 /**
  * Existing labels for the system prompt: most-used first, capped. Read
  * synchronously from the DB (the prompt builder handles the empty case).
+ * With user ids given, only those users' labels are offered (a claim batch
+ * spanning users must not leak another user's label vocabulary).
  */
-function existingLabelsForPrompt(cfg: ReturnType<typeof getConfig>): string[] {
+function existingLabelsForPrompt(
+  cfg: ReturnType<typeof getConfig>,
+  userIds: number[]
+): string[] {
   if (cfg.LLM_MAX_LABELS_PROMPT === 0) return []
   const db = getDb()
+  const scope =
+    userIds.length > 0 ? inArray(categories.userId, userIds) : undefined
   const rows = db
     .select({ name: categories.name })
     .from(categories)
+    .where(scope)
     .orderBy(sql`usage_count DESC, name ASC`)
     .limit(cfg.LLM_MAX_LABELS_PROMPT)
     .all()

@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { apiFetch } from "@/lib/api-fetch"
 
 export interface ImportBatchState {
   id: string
@@ -54,7 +55,7 @@ export function ActiveImportProvider({
     queryKey: ["import", activeBatchId],
     enabled: activeBatchId !== null,
     queryFn: async () => {
-      const res = await fetch(`/api/imports/${activeBatchId}`)
+      const res = await apiFetch(`/api/imports/${activeBatchId}`)
       if (!res.ok) return null
       return (await res.json()) as ImportBatchState
     },

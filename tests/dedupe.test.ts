@@ -46,7 +46,7 @@ describe("computeDedupe", () => {
 
   it("keeps identical same-day transactions (17x -1 € stays 17)", () => {
     const rows = Array.from({ length: 17 }, () => row({ amountCents: -100 }))
-    const result = computeDedupe(ACC_IBAN, 1, "b1", rows, new Map())
+    const result = computeDedupe(ACC_IBAN, 1, 1, "b1", rows, new Map())
     expect(result.toInsert).toHaveLength(17)
     expect(result.duplicateCount).toBe(0)
     expect(result.totalRows).toBe(17)
@@ -57,11 +57,11 @@ describe("computeDedupe", () => {
 
   it("re-import of the same file inserts nothing", () => {
     const rows = [row(), row(), row({ amountCents: -250 })]
-    const first = computeDedupe(ACC_IBAN, 1, "b1", rows, new Map())
+    const first = computeDedupe(ACC_IBAN, 1, 1, "b1", rows, new Map())
     expect(first.toInsert).toHaveLength(3)
 
     const dbState = toDbState(first.toInsert)
-    const second = computeDedupe(ACC_IBAN, 1, "b2", rows, dbState)
+    const second = computeDedupe(ACC_IBAN, 1, 1, "b2", rows, dbState)
     expect(second.toInsert).toHaveLength(0)
     expect(second.duplicateCount).toBe(3)
     expect(second.totalRows).toBe(3)
@@ -70,7 +70,7 @@ describe("computeDedupe", () => {
   it("overlapping exports insert only the surplus (multiset union)", () => {
     // DB already has 2x hash A, 1x hash B
     const existingRows = [row(), row(), row({ amountCents: -250 })]
-    const first = computeDedupe(ACC_IBAN, 1, "b1", existingRows, new Map())
+    const first = computeDedupe(ACC_IBAN, 1, 1, "b1", existingRows, new Map())
     const dbState = toDbState(first.toInsert)
 
     // new file: 3x hash A (one new), 1x hash B, 1x hash C (new)
@@ -81,7 +81,7 @@ describe("computeDedupe", () => {
       row({ amountCents: -250 }),
       row({ amountCents: -999 }),
     ]
-    const second = computeDedupe(ACC_IBAN, 1, "b2", newFile, dbState)
+    const second = computeDedupe(ACC_IBAN, 1, 1, "b2", newFile, dbState)
     expect(second.toInsert).toHaveLength(2) // 1x A surplus + 1x C
     expect(second.duplicateCount).toBe(3)
     // invariant: imported + duplicates === total
@@ -100,7 +100,7 @@ describe("computeDedupe", () => {
     // computeDedupe receives only account-1 state, so this row inserts.
     const hOtherAccount = "hash-of-account-2-row"
     const dbState = new Map([[hOtherAccount, new Set([0])]])
-    const result = computeDedupe(ACC_IBAN, 1, "b1", rows, dbState)
+    const result = computeDedupe(ACC_IBAN, 1, 1, "b1", rows, dbState)
     expect(result.toInsert).toHaveLength(1)
     expect(result.duplicateCount).toBe(0)
   })
@@ -109,10 +109,10 @@ describe("computeDedupe", () => {
     // DB holds this account's hash with occurrences {0, 2}; incoming 2 rows
     // → both are duplicates (count-based, not slot-based)
     const rows = [row(), row()]
-    const first = computeDedupe(ACC_IBAN, 1, "b1", rows, new Map())
+    const first = computeDedupe(ACC_IBAN, 1, 1, "b1", rows, new Map())
     const h = first.toInsert[0].sourceHash
     const dbState = new Map([[h, new Set([0, 1, 5])]]) // 3 existing
-    const result = computeDedupe(ACC_IBAN, 1, "b1", rows, dbState)
+    const result = computeDedupe(ACC_IBAN, 1, 1, "b1", rows, dbState)
     expect(result.toInsert).toHaveLength(0)
     expect(result.duplicateCount).toBe(2)
   })

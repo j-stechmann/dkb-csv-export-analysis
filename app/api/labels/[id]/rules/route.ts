@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories, labelRules } from "@/lib/db/schema"
+import { requireSession, unauthorized } from "@/lib/auth/guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireSession(request)
+  if (!session) return unauthorized()
   const { id } = await params
   const labelId = Number.parseInt(id, 10)
   if (!Number.isInteger(labelId)) {
@@ -20,7 +23,7 @@ export async function GET(
   const label = db
     .select({ id: categories.id })
     .from(categories)
-    .where(eq(categories.id, labelId))
+    .where(and(eq(categories.id, labelId), eq(categories.userId, session.uid)))
     .get()
   if (!label) {
     return NextResponse.json({ error: "not_found" }, { status: 404 })

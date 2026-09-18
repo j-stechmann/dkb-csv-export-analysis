@@ -1,9 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { useActiveImport } from "@/components/active-import-provider"
+import { apiFetch } from "@/lib/api-fetch"
 
 interface DragDropContextValue {
   isDragging: boolean
@@ -39,7 +39,7 @@ export function DragDropProvider({ children }: { children: React.ReactNode }) {
       try {
         const body = new FormData()
         body.append("file", file)
-        const res = await fetch("/api/imports", { method: "POST", body })
+        const res = await apiFetch("/api/imports", { method: "POST", body })
         const data = (await res.json()) as {
           batchId?: string
           error?: string

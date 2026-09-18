@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
 import { eq } from "drizzle-orm"
-import { createTestDb, setTestDb, type Db } from "@/lib/db"
+import type { Db } from "@/lib/db"
 import { accounts, importBatches, transactions } from "@/lib/db/schema"
 import {
   startImport,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/import/pipeline"
 import { tick } from "@/lib/labeller/worker"
 import { completeDrainedBatches, markRowsFailed } from "@/lib/labeller/service"
+import { setupTestDb } from "./helpers"
 
 const ACC_IBAN = "DE02120300000000202051"
 const ACC_NAME = "Girokonto"
@@ -29,6 +30,7 @@ const CSV_ALL_PENDING = CSV_OK.replace(
 )
 
 let db: Db
+let userId: number
 let accountId: number
 let batchCounter = 0
 
@@ -36,7 +38,7 @@ function seedBatch(status = "labeling"): string {
   batchCounter++
   const id = `b${batchCounter}`
   db.insert(importBatches)
-    .values({ id, fileName: `${id}.csv`, accountId, status })
+    .values({ id, userId, fileName: `${id}.csv`, accountId, status })
     .run()
   return id
 }
@@ -53,6 +55,7 @@ function seedTx(
   db.insert(transactions)
     .values({
       id,
+      userId,
       accountId,
       batchId,
       bookingDate: "2026-02-03",
@@ -85,11 +88,10 @@ function stubFetch(handler: (url: string, body: unknown) => Response) {
 }
 
 beforeEach(() => {
-  db = createTestDb()
-  setTestDb(db)
+  ;({ db, userId } = setupTestDb())
   accountId = db
     .insert(accounts)
-    .values({ iban: ACC_IBAN, name: ACC_NAME })
+    .values({ userId, iban: ACC_IBAN, name: ACC_NAME })
     .returning()
     .get().id
   const g = globalThis as unknown as {
@@ -113,7 +115,7 @@ describe("startImport job-state handshake", () => {
       stubFetch(() => new Response("{}", { status: 200 }))
     )
 
-    const { batchId } = startImport("a.csv", CSV_OK)
+    const { batchId } = startImport("a.csv", CSV_OK, userId)
 
     // job runs synchronously; flag was set before it started and must be
     // cleared again once the promise chain settles
@@ -126,7 +128,7 @@ describe("startImport job-state handshake", () => {
 
     // second import must NOT hit the 409 path; its rows dedupe away, so it
     // completes immediately instead of entering labeling
-    const second = startImport("b.csv", CSV_OK)
+    const second = startImport("b.csv", CSV_OK, userId)
     expect(getBatch(second.batchId)!.status).toBe("completed")
     await flush()
     expect(isImportRunning()).toBe(false)
@@ -135,7 +137,7 @@ describe("startImport job-state handshake", () => {
   it("resets the running flag after a failed job", async () => {
     const badCsv = CSV_OK.replace("05.01.24;05.01.24;Gebucht", "05.01.24")
 
-    const { batchId } = startImport("bad.csv", badCsv)
+    const { batchId } = startImport("bad.csv", badCsv, userId)
 
     await flush()
     expect(getBatch(batchId)!.status).toBe("failed")
@@ -150,7 +152,7 @@ describe("startImport job-state handshake", () => {
     }
     if (g.__dkbImportJob) g.__dkbImportJob.running = true
 
-    expect(() => startImport("c.csv", CSV_OK)).toThrowError(
+    expect(() => startImport("c.csv", CSV_OK, userId)).toThrowError(
       /another import is already in progress/
     )
   })
@@ -161,7 +163,7 @@ describe("startImport job-state handshake", () => {
       stubFetch(() => new Response("{}", { status: 200 }))
     )
 
-    const { batchId } = startImport("pending.csv", CSV_ALL_PENDING)
+    const { batchId } = startImport("pending.csv", CSV_ALL_PENDING, userId)
 
     await flush()
     const batch = getBatch(batchId)!
@@ -176,7 +178,7 @@ describe("startImport job-state handshake", () => {
       stubFetch(() => new Response("{}", { status: 200 }))
     )
 
-    const { batchId } = startImport("a.csv", CSV_OK)
+    const { batchId } = startImport("a.csv", CSV_OK, userId)
     await flush()
     const other = seedBatch("importing")
     const labeling = seedBatch("labeling")
@@ -292,7 +294,7 @@ describe("resetFailedLabels revives capped rows", () => {
     })
     seedTx(batchId, { labelStatus: "failed", labelAttempts: 2 })
 
-    const revived = resetFailedLabels(5)
+    const revived = resetFailedLabels(5, userId)
 
     expect(revived).toBe(2)
     expect(getTx(cappedFailed)!.labelStatus).toBe("pending")
@@ -308,7 +310,7 @@ describe("resetFailedLabels revives capped rows", () => {
       labelAttempts: 2,
     })
 
-    expect(resetFailedLabels(5)).toBe(0)
+    expect(resetFailedLabels(5, userId)).toBe(0)
     expect(getTx(belowCap)!.labelStatus).toBe("failed")
     expect(getTx(belowCap)!.labelAttempts).toBe(2)
   })

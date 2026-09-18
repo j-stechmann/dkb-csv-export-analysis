@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { eq, sql } from "drizzle-orm"
-import { createTestDb, setTestDb, type Db } from "@/lib/db"
+import type { Db } from "@/lib/db"
+import { setupTestDb } from "./helpers"
 import { accounts, importBatches, transactions } from "@/lib/db/schema"
 import { computeDedupe } from "@/lib/db/dedupe"
 import { runReconcileAndDedupeStage } from "@/lib/import/pipeline"
@@ -30,10 +31,18 @@ function row(
 }
 
 let db: Db
+let userId: number
 let accountId: number
 
 function seedDbRow(batchId: string, t: ParsedTransactionRow): string {
-  const first = computeDedupe(ACC_IBAN, accountId, batchId, [t], new Map())
+  const first = computeDedupe(
+    ACC_IBAN,
+    userId,
+    accountId,
+    batchId,
+    [t],
+    new Map()
+  )
   expect(first.duplicateCount).toBe(0)
   db.transaction((tx) => {
     for (const ins of first.toInsert) {
@@ -47,6 +56,7 @@ function startBatch(batchId: string): string {
   db.insert(importBatches)
     .values({
       id: batchId,
+      userId,
       fileName: `${batchId}.csv`,
       accountId,
       status: "importing",
@@ -57,11 +67,10 @@ function startBatch(batchId: string): string {
 }
 
 beforeEach(() => {
-  db = createTestDb()
-  setTestDb(db)
+  ;({ db, userId } = setupTestDb())
   accountId = db
     .insert(accounts)
-    .values({ iban: ACC_IBAN, name: ACC_NAME })
+    .values({ userId, iban: ACC_IBAN, name: ACC_NAME })
     .returning()
     .get().id
 })
@@ -82,9 +91,13 @@ describe("import fuzzy reconciliation stages", () => {
       purpose: "Einkauf REWE",
     })
 
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
-      booked,
-    ])
+    const res = runReconcileAndDedupeStage(
+      ACC_IBAN,
+      userId,
+      accountId,
+      batch2,
+      [booked]
+    )
 
     expect(res.updatedCount).toBe(1)
     expect(res.insertedCount).toBe(0)
@@ -132,9 +145,13 @@ describe("import fuzzy reconciliation stages", () => {
       bookingDate: "2026-02-03",
     })
 
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
-      pending,
-    ])
+    const res = runReconcileAndDedupeStage(
+      ACC_IBAN,
+      userId,
+      accountId,
+      batch2,
+      [pending]
+    )
 
     expect(res.skippedCount).toBe(1)
     expect(res.insertedCount).toBe(0)
@@ -157,9 +174,13 @@ describe("import fuzzy reconciliation stages", () => {
       bookingDate: "2026-02-02",
     })
 
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
-      pending,
-    ])
+    const res = runReconcileAndDedupeStage(
+      ACC_IBAN,
+      userId,
+      accountId,
+      batch2,
+      [pending]
+    )
 
     expect(res.updatedCount).toBe(1)
     const updated = db
@@ -183,7 +204,13 @@ describe("import fuzzy reconciliation stages", () => {
       bookingDate: "2026-02-03",
     })
 
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [same])
+    const res = runReconcileAndDedupeStage(
+      ACC_IBAN,
+      userId,
+      accountId,
+      batch2,
+      [same]
+    )
 
     expect(res.duplicateCount).toBe(1)
     expect(res.updatedCount).toBe(0)
@@ -202,7 +229,13 @@ describe("import fuzzy reconciliation stages", () => {
     seedDbRow(batch1, row({ status: "Gebucht", bookingDate: "2026-02-03" }))
 
     const batch2 = startBatch("b2")
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [])
+    const res = runReconcileAndDedupeStage(
+      ACC_IBAN,
+      userId,
+      accountId,
+      batch2,
+      []
+    )
 
     expect(res.deletedCount).toBe(1)
     const all = db.select().from(transactions).all()
@@ -222,20 +255,26 @@ describe("import fuzzy reconciliation stages", () => {
     )
 
     const batch2 = startBatch("b2")
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
-      row({ status: "Gebucht", bookingDate: "2026-02-03", payee: "REWE" }),
-      row({
-        status: "Nicht gebucht",
-        bookingDate: "2026-02-03",
-        payee: "REWE",
-      }),
-      row({
-        status: "Gebucht",
-        bookingDate: "2026-02-05",
-        payee: "ALDI",
-        counterpartyIban: "DE02100100123456789002",
-      }),
-    ])
+    const res = runReconcileAndDedupeStage(
+      ACC_IBAN,
+      userId,
+      accountId,
+      batch2,
+      [
+        row({ status: "Gebucht", bookingDate: "2026-02-03", payee: "REWE" }),
+        row({
+          status: "Nicht gebucht",
+          bookingDate: "2026-02-03",
+          payee: "REWE",
+        }),
+        row({
+          status: "Gebucht",
+          bookingDate: "2026-02-05",
+          payee: "ALDI",
+          counterpartyIban: "DE02100100123456789002",
+        }),
+      ]
+    )
 
     expect(res.updatedCount).toBe(1)
     // the pending copy is caught by the exact tier (old pending hash of the
@@ -267,14 +306,18 @@ describe("import fuzzy reconciliation stages", () => {
     )
 
     const batch2 = startBatch("b2")
-    runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
+    runReconcileAndDedupeStage(ACC_IBAN, userId, accountId, batch2, [
       row({ status: "Gebucht", bookingDate: "2026-02-03" }),
     ])
 
     const batch3 = startBatch("b3")
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch3, [
-      row({ status: "Gebucht", bookingDate: "2026-02-03" }),
-    ])
+    const res = runReconcileAndDedupeStage(
+      ACC_IBAN,
+      userId,
+      accountId,
+      batch3,
+      [row({ status: "Gebucht", bookingDate: "2026-02-03" })]
+    )
     expect(res.duplicateCount).toBe(1)
     expect(res.updatedCount).toBe(0)
     expect(res.insertedCount).toBe(0)
@@ -305,14 +348,20 @@ describe("booked↔booked re-render dedupe (DKB format change)", () => {
 
     // new export renders the payee as merchant-only name
     const batch2 = startBatch("b2")
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
-      row({
-        bookingDate: "2024-04-05",
-        payee: "EDEKA",
-        customerRef: REF,
-        counterpartyIban: "",
-      }),
-    ])
+    const res = runReconcileAndDedupeStage(
+      ACC_IBAN,
+      userId,
+      accountId,
+      batch2,
+      [
+        row({
+          bookingDate: "2024-04-05",
+          payee: "EDEKA",
+          customerRef: REF,
+          counterpartyIban: "",
+        }),
+      ]
+    )
 
     expect(res.insertedCount).toBe(0)
     expect(res.skippedCount).toBe(1)
@@ -353,13 +402,19 @@ describe("booked↔booked re-render dedupe (DKB format change)", () => {
 
     // any subsequent import heals the historical duplicate
     const batch3 = startBatch("b3")
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch3, [
-      row({
-        bookingDate: "2026-02-10",
-        payee: "ALDI",
-        counterpartyIban: "DE02100100123456789002",
-      }),
-    ])
+    const res = runReconcileAndDedupeStage(
+      ACC_IBAN,
+      userId,
+      accountId,
+      batch3,
+      [
+        row({
+          bookingDate: "2026-02-10",
+          payee: "ALDI",
+          counterpartyIban: "DE02100100123456789002",
+        }),
+      ]
+    )
 
     expect(res.deletedCount).toBe(1)
     const all = db.select().from(transactions).all()
@@ -384,15 +439,21 @@ describe("booked↔booked re-render dedupe (DKB format change)", () => {
       })
     )
     const batch2 = startBatch("b2")
-    const res = runReconcileAndDedupeStage(ACC_IBAN, accountId, batch2, [
-      row({
-        bookingDate: "2024-04-05",
-        payee: "EDEKA",
-        amountCents: -100,
-        customerRef: "ref-B",
-        counterpartyIban: "",
-      }),
-    ])
+    const res = runReconcileAndDedupeStage(
+      ACC_IBAN,
+      userId,
+      accountId,
+      batch2,
+      [
+        row({
+          bookingDate: "2024-04-05",
+          payee: "EDEKA",
+          amountCents: -100,
+          customerRef: "ref-B",
+          counterpartyIban: "",
+        }),
+      ]
+    )
     expect(res.insertedCount).toBe(1)
     expect(db.select().from(transactions).all()).toHaveLength(2)
   })

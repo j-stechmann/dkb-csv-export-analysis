@@ -10,6 +10,7 @@ export interface RulePartyInput {
 }
 
 export interface LearnedRuleInput extends RulePartyInput {
+  userId: number
   labelId: number
 }
 
@@ -35,10 +36,15 @@ export function isUsableRuleKey(input: {
 
 /**
  * Looks up suggestions for one transaction: the rule whose (payer, payee,
- * counterpartyIban) triple matches exactly. The unique index allows at most
- * one rule per triple, so the result is that rule's label or nothing.
+ * counterpartyIban) triple matches exactly, scoped to the row's owner.
+ * The unique index allows at most one rule per (user, triple), so the
+ * result is that rule's label or nothing.
  */
-export function suggestLabelIds(db: Db, input: RulePartyInput): number[] {
+export function suggestLabelIds(
+  db: Db,
+  userId: number,
+  input: RulePartyInput
+): number[] {
   if (!isUsableRuleKey(input)) return []
 
   const row = db
@@ -46,6 +52,7 @@ export function suggestLabelIds(db: Db, input: RulePartyInput): number[] {
     .from(labelRules)
     .where(
       and(
+        eq(labelRules.userId, userId),
         eq(labelRules.payer, input.payer),
         eq(labelRules.payee, input.payee),
         eq(labelRules.counterpartyIban, input.counterpartyIban)
@@ -57,9 +64,9 @@ export function suggestLabelIds(db: Db, input: RulePartyInput): number[] {
 
 /**
  * Upserts a learned rule (manual assignment path): keyed on
- * (payer, payee, counterpartyIban). Re-learning the same triple for a new
- * label replaces the rule (newest wins). Returns the rule id, or null when
- * the transaction lacks payer, payee or counterparty IBAN.
+ * (userId, payer, payee, counterpartyIban). Re-learning the same triple for
+ * a new label replaces the rule (newest wins). Returns the rule id, or null
+ * when the transaction lacks payer, payee or counterparty IBAN.
  */
 export function learnRule(
   tx: Db | DbTx,
@@ -73,6 +80,7 @@ export function learnRule(
     .from(labelRules)
     .where(
       and(
+        eq(labelRules.userId, input.userId),
         eq(labelRules.payer, input.payer),
         eq(labelRules.payee, input.payee),
         eq(labelRules.counterpartyIban, input.counterpartyIban)
@@ -89,6 +97,7 @@ export function learnRule(
   const inserted = tx
     .insert(labelRules)
     .values({
+      userId: input.userId,
       labelId: input.labelId,
       payer: input.payer,
       payee: input.payee,
@@ -105,6 +114,7 @@ export function learnRule(
     .from(labelRules)
     .where(
       and(
+        eq(labelRules.userId, input.userId),
         eq(labelRules.payer, input.payer),
         eq(labelRules.payee, input.payee),
         eq(labelRules.counterpartyIban, input.counterpartyIban)
@@ -115,11 +125,13 @@ export function learnRule(
 }
 
 /**
- * Batch suggestion lookup: resolves label ids per transaction index.
- * Each distinct (payer, payee, counterpartyIban) triple is queried once,
- * then mapped back to every transaction sharing it.
+ * Batch suggestion lookup for one user's claimed rows: resolves label ids
+ * per transaction index. Each distinct (payer, payee, counterpartyIban)
+ * triple is queried once, then mapped back to every transaction sharing it.
+ * All inputs belong to a single user (claim batches are user-scoped).
  */
 export function suggestForBatch(
+  userId: number,
   inputs: RulePartyInput[]
 ): Map<number, number[]> {
   const db = getDb()
@@ -138,7 +150,7 @@ export function suggestForBatch(
     ])
     let ids = byTriple.get(key)
     if (!ids) {
-      ids = suggestLabelIds(db, input)
+      ids = suggestLabelIds(db, userId, input)
       byTriple.set(key, ids)
     }
     result.set(i, ids)

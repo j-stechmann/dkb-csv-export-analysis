@@ -6,6 +6,7 @@ import Database from "better-sqlite3"
 import * as schema from "@/lib/db/schema"
 import { getDb, resetDefaultDbForTest, type Db } from "@/lib/db"
 import { resetConfigCache } from "@/lib/config"
+import { seedUser } from "./helpers"
 import { resolveAndUseCategory } from "@/lib/labeller/service"
 import { eq } from "drizzle-orm"
 
@@ -115,14 +116,16 @@ describe("file DB migration: color column backfill", () => {
 
     withFileDbPath(dbPath, () => {
       db = getDb()
-      // backfilled colors exist, are unique, and the new-label path works
+      const userId = seedUser(db)
+      // pre-user tables are dropped and recreated empty (multi-user fresh
+      // start, ADR-0032): legacy categories A/B/C do not survive
       const cats = db.select().from(schema.categories).all()
-      const colors = cats.map((c) => c.color)
-      expect(colors).not.toContain(null)
-      expect(new Set(colors).size).toBe(colors.length)
+      expect(cats).toHaveLength(0)
 
       // new categories get a color via the allocation choke point
-      const newId = db.transaction((tx) => resolveAndUseCategory(tx, "D"))
+      const newId = db.transaction((tx) =>
+        resolveAndUseCategory(tx, userId, "D")
+      )
       expect(newId).not.toBeNull()
       const inserted = db
         .select()
@@ -130,7 +133,16 @@ describe("file DB migration: color column backfill", () => {
         .where(eq(schema.categories.id, newId!))
         .get()
       expect(inserted?.color).not.toBeNull()
-      expect(colors).not.toContain(inserted?.color)
+      // allocation excludes colors already in use (the palette head is in
+      // use by the first "D" allocation in a fresh table? no — table is
+      // empty, so resolveAndUseCategory picked the palette head itself;
+      // a second allocation must differ from it)
+      const allColors = db
+        .select()
+        .from(schema.categories)
+        .all()
+        .map((c) => c.color)
+      expect(new Set(allColors).size).toBe(allColors.length)
     })
 
     const raw = rawConnection()
@@ -143,14 +155,15 @@ describe("file DB migration: color column backfill", () => {
         raw.pragma(`index_list(categories)`) as { name: string }[]
       ).map((i) => i.name)
       expect(indexes).toContain("categories_color_unique")
-      // backfill order is deterministic (id ASC → curated palette first)
+      // deterministic allocation on the recreated table: the single
+      // category carries a non-null color from the curated palette
       const ids = raw
         .prepare<[], { id: number; color: string | null }>(
           `SELECT id, color FROM categories ORDER BY id ASC`
         )
         .all()
-      expect(ids[0].color).not.toBe(ids[1].color)
-      expect(ids[1].color).not.toBe(ids[2].color)
+      expect(ids.length).toBe(1)
+      expect(ids[0].color).not.toBeNull()
     } finally {
       raw.close()
     }
@@ -162,8 +175,10 @@ describe("file DB migration: color column backfill", () => {
 
     withFileDbPath(dbPath, () => {
       db = getDb()
+      const userId = seedUser(db)
       db.insert(schema.categories)
         .values({
+          userId,
           name: "A",
           nameKey: "a",
           language: "de",
@@ -176,6 +191,7 @@ describe("file DB migration: color column backfill", () => {
         db!
           .insert(schema.categories)
           .values({
+            userId,
             name: "B",
             nameKey: "b",
             language: "de",
@@ -232,8 +248,10 @@ describe("file DB migration: old (iban, name_key) label_rules shape", () => {
 
     withFileDbPath(dbPath, () => {
       db = getDb()
+      const userId = seedUser(db)
       db.insert(schema.categories)
         .values({
+          userId,
           name: "Groceries",
           nameKey: "groceries",
           language: "de",
@@ -242,6 +260,7 @@ describe("file DB migration: old (iban, name_key) label_rules shape", () => {
         })
         .run()
       const rule = {
+        userId,
         labelId: 1,
         payer: "P",
         payee: "Q",
@@ -275,6 +294,7 @@ describe("file DB migration: old (iban, name_key) label_rules shape", () => {
         .all()
         .map((r) => r.name)
       for (const expected of [
+        "users",
         "accounts",
         "import_batches",
         "categories",

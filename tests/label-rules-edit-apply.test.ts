@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
 import { eq } from "drizzle-orm"
 import { NextRequest } from "next/server"
-import { createTestDb, setTestDb, type Db } from "@/lib/db"
+import type { Db } from "@/lib/db"
 import {
   accounts,
   categories,
@@ -17,23 +17,27 @@ import { GET as countMatches } from "@/app/api/label-rules/[id]/matches/route"
 import { POST as applyRule } from "@/app/api/label-rules/[id]/apply/route"
 import { findRuleMatches } from "@/lib/labeller/service"
 import { computeLabelCounters } from "@/lib/import/counters"
+import { authedRequest, setupTestDb } from "./helpers"
 
 const ACC_IBAN = "DE02120300000000202051"
 const PAYER = "Max Mustermann"
 const PAYEE = "Vermieter GmbH"
 
 let db: Db
+let userId: number
 let accountId: number
 let batchCounter = 0
 
-function jsonReq(url: string, body: unknown, method = "PATCH"): NextRequest {
-  return new NextRequest(
-    new Request(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-  )
+async function jsonReq(
+  url: string,
+  body: unknown,
+  method = "PATCH"
+): Promise<NextRequest> {
+  return authedRequest(url, userId, { method, body })
+}
+
+async function plainReq(url: string, method = "GET"): Promise<NextRequest> {
+  return authedRequest(url, userId, { method })
 }
 
 function ruleParams(id: number | string) {
@@ -44,6 +48,7 @@ function seedLabel(name: string, nameKey?: string): number {
   return db
     .insert(categories)
     .values({
+      userId,
       name,
       nameKey: nameKey ?? name.toLowerCase(),
       language: "de",
@@ -64,6 +69,7 @@ function seedRule(
   return db
     .insert(labelRules)
     .values({
+      userId,
       labelId,
       payer: PAYER,
       payee: PAYEE,
@@ -80,7 +86,7 @@ function seedBatch(status = "labeling"): string {
   batchCounter++
   const id = `b${batchCounter}`
   db.insert(importBatches)
-    .values({ id, fileName: `${id}.csv`, accountId, status })
+    .values({ id, userId, fileName: `${id}.csv`, accountId, status })
     .run()
   return id
 }
@@ -101,6 +107,7 @@ function seedTx(
   db.insert(transactions)
     .values({
       id,
+      userId,
       accountId,
       batchId,
       bookingDate: "2026-02-03",
@@ -128,11 +135,10 @@ function getBatch(id: string) {
 }
 
 beforeEach(() => {
-  db = createTestDb()
-  setTestDb(db)
+  ;({ db, userId } = setupTestDb())
   accountId = db
     .insert(accounts)
-    .values({ iban: ACC_IBAN, name: "Girokonto" })
+    .values({ userId, iban: ACC_IBAN, name: "Girokonto" })
     .returning()
     .get().id
 })
@@ -144,7 +150,7 @@ describe("PATCH /api/label-rules/[id]", () => {
     const ruleId = seedRule(labelA)
 
     const out = await patchRule(
-      jsonReq(`http://test/api/label-rules/${ruleId}`, {
+      await jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId: labelB,
         payer: " Stadtwerke AG ",
         payee: "Max Mustermann",
@@ -166,7 +172,7 @@ describe("PATCH /api/label-rules/[id]", () => {
     const ruleId = seedRule(labelId)
 
     const out = await patchRule(
-      jsonReq(`http://test/api/label-rules/${ruleId}`, {
+      await jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId,
         payer: PAYER,
         payee: PAYEE,
@@ -180,7 +186,7 @@ describe("PATCH /api/label-rules/[id]", () => {
 
   it("rejects an unknown rule with 404", async () => {
     const out = await patchRule(
-      jsonReq("http://test/api/label-rules/999", {
+      await jsonReq("http://test/api/label-rules/999", {
         labelId: 1,
         payer: PAYER,
         payee: PAYEE,
@@ -196,7 +202,7 @@ describe("PATCH /api/label-rules/[id]", () => {
     const ruleId = seedRule(labelId)
 
     const out = await patchRule(
-      jsonReq(`http://test/api/label-rules/${ruleId}`, {
+      await jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId: 999,
         payer: PAYER,
         payee: PAYEE,
@@ -220,7 +226,7 @@ describe("PATCH /api/label-rules/[id]", () => {
       { labelId, payer: PAYER, payee: PAYEE, counterpartyIban: "   " },
     ]) {
       const out = await patchRule(
-        jsonReq(`http://test/api/label-rules/${ruleId}`, body),
+        await jsonReq(`http://test/api/label-rules/${ruleId}`, body),
         ruleParams(ruleId)
       )
       expect(out.status).toBe(400)
@@ -234,7 +240,7 @@ describe("PATCH /api/label-rules/[id]", () => {
     const ruleId = seedRule(labelId)
 
     const out = await patchRule(
-      jsonReq(`http://test/api/label-rules/${ruleId}`, {
+      await jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId,
         payer: PAYER,
         payee: "Other Payee",
@@ -262,7 +268,7 @@ describe("PATCH /api/label-rules/[id]", () => {
     )
 
     const out = await patchRule(
-      jsonReq(`http://test/api/label-rules/${ruleId}`, {
+      await jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId,
         payer: PAYER,
         payee: "Other Payee",
@@ -275,7 +281,7 @@ describe("PATCH /api/label-rules/[id]", () => {
 
   it("rejects a malformed body with 400", async () => {
     const out = await patchRule(
-      jsonReq("http://test/api/label-rules/1", {
+      await jsonReq("http://test/api/label-rules/1", {
         payer: PAYER,
         payee: PAYEE,
       }),
@@ -288,7 +294,7 @@ describe("PATCH /api/label-rules/[id]", () => {
 
   it("rejects an invalid id with 400", async () => {
     const out = await patchRule(
-      jsonReq("http://test/api/label-rules/abc", {
+      await jsonReq("http://test/api/label-rules/abc", {
         labelId: 1,
         payer: PAYER,
         payee: PAYEE,
@@ -309,7 +315,7 @@ describe("findRuleMatches", () => {
     // no normalization: a space-padded IBAN rendering is a different value
     seedTx(null, { counterpartyIban: " DE02120300000000202051 " })
 
-    const matches = findRuleMatches(db, PAYER, PAYEE, ACC_IBAN)
+    const matches = findRuleMatches(db, userId, PAYER, PAYEE, ACC_IBAN)
     expect(matches.map((m) => m.id)).toEqual([a])
   })
 
@@ -325,10 +331,10 @@ describe("findRuleMatches", () => {
     const other = seedTx(null, { categoryId: otherLabel })
     const fresh = seedTx(null)
 
-    const matches = findRuleMatches(db, PAYER, PAYEE, ACC_IBAN, labelId)
+    const matches = findRuleMatches(db, userId, PAYER, PAYEE, ACC_IBAN, labelId)
     expect(matches.map((m) => m.id).sort()).toEqual([fresh, other].sort())
     // without exclusion, all five rows match
-    expect(findRuleMatches(db, PAYER, PAYEE, ACC_IBAN)).toHaveLength(5)
+    expect(findRuleMatches(db, userId, PAYER, PAYEE, ACC_IBAN)).toHaveLength(5)
   })
 })
 
@@ -342,9 +348,7 @@ describe("GET /api/label-rules/[id]/matches", () => {
     seedTx(null, { payee: "Other Payee" })
 
     const res = await countMatches(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}/matches`)
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}/matches`),
       ruleParams(ruleId)
     )
     expect(res.status).toBe(200)
@@ -359,9 +363,7 @@ describe("GET /api/label-rules/[id]/matches", () => {
     seedTx(null, { categoryId: labelId, labelStatus: "pending" })
 
     const res = await countMatches(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}/matches`)
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}/matches`),
       ruleParams(ruleId)
     )
     const data = (await res.json()) as { count: number }
@@ -370,7 +372,7 @@ describe("GET /api/label-rules/[id]/matches", () => {
 
   it("returns 404 for unknown rules", async () => {
     const res = await countMatches(
-      new NextRequest(new Request("http://x/api/label-rules/999/matches")),
+      await plainReq("http://x/api/label-rules/999/matches"),
       ruleParams(999)
     )
     expect(res.status).toBe(404)
@@ -391,11 +393,7 @@ describe("POST /api/label-rules/[id]/apply", () => {
     seedTx(batchId, { counterpartyIban: null, labelStatus: "labeled" })
 
     const out = await applyRule(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}/apply`, {
-          method: "POST",
-        })
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}/apply`, "POST"),
       ruleParams(ruleId)
     )
     expect(out.status).toBe(200)
@@ -439,11 +437,7 @@ describe("POST /api/label-rules/[id]/apply", () => {
     const f = seedTx(failedId, { labelStatus: "labeled", categoryId: labelOld })
 
     const out = await applyRule(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}/apply`, {
-          method: "POST",
-        })
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}/apply`, "POST"),
       ruleParams(ruleId)
     )
     expect(out.status).toBe(200)
@@ -474,11 +468,7 @@ describe("POST /api/label-rules/[id]/apply", () => {
     seedTx(failedId, { labelStatus: "labeled", labelAttempts: 5 })
 
     await applyRule(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}/apply`, {
-          method: "POST",
-        })
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}/apply`, "POST"),
       ruleParams(ruleId)
     )
 
@@ -491,9 +481,7 @@ describe("POST /api/label-rules/[id]/apply", () => {
 
   it("returns 404 for unknown rules", async () => {
     const out = await applyRule(
-      new NextRequest(
-        new Request("http://x/api/label-rules/999/apply", { method: "POST" })
-      ),
+      await plainReq("http://x/api/label-rules/999/apply", "POST"),
       ruleParams(999)
     )
     expect(out.status).toBe(404)
@@ -509,11 +497,7 @@ describe("POST /api/label-rules/[id]/apply", () => {
     })
 
     const out = await applyRule(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}/apply`, {
-          method: "POST",
-        })
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}/apply`, "POST"),
       ruleParams(ruleId)
     )
     expect(out.status).toBe(200)
@@ -540,11 +524,7 @@ describe("POST /api/label-rules/[id]/apply", () => {
     db.run("PRAGMA foreign_keys = ON")
 
     const out = await applyRule(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}/apply`, {
-          method: "POST",
-        })
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}/apply`, "POST"),
       ruleParams(ruleId)
     )
     expect(out.status).toBe(404)
@@ -568,11 +548,7 @@ describe("rule apply integrates with the worker", () => {
     seedTx(null, { labelStatus: "labeled" })
 
     await applyRule(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}/apply`, {
-          method: "POST",
-        })
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}/apply`, "POST"),
       ruleParams(ruleId)
     )
 
@@ -582,7 +558,7 @@ describe("rule apply integrates with the worker", () => {
 
     // rule suggestions resolve from the (unchanged) rule
     const { suggestLabelIds } = await import("@/lib/labels/matching")
-    const suggested = suggestLabelIds(db, {
+    const suggested = suggestLabelIds(db, userId, {
       payer: claimed[0].payer!,
       payee: claimed[0].payee!,
       counterpartyIban: claimed[0].counterpartyIban,
@@ -605,7 +581,7 @@ describe("PATCH + apply round-trip", () => {
     })
 
     const patched = await patchRule(
-      jsonReq(`http://test/api/label-rules/${ruleId}`, {
+      await jsonReq(`http://test/api/label-rules/${ruleId}`, {
         labelId: labelB,
         payer: otherPayer,
         payee: PAYER,
@@ -616,20 +592,14 @@ describe("PATCH + apply round-trip", () => {
     expect(patched.status).toBe(200)
 
     const res = await countMatches(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}/matches`)
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}/matches`),
       ruleParams(ruleId)
     )
     const data = (await res.json()) as { count: number }
     expect(data.count).toBe(1)
 
     const out = await applyRule(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}/apply`, {
-          method: "POST",
-        })
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}/apply`, "POST"),
       ruleParams(ruleId)
     )
     const applied = (await out.json()) as { applied: number }
@@ -647,9 +617,7 @@ describe("DELETE /api/label-rules/[id] (regression)", () => {
     const ruleId = seedRule(labelId)
 
     const out = await deleteRule(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}`, { method: "DELETE" })
-      ),
+      await plainReq(`http://x/api/label-rules/${ruleId}`, "DELETE"),
       ruleParams(ruleId)
     )
     expect(out.status).toBe(200)

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
 import { eq } from "drizzle-orm"
-import { createTestDb, setTestDb, type Db } from "@/lib/db"
+import type { Db } from "@/lib/db"
 import {
   accounts,
   categories,
@@ -12,12 +12,15 @@ import { claimLabelRows, isWorkerTicking, tick } from "@/lib/labeller/worker"
 import { computeLabelCounters } from "@/lib/import/counters"
 import { applyLabelResults, markRowsFailed } from "@/lib/labeller/service"
 import { resetFailedLabels } from "@/lib/import/pipeline"
-import { getConfig } from "@/lib/config"
+import { getConfig, resetConfigCache } from "@/lib/config"
+import { resetWorkerConfigFailureForTest } from "@/lib/labeller/worker"
+import { setupTestDb } from "./helpers"
 
 const ACC_IBAN = "DE02120300000000202051"
 const ACC_NAME = "Girokonto"
 
 let db: Db
+let userId: number
 let accountId: number
 let batchCounter = 0
 
@@ -25,7 +28,7 @@ function seedBatch(status = "labeling"): string {
   batchCounter++
   const id = `b${batchCounter}`
   db.insert(importBatches)
-    .values({ id, fileName: `${id}.csv`, accountId, status })
+    .values({ id, userId, fileName: `${id}.csv`, accountId, status })
     .run()
   return id
 }
@@ -45,6 +48,7 @@ function seedTx(
   db.insert(transactions)
     .values({
       id,
+      userId,
       accountId,
       batchId,
       bookingDate: "2026-02-03",
@@ -72,13 +76,14 @@ function getBatch(id: string) {
 }
 
 beforeEach(() => {
-  db = createTestDb()
-  setTestDb(db)
+  ;({ db, userId } = setupTestDb())
   accountId = db
     .insert(accounts)
-    .values({ iban: ACC_IBAN, name: ACC_NAME })
+    .values({ userId, iban: ACC_IBAN, name: ACC_NAME })
     .returning()
     .get().id
+  resetWorkerConfigFailureForTest()
+  resetConfigCache()
 })
 
 describe("claimLabelRows", () => {
@@ -225,6 +230,7 @@ describe("tick", () => {
     const cat = db
       .insert(categories)
       .values({
+        userId,
         name: "Miete",
         nameKey: "miete",
         language: "de",
@@ -234,6 +240,7 @@ describe("tick", () => {
       .get()
     db.insert(labelRules)
       .values({
+        userId,
         labelId: cat.id,
         payer: "Max Mustermann",
         payee: "REWE",
@@ -461,7 +468,7 @@ describe("retry requeue", () => {
     // below the cap: worker self-heals these, retry leaves them alone
     seedTx(batchId, { labelStatus: "failed", labelAttempts: 2 })
 
-    const queued = resetFailedLabels(5)
+    const queued = resetFailedLabels(5, userId)
 
     expect(queued).toBe(2)
     expect(getTx(capped)!.labelStatus).toBe("pending")
@@ -477,7 +484,7 @@ describe("retry requeue", () => {
       labelAttempts: 2,
     })
 
-    expect(resetFailedLabels(5)).toBe(0)
+    expect(resetFailedLabels(5, userId)).toBe(0)
     expect(getTx(belowCap)!.labelStatus).toBe("failed")
   })
 })

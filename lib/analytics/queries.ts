@@ -77,8 +77,11 @@ function escapeLike(s: string): string {
   return s.replace(/([\\%_])/g, "\\$1")
 }
 
-export function buildWhere(f: TransactionFilters): SQL | undefined {
-  const conditions: SQL[] = []
+export function buildWhere(
+  f: TransactionFilters,
+  userId: number
+): SQL | undefined {
+  const conditions: SQL[] = [eq(transactions.userId, userId)]
   if (f.status !== "all") {
     conditions.push(eq(transactions.status, f.status ?? "Gebucht"))
   }
@@ -142,11 +145,12 @@ export interface TransactionPage {
 
 export function queryTransactions(
   f: TransactionFilters,
+  userId: number,
   page: number,
   pageSize: number
 ): TransactionPage {
   const db = getDb()
-  const where = buildWhere(f)
+  const where = buildWhere(f, userId)
 
   const total =
     db

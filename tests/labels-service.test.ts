@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { eq } from "drizzle-orm"
-import { createTestDb, setTestDb, type Db } from "@/lib/db"
+import type { Db } from "@/lib/db"
 import {
   accounts,
   categories,
@@ -19,10 +19,12 @@ import {
   resolveAndUseCategory,
 } from "@/lib/labeller/service"
 import { learnRule } from "@/lib/labels/matching"
+import { setupTestDb } from "./helpers"
 
 const IBAN = "DE02120300000000202051"
 
 let db: Db
+let userId: number
 let accountId: number
 let batchCounter = 0
 
@@ -30,7 +32,7 @@ function seedBatch(status = "labeling"): string {
   batchCounter++
   const id = `b${batchCounter}`
   db.insert(importBatches)
-    .values({ id, fileName: `${id}.csv`, accountId, status })
+    .values({ id, userId, fileName: `${id}.csv`, accountId, status })
     .run()
   return id
 }
@@ -48,6 +50,7 @@ function seedTx(
   db.insert(transactions)
     .values({
       id,
+      userId,
       accountId,
       batchId,
       bookingDate: "2026-02-03",
@@ -74,11 +77,10 @@ function getBatch(id: string) {
 }
 
 beforeEach(() => {
-  db = createTestDb()
-  setTestDb(db)
+  ;({ db, userId } = setupTestDb())
   accountId = db
     .insert(accounts)
-    .values({ iban: IBAN, name: "Girokonto" })
+    .values({ userId, iban: IBAN, name: "Girokonto" })
     .returning()
     .get().id
 })
@@ -86,9 +88,9 @@ beforeEach(() => {
 describe("resolveAndUseCategory", () => {
   it("creates a category with origin llm and increments usage", () => {
     db.transaction((tx) => {
-      const id1 = resolveAndUseCategory(tx, "Lebensmittel")
+      const id1 = resolveAndUseCategory(tx, userId, "Lebensmittel")
       expect(id1).not.toBeNull()
-      const id2 = resolveAndUseCategory(tx, "lebensmittel ")
+      const id2 = resolveAndUseCategory(tx, userId, "lebensmittel ")
       expect(id2).toBe(id1)
     })
 
@@ -143,7 +145,7 @@ describe("resetTransactionsForLabelDeletion", () => {
 
     const catId = db
       .insert(categories)
-      .values({ name: "Alt", nameKey: "alt", language: "de" })
+      .values({ userId, name: "Alt", nameKey: "alt", language: "de" })
       .returning()
       .get().id
     db.update(transactions)
@@ -168,7 +170,7 @@ describe("resetTransactionsForLabelDeletion", () => {
 
     const catId = db
       .insert(categories)
-      .values({ name: "Alt", nameKey: "alt", language: "de" })
+      .values({ userId, name: "Alt", nameKey: "alt", language: "de" })
       .returning()
       .get().id
     db.update(transactions)
@@ -192,7 +194,7 @@ describe("resetTransactionsForLabelDeletion", () => {
 
     const catId = db
       .insert(categories)
-      .values({ name: "Alt", nameKey: "alt", language: "de" })
+      .values({ userId, name: "Alt", nameKey: "alt", language: "de" })
       .returning()
       .get().id
     db.update(transactions)
@@ -219,7 +221,7 @@ describe("resetTransactionsForLabelDeletion", () => {
 
     const catId = db
       .insert(categories)
-      .values({ name: "Alt", nameKey: "alt", language: "de" })
+      .values({ userId, name: "Alt", nameKey: "alt", language: "de" })
       .returning()
       .get().id
     db.update(transactions)
@@ -237,6 +239,7 @@ describe("resetTransactionsForLabelDeletion", () => {
         tx.insert(transactions)
           .values({
             id: "fk-blocker",
+            userId,
             accountId,
             batchId,
             bookingDate: "2026-02-03",
@@ -261,11 +264,12 @@ describe("delete cascade", () => {
   it("deleting a category cascades its rules", () => {
     const catId = db
       .insert(categories)
-      .values({ name: "X", nameKey: "x", language: "de" })
+      .values({ userId, name: "X", nameKey: "x", language: "de" })
       .returning()
       .get().id
     db.insert(labelRules)
       .values({
+        userId,
         labelId: catId,
         payer: "Max Mustermann",
         payee: "Vermieter",
@@ -286,6 +290,7 @@ describe("pruneOrphanCategories", () => {
     const unusedLlm = db
       .insert(categories)
       .values({
+        userId,
         name: "UnusedLlm",
         nameKey: "unusedllm",
         language: "de",
@@ -296,6 +301,7 @@ describe("pruneOrphanCategories", () => {
     const manual = db
       .insert(categories)
       .values({
+        userId,
         name: "Manual",
         nameKey: "manual",
         language: "de",
@@ -306,6 +312,7 @@ describe("pruneOrphanCategories", () => {
     const withRule = db
       .insert(categories)
       .values({
+        userId,
         name: "WithRule",
         nameKey: "withrule",
         language: "de",
@@ -315,6 +322,7 @@ describe("pruneOrphanCategories", () => {
       .get().id
     db.insert(labelRules)
       .values({
+        userId,
         labelId: withRule,
         payer: "Max Mustermann",
         payee: "X",
@@ -340,7 +348,7 @@ describe("learnRule inside transaction (manual assign path)", () => {
     const id = seedTx(batchId)
     const catId = db
       .insert(categories)
-      .values({ name: "Miete", nameKey: "miete", language: "de" })
+      .values({ userId, name: "Miete", nameKey: "miete", language: "de" })
       .returning()
       .get().id
 
@@ -350,6 +358,7 @@ describe("learnRule inside transaction (manual assign path)", () => {
         .where(eq(transactions.id, id))
         .run()
       const learned = learnRule(tx, {
+        userId,
         payer: "Max Mustermann",
         payee: "Vermieter GmbH",
         counterpartyIban: IBAN,
@@ -382,6 +391,7 @@ describe("markRowsFailed preserves manual labels", () => {
     const manualCat = db
       .insert(categories)
       .values({
+        userId,
         name: "Manuell",
         nameKey: "manuell",
         language: "de",

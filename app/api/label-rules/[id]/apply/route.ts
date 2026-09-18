@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { labelRules } from "@/lib/db/schema"
 import { applyRuleToTransactions } from "@/lib/labeller/service"
+import { requireSession, unauthorized } from "@/lib/auth/guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -14,9 +15,11 @@ export const dynamic = "force-dynamic"
  * invalidates any in-flight LLM claim via the attempts-snapshot guard.
  */
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireSession(request)
+  if (!session) return unauthorized()
   const { id } = await params
   const ruleId = Number.parseInt(id, 10)
   if (!Number.isInteger(ruleId)) {
@@ -27,13 +30,14 @@ export async function POST(
   const rule = db
     .select({
       id: labelRules.id,
+      userId: labelRules.userId,
       payer: labelRules.payer,
       payee: labelRules.payee,
       counterpartyIban: labelRules.counterpartyIban,
       labelId: labelRules.labelId,
     })
     .from(labelRules)
-    .where(eq(labelRules.id, ruleId))
+    .where(and(eq(labelRules.id, ruleId), eq(labelRules.userId, session.uid)))
     .get()
   if (!rule) {
     return NextResponse.json(
@@ -43,6 +47,7 @@ export async function POST(
   }
 
   const affected = applyRuleToTransactions(
+    rule.userId,
     rule.payer,
     rule.payee,
     rule.counterpartyIban,
