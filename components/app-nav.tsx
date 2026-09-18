@@ -11,6 +11,9 @@ export const NAV_ITEMS = [
   { href: "/imports", label: "Imports", icon: Upload },
 ]
 
+export const NAV_LINK_CLASS =
+  "flex items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+
 export function AppNav() {
   const pathname = usePathname()
 
@@ -22,10 +25,7 @@ export function AppNav() {
           <Link
             key={item.href}
             href={item.href}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-              active && "bg-accent text-foreground"
-            )}
+            className={cn(NAV_LINK_CLASS, "py-1.5", active && "bg-accent text-foreground")}
           >
             <item.icon className="size-4" />
             {item.label}

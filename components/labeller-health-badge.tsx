@@ -3,8 +3,22 @@
 import { useQuery } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 
+type Status = "ok" | "degraded" | "unreachable"
+
+const STATUS_TEXT: Record<Status, string> = {
+  ok: "verbunden",
+  degraded: "eingeschränkt",
+  unreachable: "nicht erreichbar",
+}
+
+const STATUS_VARIANT: Record<Status, "default" | "secondary" | "destructive"> = {
+  ok: "default",
+  degraded: "secondary",
+  unreachable: "destructive",
+}
+
 export function LabellerHealthBadge() {
-  const { data } = useQuery<{ status: "ok" | "degraded" | "unreachable" }>({
+  const { data } = useQuery<{ status: Status }>({
     queryKey: ["llm-health"],
     queryFn: async () => {
       const res = await fetch("/api/llm/health")
@@ -14,24 +28,16 @@ export function LabellerHealthBadge() {
     refetchInterval: 30_000,
   })
 
-  const status = data?.status ?? "unreachable"
-  const label =
-    status === "ok"
-      ? "LLM: verbunden"
-      : status === "degraded"
-        ? "LLM: eingeschränkt"
-        : "LLM: nicht erreichbar"
-  const labelShort = "LLM"
-  const variant =
-    status === "ok"
-      ? "default"
-      : status === "degraded"
-        ? "secondary"
-        : "destructive"
+  const status: Status =
+    data?.status === "ok" || data?.status === "degraded" ? data.status : "unreachable"
+  const label = `LLM: ${STATUS_TEXT[status]}`
+  const variant = STATUS_VARIANT[status]
 
   return (
     <Badge variant={variant} className="font-normal">
-      <span className="sm:hidden">{labelShort}</span>
+      <span className="sm:hidden">
+        LLM<span className="sr-only">: {STATUS_TEXT[status]}</span>
+      </span>
       <span className="hidden sm:inline">{label}</span>
     </Badge>
   )
