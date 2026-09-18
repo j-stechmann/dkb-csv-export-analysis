@@ -21,6 +21,7 @@ export function LabellerHealthBadge() {
       : status === "degraded"
         ? "LLM: eingeschränkt"
         : "LLM: nicht erreichbar"
+  const labelShort = "LLM"
   const variant =
     status === "ok"
       ? "default"
@@ -30,7 +31,8 @@ export function LabellerHealthBadge() {
 
   return (
     <Badge variant={variant} className="font-normal">
-      {label}
+      <span className="sm:hidden">{labelShort}</span>
+      <span className="hidden sm:inline">{label}</span>
     </Badge>
   )
 }
