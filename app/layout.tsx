@@ -1,4 +1,5 @@
 import { AppNav } from "@/components/app-nav"
+import { MobileNav } from "@/components/mobile-nav"
 import { Providers } from "@/components/providers"
 import { LabellerHealthBadge } from "@/components/labeller-health-badge"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -22,9 +23,10 @@ export default function RootLayout({
                   </span>
                   <AppNav />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <LabellerHealthBadge />
                   <ThemeToggle />
+                  <MobileNav />
                 </div>
               </div>
             </header>
