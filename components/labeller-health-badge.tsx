@@ -35,10 +35,10 @@ export function LabellerHealthBadge() {
 
   return (
     <Badge variant={variant} className="font-normal">
-      <span className="sm:hidden">
+      <span className="md:hidden">
         LLM<span className="sr-only">: {STATUS_TEXT[status]}</span>
       </span>
-      <span className="hidden sm:inline">{label}</span>
+      <span className="hidden md:inline">{label}</span>
     </Badge>
   )
 }
