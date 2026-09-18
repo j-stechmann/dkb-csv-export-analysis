@@ -25,7 +25,11 @@ export function AppNav() {
           <Link
             key={item.href}
             href={item.href}
-            className={cn(NAV_LINK_CLASS, "py-1.5", active && "bg-accent text-foreground")}
+            className={cn(
+              NAV_LINK_CLASS,
+              "py-1.5",
+              active && "bg-accent text-foreground"
+            )}
           >
             <item.icon className="size-4" />
             {item.label}

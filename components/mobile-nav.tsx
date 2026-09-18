@@ -47,7 +47,11 @@ export function MobileNav() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                className={cn(NAV_LINK_CLASS, "py-2", active && "bg-accent text-foreground")}
+                className={cn(
+                  NAV_LINK_CLASS,
+                  "py-2",
+                  active && "bg-accent text-foreground"
+                )}
               >
                 <item.icon className="size-4" />
                 {item.label}

@@ -11,11 +11,12 @@ const STATUS_TEXT: Record<Status, string> = {
   unreachable: "nicht erreichbar",
 }
 
-const STATUS_VARIANT: Record<Status, "default" | "secondary" | "destructive"> = {
-  ok: "default",
-  degraded: "secondary",
-  unreachable: "destructive",
-}
+const STATUS_VARIANT: Record<Status, "default" | "secondary" | "destructive"> =
+  {
+    ok: "default",
+    degraded: "secondary",
+    unreachable: "destructive",
+  }
 
 export function LabellerHealthBadge() {
   const { data } = useQuery<{ status: Status }>({
@@ -29,7 +30,9 @@ export function LabellerHealthBadge() {
   })
 
   const status: Status =
-    data?.status === "ok" || data?.status === "degraded" ? data.status : "unreachable"
+    data?.status === "ok" || data?.status === "degraded"
+      ? data.status
+      : "unreachable"
   const label = `LLM: ${STATUS_TEXT[status]}`
   const variant = STATUS_VARIANT[status]
 
