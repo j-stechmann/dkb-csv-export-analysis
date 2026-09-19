@@ -1,4 +1,5 @@
 import {
+  allowInsecureRequests,
   authorizationCodeGrant,
   buildAuthorizationUrl,
   buildEndSessionUrl,
@@ -49,10 +50,23 @@ export async function getOidcConfig(requestUrl: string): Promise<OidcConfig> {
     return { ...cachedConfig, redirectUri: redirectUriFor(requestUrl) }
   }
   const cfg = getConfig()
+  // openid-client refuses plain-HTTP issuers by default; opt out only when
+  // the issuer itself is HTTP (dev Authentik / homelab without TLS yet).
+  // HTTPS-only by default stays the fail-fast for misconfigured prod envs.
+  const issuerUrl = new URL(cfg.OIDC_ISSUER_URL)
+  const insecure = !issuerUrl.protocol.includes("https")
+  if (insecure) {
+    console.warn(
+      `[auth/oidc] WARNING: OIDC_ISSUER_URL is not HTTPS (${issuerUrl.origin}) — ` +
+        "discovery/token traffic to it will be plaintext"
+    )
+  }
   const configuration = await discovery(
     new URL(cfg.OIDC_ISSUER_URL),
     cfg.OIDC_CLIENT_ID,
-    { client_secret: cfg.OIDC_CLIENT_SECRET }
+    { client_secret: cfg.OIDC_CLIENT_SECRET },
+    undefined,
+    insecure ? { execute: [allowInsecureRequests] } : undefined
   )
   cachedConfig = { configuration, redirectUri: "", scopes: cfg.OIDC_SCOPES }
   return { ...cachedConfig, redirectUri: redirectUriFor(requestUrl) }

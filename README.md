@@ -20,6 +20,21 @@ bun install
 make dev   # offers the model download on first run, then starts everything
 ```
 
+`make dev` (and `make app`) also bring up the **dev OIDC provider** the login
+requires: a throwaway Authentik stack in Docker
+([compose.dev.yaml](compose.dev.yaml), `:8081`), with the app's OIDC client
+provisioned automatically. Login is `akadmin` / `dev-only-not-secret` (see
+compose file); different usernames test multi-user provisioning. The
+containers are left running after Ctrl-C — `make oidc-stop` stops them (the
+provisioned client survives in a named volume); `make oidc` starts them
+again. `.env` is preconfigured for this provider:
+
+```bash
+OIDC_ISSUER_URL=http://localhost:8081/application/o/dkb-analytics/
+OIDC_CLIENT_ID=dkb-analytics
+OIDC_CLIENT_SECRET=dev-only-not-secret-32-chars-min!!
+```
+
 ## Documentation
 
 Extensive documentation lives in [`docs/`](docs/README.md): architecture,
@@ -198,6 +213,12 @@ accounts, imports, transactions, labels and learned rules. The v1 → v2
 migration starts everyone empty (pre-user data cannot be attributed to an
 owner). Configure your provider's redirect URI as
 `<APP_ORIGIN>/auth/callback`.
+
+In dev, `make dev`/`make app` start a local Authentik for this (see Setup);
+log in as `akadmin` or any user you create in its admin UI
+(`http://localhost:8081/if/admin/`) to see per-user isolation. Note the app
+only allows plain-HTTP issuers (`http://…`) — a provider behind HTTPS always
+works; for production, put TLS in front of Authentik or the reverse proxy.
 
 ## Correctness
 
