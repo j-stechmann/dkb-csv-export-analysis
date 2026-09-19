@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { SignJWT } from "jose"
 import { resetConfigCache } from "@/lib/config"
 import {
   createSessionToken,
@@ -73,6 +74,33 @@ describe("session secret fallback", () => {
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("SESSION_SECRET unset")
     )
+  })
+})
+
+describe("session claim validation", () => {
+  it("rejects a token signed with the right key but a foreign issuer", async () => {
+    const token = await createSessionToken(TEST_CLAIMS)
+    resetConfigCache()
+    resetSessionSecretCache()
+    process.env.OIDC_ISSUER_URL = "https://evil.example.com"
+    resetConfigCache()
+    expect(await verifySessionToken(token)).toBeNull()
+  })
+
+  it("rejects a token with a wrong audience (cross-app token confusion)", async () => {
+    const foreign = await new SignJWT({
+      uid: 1,
+      name: "Test User",
+      email: "user-1@example.com",
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setSubject(TEST_CLAIMS.sub)
+      .setIssuer(TEST_CLAIMS.iss)
+      .setAudience("some-other-app")
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(process.env.SESSION_SECRET!))
+    expect(await verifySessionToken(foreign)).toBeNull()
   })
 })
 

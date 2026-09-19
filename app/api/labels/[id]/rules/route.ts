@@ -39,7 +39,9 @@ export async function GET(
       createdAt: labelRules.createdAt,
     })
     .from(labelRules)
-    .where(eq(labelRules.labelId, labelId))
+    .where(
+      and(eq(labelRules.labelId, labelId), eq(labelRules.userId, session.uid))
+    )
     .orderBy(labelRules.createdAt)
     .all()
   return NextResponse.json({ rules })

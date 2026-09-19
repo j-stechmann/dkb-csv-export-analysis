@@ -156,7 +156,9 @@ export async function POST(
     // adoption = approval: manual assignment flips the origin
     tx.update(categories)
       .set({ origin: "manual", usageCount: sql`${categories.usageCount} + 1` })
-      .where(eq(categories.id, categoryId))
+      .where(
+        and(eq(categories.id, categoryId), eq(categories.userId, session.uid))
+      )
       .run()
 
     // learn rule from this transaction's payer/payee/IBAN verbatim

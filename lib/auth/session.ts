@@ -67,6 +67,7 @@ export async function createSessionToken(
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(claims.sub)
     .setIssuer(claims.iss)
+    .setAudience("dkb-csv-export-analysis")
     .setIssuedAt()
     .setExpirationTime(`${cfg.SESSION_TTL_SECONDS}s`)
     .sign(sessionKey())
@@ -76,8 +77,11 @@ export async function verifySessionToken(
   token: string
 ): Promise<SessionClaims | null> {
   try {
+    const cfg = getConfig()
     const { payload } = await jwtVerify(token, sessionKey(), {
       algorithms: ["HS256"],
+      audience: "dkb-csv-export-analysis",
+      issuer: cfg.OIDC_ISSUER_URL,
     })
     if (
       typeof payload.sub !== "string" ||
