@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
-import { requireSession, unauthorized } from "@/lib/auth/guard"
+import {
+  assertSameOrigin,
+  requireSession,
+  unauthorized,
+} from "@/lib/auth/guard"
 import { resetFailedLabels } from "@/lib/import/pipeline"
 import { getConfig } from "@/lib/config"
 
@@ -14,6 +18,8 @@ export const dynamic = "force-dynamic"
 export async function POST(request: NextRequest) {
   const session = await requireSession(request)
   if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   try {
     const queued = resetFailedLabels(getConfig().LLM_MAX_ATTEMPTS, session.uid)
     return NextResponse.json({ queued }, { status: 202 })

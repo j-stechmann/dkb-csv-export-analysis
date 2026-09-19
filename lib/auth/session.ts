@@ -150,9 +150,10 @@ export function clearCookie(
 }
 
 /**
- * Read one cookie value from a Cookie header (percent-decoded). Shared by
- * the auth routes — serializeCookie writes percent-encoded session tokens
- * and raw base64url flow values, both of which survive the round-trip.
+ * Read one cookie value from a Cookie header (percent-decoded, null on a
+ * malformed sequence). Shared by the auth routes — serializeCookie writes
+ * percent-encoded session tokens and raw base64url flow values, both of
+ * which survive the round-trip.
  */
 export function cookieValue(
   header: string | null,
@@ -163,5 +164,10 @@ export function cookieValue(
     .split(";")
     .map((c) => c.trim())
     .find((c) => c.startsWith(`${name}=`))
-  return match ? decodeURIComponent(match.slice(name.length + 1)) : null
+  if (!match) return null
+  try {
+    return decodeURIComponent(match.slice(name.length + 1))
+  } catch {
+    return null
+  }
 }

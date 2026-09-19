@@ -17,6 +17,14 @@ export async function getSession(
     .map((c) => c.trim())
     .find((c) => c.startsWith(`${SESSION_COOKIE}=`))
   if (!match) return null
-  const token = decodeURIComponent(match.slice(SESSION_COOKIE.length + 1))
+  const raw = match.slice(SESSION_COOKIE.length + 1)
+  // percent-decoding can throw on malformed sequences (e.g. a stray "%") —
+  // treat undecodable cookie values as absent instead of 500-ing
+  let token: string | null
+  try {
+    token = decodeURIComponent(raw)
+  } catch {
+    return null
+  }
   return verifySessionToken(token)
 }

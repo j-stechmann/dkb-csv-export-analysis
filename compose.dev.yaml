@@ -5,7 +5,10 @@
 # restarts. This is dev tooling only; production images use the plain
 # Dockerfile (no compose file ships with releases).
 #
-# Login for the app flow: user `akadmin`, password `dev-only-not-secret`.
+# Credentials come from compose.dev.env (gitignored; created on first
+# `make oidc` from compose.dev.env.example if absent) and are bound to
+# 127.0.0.1 so the stack is never reachable from other network hosts.
+# Login for the app flow: user `akadmin`, password from AUTHENTIK_BOOTSTRAP_PASSWORD.
 # Admin UI: http://localhost:8081/if/admin/
 
 name: dkb-analytics-dev-oidc
@@ -17,7 +20,7 @@ services:
     environment:
       POSTGRES_DB: authentik
       POSTGRES_USER: authentik
-      POSTGRES_PASSWORD: dev-only-not-secret
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:?compose.dev.env missing}
     volumes:
       - authentik-db:/var/lib/postgresql/data
     healthcheck:
@@ -44,14 +47,14 @@ services:
       AUTHENTIK_POSTGRESQL__HOST: postgres
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__NAME: authentik
-      AUTHENTIK_POSTGRESQL__PASSWORD: dev-only-not-secret
-      AUTHENTIK_SECRET_KEY: dev-only-not-secret-please-change-0123456789
-      AUTHENTIK_BOOTSTRAP_PASSWORD: dev-only-not-secret
-      AUTHENTIK_BOOTSTRAP_TOKEN: dev-bootstrap-token
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?compose.dev.env missing}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?compose.dev.env missing}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?compose.dev.env missing}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?compose.dev.env missing}
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
       AUTHENTIK_LOG_LEVEL: warning
     ports:
-      - "8081:9000"
+      - "127.0.0.1:8081:9000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,10 +83,10 @@ services:
       AUTHENTIK_POSTGRESQL__HOST: postgres
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__NAME: authentik
-      AUTHENTIK_POSTGRESQL__PASSWORD: dev-only-not-secret
-      AUTHENTIK_SECRET_KEY: dev-only-not-secret-please-change-0123456789
-      AUTHENTIK_BOOTSTRAP_PASSWORD: dev-only-not-secret
-      AUTHENTIK_BOOTSTRAP_TOKEN: dev-bootstrap-token
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?compose.dev.env missing}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?compose.dev.env missing}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?compose.dev.env missing}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?compose.dev.env missing}
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
       AUTHENTIK_LOG_LEVEL: warning
     depends_on:

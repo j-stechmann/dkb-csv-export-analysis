@@ -7,7 +7,11 @@ import {
   isValidLabelName,
   resetTransactionsForLabelDeletion,
 } from "@/lib/labeller/service"
-import { requireSession, unauthorized } from "@/lib/auth/guard"
+import {
+  assertSameOrigin,
+  requireSession,
+  unauthorized,
+} from "@/lib/auth/guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -18,6 +22,8 @@ export async function PATCH(
 ) {
   const session = await requireSession(request)
   if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const { id } = await params
   const labelId = Number.parseInt(id, 10)
   if (!Number.isInteger(labelId)) {
@@ -98,6 +104,8 @@ export async function DELETE(
 ) {
   const session = await requireSession(request)
   if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const { id } = await params
   const labelId = Number.parseInt(id, 10)
   if (!Number.isInteger(labelId)) {

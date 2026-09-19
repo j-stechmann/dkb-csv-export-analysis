@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { buildLoginRedirect } from "@/lib/auth/oidc"
+import { assertSameOrigin } from "@/lib/auth/guard"
 import {
   STATE_COOKIE,
   clearCookie,
@@ -48,8 +49,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function DELETE(): Promise<NextResponse> {
-  // stray state cookies never hurt; provided for completeness
+export async function DELETE(request: NextRequest): Promise<NextResponse> {
+  // stray state cookies never hurt; provided for completeness (still guarded
+  // for consistency with the other mutating handlers)
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const opts = sessionCookieOptions()
   return new NextResponse(null, {
     status: 204,

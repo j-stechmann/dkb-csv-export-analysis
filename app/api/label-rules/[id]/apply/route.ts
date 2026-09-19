@@ -3,7 +3,11 @@ import { and, eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { labelRules } from "@/lib/db/schema"
 import { applyRuleToTransactions } from "@/lib/labeller/service"
-import { requireSession, unauthorized } from "@/lib/auth/guard"
+import {
+  assertSameOrigin,
+  requireSession,
+  unauthorized,
+} from "@/lib/auth/guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -20,6 +24,8 @@ export async function POST(
 ) {
   const session = await requireSession(request)
   if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const { id } = await params
   const ruleId = Number.parseInt(id, 10)
   if (!Number.isInteger(ruleId)) {

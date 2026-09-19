@@ -6,6 +6,7 @@
 *.db
 *.db-shm
 *.db-wal
+compose.dev.env
 # debug
 # dependencies
 .DS_Store

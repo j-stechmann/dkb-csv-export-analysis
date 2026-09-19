@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { timingSafeEqual } from "node:crypto"
 import { appUrl, exchangeAuthorizationCode } from "@/lib/auth/oidc"
 import { upsertUser } from "@/lib/auth/users"
 import {
@@ -13,6 +14,18 @@ import type { SessionClaims } from "@/lib/auth/session"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+/**
+ * Length-independent string comparison (node:crypto timingSafeEqual over the
+ * UTF-8 encodings): the raw === short-circuits on the first differing byte,
+ * which a same-network attacker measuring response timing could otherwise
+ * use to recover the state cookie value byte by byte.
+ */
+function safeEquals(a: string, b: string): boolean {
+  const ba = Buffer.from(a, "utf8")
+  const bb = Buffer.from(b, "utf8")
+  return ba.length === bb.length && timingSafeEqual(ba, bb)
+}
 
 /**
  * OIDC redirect_uri target: verifies the state cookie, exchanges the code
@@ -47,7 +60,7 @@ export async function GET(request: NextRequest) {
     !expectedState ||
     !verifier ||
     !nonce ||
-    state !== expectedState
+    !safeEquals(state, expectedState)
   ) {
     // state mismatch/absence → restart the flow, never an error echo.
     // appUrl: behind a reverse proxy request.url carries the internal
