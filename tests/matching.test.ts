@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { eq } from "drizzle-orm"
-import { createTestDb, setTestDb, type Db } from "@/lib/db"
-import { accounts, categories, labelRules } from "@/lib/db/schema"
+import type { Db } from "@/lib/db"
+import { categories, labelRules } from "@/lib/db/schema"
 import {
   learnRule,
   resolveLabelNames,
@@ -9,12 +9,14 @@ import {
   suggestLabelIds,
 } from "@/lib/labels/matching"
 import { resetConfigCache } from "@/lib/config"
+import { setupTestDb } from "./helpers"
 
 const IBAN = "DE02120300000000202051"
 const PAYER = "Max Mustermann"
 const PAYEE = "Vermieter GmbH"
 
 let db: Db
+let userId: number
 
 function cat(name: string, origin = "manual", usageCount = 0): number {
   const existing = db
@@ -26,6 +28,7 @@ function cat(name: string, origin = "manual", usageCount = 0): number {
   return db
     .insert(categories)
     .values({
+      userId,
       name,
       nameKey: name.toLowerCase(),
       language: "de",
@@ -49,6 +52,7 @@ function rule(
   return db
     .insert(labelRules)
     .values({
+      userId,
       labelId,
       payer: PAYER,
       payee: PAYEE,
@@ -62,9 +66,7 @@ function rule(
 }
 
 beforeEach(() => {
-  db = createTestDb()
-  setTestDb(db)
-  db.insert(accounts).values({ iban: IBAN, name: "Girokonto" }).run()
+  ;({ db, userId } = setupTestDb())
   resetConfigCache()
 })
 
@@ -74,7 +76,7 @@ describe("suggestLabelIds", () => {
     rule(miete)
 
     expect(
-      suggestLabelIds(db, {
+      suggestLabelIds(db, userId, {
         payer: PAYER,
         payee: PAYEE,
         counterpartyIban: IBAN,
@@ -87,21 +89,21 @@ describe("suggestLabelIds", () => {
     rule(miete)
 
     expect(
-      suggestLabelIds(db, {
+      suggestLabelIds(db, userId, {
         payer: "Other Payer",
         payee: PAYEE,
         counterpartyIban: IBAN,
       })
     ).toEqual([])
     expect(
-      suggestLabelIds(db, {
+      suggestLabelIds(db, userId, {
         payer: PAYER,
         payee: "Other Payee",
         counterpartyIban: IBAN,
       })
     ).toEqual([])
     expect(
-      suggestLabelIds(db, {
+      suggestLabelIds(db, userId, {
         payer: PAYER,
         payee: PAYEE,
         counterpartyIban: "DE00UNMATCHED00000000",
@@ -111,17 +113,21 @@ describe("suggestLabelIds", () => {
 
   it("returns nothing without a usable rule key", () => {
     expect(
-      suggestLabelIds(db, { payer: null, payee: PAYEE, counterpartyIban: IBAN })
+      suggestLabelIds(db, userId, {
+        payer: null,
+        payee: PAYEE,
+        counterpartyIban: IBAN,
+      })
     ).toEqual([])
     expect(
-      suggestLabelIds(db, {
+      suggestLabelIds(db, userId, {
         payer: PAYER,
         payee: "",
         counterpartyIban: IBAN,
       })
     ).toEqual([])
     expect(
-      suggestLabelIds(db, {
+      suggestLabelIds(db, userId, {
         payer: PAYER,
         payee: PAYEE,
         counterpartyIban: "   ",
@@ -136,14 +142,14 @@ describe("suggestLabelIds", () => {
     rule(miete, { counterpartyIban: "DE02 1203 0000 0000 2020 51" })
 
     expect(
-      suggestLabelIds(db, {
+      suggestLabelIds(db, userId, {
         payer: PAYER,
         payee: PAYEE,
         counterpartyIban: "DE02120300000000202051",
       })
     ).toEqual([])
     expect(
-      suggestLabelIds(db, {
+      suggestLabelIds(db, userId, {
         payer: PAYER,
         payee: PAYEE,
         counterpartyIban: "DE02 1203 0000 0000 2020 51",
@@ -156,7 +162,7 @@ describe("suggestLabelIds", () => {
     rule(a)
 
     expect(
-      suggestLabelIds(db, {
+      suggestLabelIds(db, userId, {
         payer: PAYER,
         payee: PAYEE,
         counterpartyIban: IBAN,
@@ -170,7 +176,7 @@ describe("suggestForBatch", () => {
     const miete = cat("Miete")
     rule(miete)
 
-    const result = suggestForBatch([
+    const result = suggestForBatch(userId, [
       { payer: PAYER, payee: PAYEE, counterpartyIban: IBAN },
       { payer: PAYER, payee: PAYEE, counterpartyIban: IBAN },
       { payer: null, payee: PAYEE, counterpartyIban: IBAN },
@@ -188,6 +194,7 @@ describe("learnRule", () => {
   it("inserts a rule with the transaction's verbatim values", () => {
     const miete = cat("Miete")
     const id = learnRule(db, {
+      userId,
       payer: " Max  Mustermann ",
       payee: "Vermieter GmbH",
       counterpartyIban: " de02 1203 0000 0000 2020 51 ",
@@ -206,12 +213,14 @@ describe("learnRule", () => {
     const miete = cat("Miete")
     const kaution = cat("Kaution")
     learnRule(db, {
+      userId,
       payer: PAYER,
       payee: PAYEE,
       counterpartyIban: IBAN,
       labelId: miete,
     })
     learnRule(db, {
+      userId,
       payer: PAYER,
       payee: PAYEE,
       counterpartyIban: IBAN,
@@ -226,12 +235,14 @@ describe("learnRule", () => {
   it("keeps rules with differing components as separate rows", () => {
     const miete = cat("Miete")
     learnRule(db, {
+      userId,
       payer: PAYER,
       payee: PAYEE,
       counterpartyIban: IBAN,
       labelId: miete,
     })
     learnRule(db, {
+      userId,
       payer: PAYER,
       payee: "Other Payee",
       counterpartyIban: IBAN,
@@ -245,6 +256,7 @@ describe("learnRule", () => {
     const miete = cat("Miete")
     expect(
       learnRule(db, {
+        userId,
         payer: null,
         payee: PAYEE,
         counterpartyIban: IBAN,
@@ -253,6 +265,7 @@ describe("learnRule", () => {
     ).toBeNull()
     expect(
       learnRule(db, {
+        userId,
         payer: PAYER,
         payee: "",
         counterpartyIban: IBAN,
@@ -261,6 +274,7 @@ describe("learnRule", () => {
     ).toBeNull()
     expect(
       learnRule(db, {
+        userId,
         payer: PAYER,
         payee: PAYEE,
         counterpartyIban: null,
@@ -269,6 +283,7 @@ describe("learnRule", () => {
     ).toBeNull()
     expect(
       learnRule(db, {
+        userId,
         payer: "   ",
         payee: PAYEE,
         counterpartyIban: IBAN,

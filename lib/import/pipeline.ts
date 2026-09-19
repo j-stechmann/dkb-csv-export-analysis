@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { eq, inArray, sql } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { accounts, importBatches, transactions } from "@/lib/db/schema"
 import {
@@ -75,7 +75,8 @@ export function peekAccount(csvContent: string) {
  */
 export function startImport(
   fileName: string,
-  csvContent: string
+  csvContent: string,
+  userId: number
 ): StartImportResult {
   const state = jobState()
   if (state.running) {
@@ -95,7 +96,7 @@ export function startImport(
   // fire-and-forget with full error containment; the flag reset is chained
   // onto the promise so it lands in a microtask after startImport returns —
   // this stays correct even if the job gains awaits later
-  void runImportJob(batchId, fileName, tmpFile, tmpDir)
+  void runImportJob(batchId, fileName, tmpFile, tmpDir, userId)
     .catch((err) => {
       console.error(`[import] unhandled job error batch=${batchId}:`, err)
     })
@@ -111,13 +112,14 @@ async function runImportJob(
   batchId: string,
   fileName: string,
   tmpFile: string,
-  tmpDir: string
+  tmpDir: string,
+  userId: number
 ): Promise<void> {
   const db = getDb()
   try {
     // ── stage: parsing ──────────────────────────────────────────────
     db.insert(importBatches)
-      .values({ id: batchId, fileName, status: "parsing" })
+      .values({ id: batchId, fileName, userId, status: "parsing" })
       .run()
 
     const content = fs.readFileSync(tmpFile, "utf8")
@@ -141,15 +143,23 @@ async function runImportJob(
     }
 
     // ── account upsert (after successful parse → no orphans) ───────
+    // per-user namespace: two users importing the same IBAN get
+    // fully separate accounts (ADR-0032 isolation)
     let account = db
       .select()
       .from(accounts)
-      .where(eq(accounts.iban, parsed.accountIban))
+      .where(
+        and(eq(accounts.userId, userId), eq(accounts.iban, parsed.accountIban))
+      )
       .get()
     if (!account) {
       const inserted = db
         .insert(accounts)
-        .values({ iban: parsed.accountIban, name: parsed.accountName })
+        .values({
+          userId,
+          iban: parsed.accountIban,
+          name: parsed.accountName,
+        })
         .onConflictDoNothing()
         .returning()
         .get()
@@ -158,7 +168,12 @@ async function runImportJob(
         db
           .select()
           .from(accounts)
-          .where(eq(accounts.iban, parsed.accountIban))
+          .where(
+            and(
+              eq(accounts.userId, userId),
+              eq(accounts.iban, parsed.accountIban)
+            )
+          )
           .get()
     }
     if (!account) {
@@ -179,7 +194,13 @@ async function runImportJob(
 
     // ── stage: fuzzy reconcile + dedupe + insert ─────────────────────
     const { imported, duplicateCount, updatedCount, totalRows } =
-      runReconcileAndDedupeStage(account.iban, account.id, batchId, parsed.rows)
+      runReconcileAndDedupeStage(
+        account.iban,
+        userId,
+        account.id,
+        batchId,
+        parsed.rows
+      )
 
     if (imported + duplicateCount + updatedCount !== totalRows) {
       throw new Error(
@@ -255,7 +276,7 @@ export function resetStuckBatches(): number {
  * attempts < cap, so without an attempt reset they are unclaimable forever.
  * Returns the number of revived rows.
  */
-export function resetFailedLabels(maxAttempts: number): number {
+export function resetFailedLabels(maxAttempts: number, userId: number): number {
   const db = getDb()
   const result = db
     .update(transactions)
@@ -265,7 +286,7 @@ export function resetFailedLabels(maxAttempts: number): number {
       updatedAt: new Date().toISOString(),
     })
     .where(
-      sql`${transactions.labelStatus} IN ('failed', 'pending') AND ${transactions.labelAttempts} >= ${maxAttempts}`
+      sql`${transactions.labelStatus} IN ('failed', 'pending') AND ${transactions.labelAttempts} >= ${maxAttempts} AND ${transactions.userId} = ${userId}`
     )
     .returning({ id: transactions.id })
     .all()
@@ -298,6 +319,7 @@ export interface ReconcileStageResult {
  */
 export function runReconcileAndDedupeStage(
   accountIban: string,
+  userId: number,
   accountId: number,
   batchId: string,
   rows: ParsedTransactionRow[]
@@ -377,6 +399,7 @@ export function runReconcileAndDedupeStage(
 
   const dedupe = computeDedupe(
     accountIban,
+    userId,
     accountId,
     batchId,
     unconsumedRows,

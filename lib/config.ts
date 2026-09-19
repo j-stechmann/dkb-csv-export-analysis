@@ -13,6 +13,17 @@ const envSchema = z.object({
   LLM_CTX: z.coerce.number().int().min(1024).default(8192),
   LLM_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
   LLM_MAX_LABELS_PROMPT: z.coerce.number().int().min(0).default(200),
+  OIDC_ISSUER_URL: z.string().url(),
+  OIDC_CLIENT_ID: z.string().min(1),
+  OIDC_CLIENT_SECRET: z.string().min(1),
+  OIDC_SCOPES: z.string().default("openid profile email"),
+  SESSION_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(300)
+    .default(7 * 24 * 3600),
+  SESSION_SECRET: z.string().min(32).optional(),
+  APP_ORIGIN: z.string().url().optional(),
 })
 
 export type AppConfig = z.infer<typeof envSchema>

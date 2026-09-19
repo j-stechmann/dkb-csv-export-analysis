@@ -5,6 +5,7 @@ import { sql, and, eq, gte, lte } from "drizzle-orm"
 import { createTestDb, setTestDb, type Db } from "@/lib/db"
 import { parseDkbCsv } from "@/lib/csv/parser"
 import { computeDedupe } from "@/lib/db/dedupe"
+import { seedUser } from "./helpers"
 import { computeAnalytics } from "@/lib/analytics/engine"
 import { parseFilters } from "@/lib/analytics/queries"
 import {
@@ -48,21 +49,25 @@ let db: Db
  * Import the fixture through the REAL pipeline pieces (parser → dedupe →
  * DB insert) against an in-memory SQLite, without the labeller.
  */
+let userId: number
+
 beforeAll(() => {
   db = createTestDb()
   setTestDb(db)
+  userId = seedUser(db)
 
   const parsed = parseDkbCsv(csv)
 
   const account = db
     .insert(accounts)
-    .values({ iban: parsed.accountIban, name: parsed.accountName })
+    .values({ userId, iban: parsed.accountIban, name: parsed.accountName })
     .returning()
     .get()
 
   const batch = db
     .insert(importBatches)
     .values({
+      userId,
       id: "fixture-batch",
       fileName: "fixture.csv",
       accountId: account.id,
@@ -76,6 +81,7 @@ beforeAll(() => {
 
   const dedupe = computeDedupe(
     parsed.accountIban,
+    userId,
     account.id,
     batch.id,
     parsed.rows,
@@ -109,7 +115,12 @@ beforeAll(() => {
     if (!catId) {
       const inserted = db
         .insert(categories)
-        .values({ name: label, nameKey: label.toLowerCase(), language: "de" })
+        .values({
+          userId,
+          name: label,
+          nameKey: label.toLowerCase(),
+          language: "de",
+        })
         .onConflictDoNothing()
         .returning()
         .get()
@@ -167,7 +178,7 @@ describe("fixture end-to-end correctness", () => {
 
   it("computes current balance to the cent (latest snapshot + subsequent)", () => {
     const filters = parseFilters(new URLSearchParams())
-    const result = computeAnalytics(filters, "2026-08-28")
+    const result = computeAnalytics(filters, userId, "2026-08-28")
     expect(result.kpis.currentBalanceCents).toBe(
       manifest.expected.currentBalanceCents
     )
@@ -176,7 +187,7 @@ describe("fixture end-to-end correctness", () => {
 
   it("matches hand-computed KPIs exactly", () => {
     const filters = parseFilters(new URLSearchParams())
-    const result = computeAnalytics(filters, "2026-08-28")
+    const result = computeAnalytics(filters, userId, "2026-08-28")
     expect(result.kpis.transactionCount).toBe(
       manifest.expected.transactionCount
     )
@@ -195,7 +206,7 @@ describe("fixture end-to-end correctness", () => {
 
   it("matches every month's income/expenses to the cent", () => {
     const filters = parseFilters(new URLSearchParams())
-    const result = computeAnalytics(filters, "2026-08-28")
+    const result = computeAnalytics(filters, userId, "2026-08-28")
     expect(result.monthlyCashflow).toHaveLength(
       manifest.expected.monthlyCashflow.length
     )
@@ -214,7 +225,7 @@ describe("fixture end-to-end correctness", () => {
 
   it("back-calculates the balance timeline from the snapshot anchor", () => {
     const filters = parseFilters(new URLSearchParams())
-    const result = computeAnalytics(filters, "2026-08-28")
+    const result = computeAnalytics(filters, userId, "2026-08-28")
     const t = result.balanceTimeline
 
     // fixture: bookings start 2024-01-01, snapshot 2024-01-05 = 5.000,00 €
@@ -243,7 +254,7 @@ describe("fixture end-to-end correctness", () => {
 
   it("top categories match hand-computed totals", () => {
     const filters = parseFilters(new URLSearchParams())
-    const result = computeAnalytics(filters, "2026-08-28")
+    const result = computeAnalytics(filters, userId, "2026-08-28")
     const actualByName = new Map(
       result.topCategories.map((c) => [c.name, c.totalCents])
     )
@@ -257,6 +268,7 @@ describe("fixture end-to-end correctness", () => {
   it("excludes pending rows from analytics by default but includes via status=all", () => {
     const bookedOnly = computeAnalytics(
       parseFilters(new URLSearchParams()),
+      userId,
       "2026-08-28"
     )
     expect(bookedOnly.kpis.transactionCount).toBe(
@@ -264,6 +276,7 @@ describe("fixture end-to-end correctness", () => {
     )
     const withPending = computeAnalytics(
       parseFilters(new URLSearchParams("status=all")),
+      userId,
       "2026-08-28"
     )
     expect(withPending.kpis.transactionCount).toBe(manifest.rowCount)
@@ -297,6 +310,7 @@ describe("fixture end-to-end correctness", () => {
     const parsed = parseDkbCsv(csv)
     const second = computeDedupe(
       parsed.accountIban,
+      userId,
       account.id,
       "fixture-batch-2",
       parsed.rows,
@@ -313,7 +327,7 @@ describe("date-filtered analytics", () => {
   const WINDOW = "dateFrom=2024-03-01&dateTo=2024-06-30"
 
   it("counts only booked transactions inside the window", () => {
-    const r = computeAnalytics(filters(WINDOW), today)
+    const r = computeAnalytics(filters(WINDOW), userId, today)
     // hand-derived from fixture.csv: 10 + 9 + 9 + 10 booked rows
     expect(r.kpis.transactionCount).toBe(38)
     // independent oracle: direct SQL against the in-memory db
@@ -334,7 +348,7 @@ describe("date-filtered analytics", () => {
   })
 
   it("monthly cashflow is sliced to the window", () => {
-    const r = computeAnalytics(filters(WINDOW), today)
+    const r = computeAnalytics(filters(WINDOW), userId, today)
     expect(r.monthlyCashflow).toHaveLength(4)
     expect(r.monthlyCashflow.map((m) => m.month)).toEqual([
       "2024-03",
@@ -357,6 +371,7 @@ describe("date-filtered analytics", () => {
     // March has data only from the 15th on → partial, not counted
     const r = computeAnalytics(
       filters("dateFrom=2024-03-15&dateTo=2024-06-30"),
+      userId,
       today
     )
     // full cashflow series still starts at the window start
@@ -375,6 +390,7 @@ describe("date-filtered analytics", () => {
     // single month, both ends inside it → zero full months
     const r = computeAnalytics(
       filters("dateFrom=2024-03-15&dateTo=2024-03-31"),
+      userId,
       today
     )
     expect(r.monthlyCashflow).toHaveLength(1)
@@ -385,7 +401,7 @@ describe("date-filtered analytics", () => {
   })
 
   it("top categories are window-scoped", () => {
-    const r = computeAnalytics(filters(WINDOW), today)
+    const r = computeAnalytics(filters(WINDOW), userId, today)
     const oracle = db
       .select({
         name: categories.name,
@@ -428,11 +444,12 @@ describe("date-filtered analytics", () => {
       .get()
     expect(cat).toBeDefined()
 
-    const plain = computeAnalytics(filters(WINDOW), today)
+    const plain = computeAnalytics(filters(WINDOW), userId, today)
     const filtered = computeAnalytics(
       filters(
         `${WINDOW}&q=Supermarkt&type=Ausgang&categoryId=${cat!.id}&labelStatus=labeled`
       ),
+      userId,
       today
     )
     expect(filtered.kpis.currentBalanceCents).toBe(
@@ -441,7 +458,7 @@ describe("date-filtered analytics", () => {
     expect(filtered.balanceTimeline).toEqual(plain.balanceTimeline)
 
     // q matching NOTHING still yields a balance (flow aggregates empty out)
-    const none = computeAnalytics(filters("q=EDEKA"), today)
+    const none = computeAnalytics(filters("q=EDEKA"), userId, today)
     expect(
       none.monthlyCashflow.every(
         (m) => m.incomeCents === 0 && m.expensesCents === 0
@@ -455,7 +472,7 @@ describe("date-filtered analytics", () => {
   })
 
   it("balance KPI = balance as of dateTo (dateTo ≥ anchor)", () => {
-    const r = computeAnalytics(filters("dateTo=2024-01-08"), today)
+    const r = computeAnalytics(filters("dateTo=2024-01-08"), userId, today)
     // next booking after the anchor (2024-01-05, 5.000,00 €) is 2024-01-10
     expect(r.kpis.currentBalanceCents).toBe(500000)
     expect(r.balanceTimeline[r.balanceTimeline.length - 1]).toEqual({
@@ -465,7 +482,7 @@ describe("date-filtered analytics", () => {
   })
 
   it("balance KPI as of dateTo BEFORE the anchor uses backward math", () => {
-    const r = computeAnalytics(filters("dateTo=2024-01-03"), today)
+    const r = computeAnalytics(filters("dateTo=2024-01-03"), userId, today)
     // anchor 500000 − Σ(booked in (2024-01-03, 2024-01-05]) = 500000 + 6753
     expect(r.kpis.currentBalanceCents).toBe(506753)
     expect(r.balanceTimeline).toEqual([
@@ -475,12 +492,13 @@ describe("date-filtered analytics", () => {
   })
 
   it("balance timeline is the full timeline sliced to [dateFrom, dateTo]", () => {
-    const un = computeAnalytics(filters(""), today)
+    const un = computeAnalytics(filters(""), userId, today)
     const byDate = new Map(
       un.balanceTimeline.map((p) => [p.date, p.balanceCents])
     )
     const r = computeAnalytics(
       filters("dateFrom=2024-02-01&dateTo=2024-02-29"),
+      userId,
       today
     )
     expect(r.balanceTimeline).toHaveLength(6)
@@ -501,8 +519,8 @@ describe("date-filtered analytics", () => {
   })
 
   it("dateTo covering everything is equivalent to no filter", () => {
-    const un = computeAnalytics(filters(""), today)
-    const r = computeAnalytics(filters("dateTo=2025-12-31"), today)
+    const un = computeAnalytics(filters(""), userId, today)
+    const r = computeAnalytics(filters("dateTo=2025-12-31"), userId, today)
     expect(r).toEqual(un)
     expect(r.kpis.currentBalanceCents).toBe(
       manifest.expected.currentBalanceCents
@@ -520,7 +538,7 @@ describe("savings history (last 6 complete months)", () => {
   }
 
   it("ends at the previous calendar month with a zero-filled 6-month window", () => {
-    const r = computeAnalytics(filters(""), "2026-01-15")
+    const r = computeAnalytics(filters(""), userId, "2026-01-15")
     expect(r.savingsHistory).not.toBeNull()
     const s = r.savingsHistory!
     expect(s.lastMonth).toBe("2025-12")
@@ -540,7 +558,7 @@ describe("savings history (last 6 complete months)", () => {
 
   it("falls back to the latest booking month for stale imports", () => {
     // fixture data ends 2025-12, "today" is Aug 2026 → no zero-filled gap
-    const r = computeAnalytics(filters(""), "2026-08-28")
+    const r = computeAnalytics(filters(""), userId, "2026-08-28")
     const s = r.savingsHistory!
     expect(s.lastMonth).toBe("2025-12")
     expect(s.months.map((m) => m.month)).toEqual([
@@ -554,11 +572,12 @@ describe("savings history (last 6 complete months)", () => {
   })
 
   it("ignores content and date filters entirely", () => {
-    const un = computeAnalytics(filters(""), "2026-01-15")
+    const un = computeAnalytics(filters(""), userId, "2026-01-15")
     const filtered = computeAnalytics(
       filters(
         "dateFrom=2024-03-01&dateTo=2024-06-30&q=Supermarkt&type=Ausgang"
       ),
+      userId,
       "2026-01-15"
     )
     expect(filtered.savingsHistory).toEqual(un.savingsHistory)
@@ -567,7 +586,7 @@ describe("savings history (last 6 complete months)", () => {
   it("never claims the running month as last complete month", () => {
     // fixture data ends 2025-12 but today is Jan 2026: prevOfToday (2025-12)
     // equals latestBookingMonth → series must end there either way
-    const r = computeAnalytics(filters(""), "2026-01-31")
+    const r = computeAnalytics(filters(""), userId, "2026-01-31")
     expect(r.savingsHistory!.lastMonth).toBe("2025-12")
     // window is always exactly 6 months
     expect(r.savingsHistory!.months).toHaveLength(6)
@@ -576,7 +595,7 @@ describe("savings history (last 6 complete months)", () => {
   it("exposes the running month separately from the complete window", () => {
     // today = mid-Dec 2025: 2025-12 is still running → months window ends
     // at 2025-11, and 2025-12 (which HAS bookings) is the currentMonth
-    const r = computeAnalytics(filters(""), "2025-12-15")
+    const r = computeAnalytics(filters(""), userId, "2025-12-15")
     const s = r.savingsHistory!
     expect(s.lastMonth).toBe("2025-11")
     expect(s.months.map((m) => m.month)).not.toContain("2025-12")
@@ -587,13 +606,13 @@ describe("savings history (last 6 complete months)", () => {
 
   it("currentMonth is null when the running month has no bookings", () => {
     // today = Aug 2026, fixture data ends 2025-12 (stale import)
-    const r = computeAnalytics(filters(""), "2026-08-28")
+    const r = computeAnalytics(filters(""), userId, "2026-08-28")
     expect(r.savingsHistory!.currentMonth).toBeNull()
   })
 
   it("is null when the account has no transactions at all", () => {
     // savings history ignores content filters but respects the account
-    const r = computeAnalytics(filters("accountId=99999"), "2026-01-15")
+    const r = computeAnalytics(filters("accountId=99999"), userId, "2026-01-15")
     expect(r.savingsHistory).toBeNull()
   })
 
@@ -609,6 +628,7 @@ describe("savings history (last 6 complete months)", () => {
     db.insert(transactions)
       .values({
         id: "future-dated",
+        userId: account.userId,
         accountId: account.id,
         batchId: "fixture-batch",
         bookingDate: "2026-08-10",
@@ -621,7 +641,7 @@ describe("savings history (last 6 complete months)", () => {
       .run()
 
     try {
-      const r = computeAnalytics(filters(""), "2026-01-15")
+      const r = computeAnalytics(filters(""), userId, "2026-01-15")
       const s = r.savingsHistory!
       expect(s.lastMonth).toBe("2025-12")
       expect(s.months).toHaveLength(6)
@@ -635,11 +655,11 @@ describe("savings history (last 6 complete months)", () => {
 
   it("marks the headline as stale when imports stopped months ago", () => {
     // stale case: data ends 2025-12, today is Aug 2026
-    const r = computeAnalytics(filters(""), "2026-08-28")
+    const r = computeAnalytics(filters(""), userId, "2026-08-28")
     expect(r.savingsHistory!.lastMonthIsStale).toBe(true)
 
     // fresh case: data reaches the previous calendar month
-    const fresh = computeAnalytics(filters(""), "2026-01-15")
+    const fresh = computeAnalytics(filters(""), userId, "2026-01-15")
     expect(fresh.savingsHistory!.lastMonthIsStale).toBe(false)
   })
 })
