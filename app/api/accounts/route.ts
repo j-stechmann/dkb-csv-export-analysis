@@ -54,17 +54,35 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "iban required" }, { status: 400 })
   }
   const db = getDb()
-  const result = db
-    .delete(accounts)
-    .where(
-      and(
-        eq(accounts.userId, session.uid),
-        eq(accounts.iban, iban.toUpperCase())
+  try {
+    const result = db
+      .delete(accounts)
+      .where(
+        and(
+          eq(accounts.userId, session.uid),
+          eq(accounts.iban, iban.toUpperCase())
+        )
       )
-    )
-    .run()
-  if (result.changes === 0) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 })
+      .run()
+    if (result.changes === 0) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 })
+    }
+    return NextResponse.json({ deleted: result.changes })
+  } catch (err) {
+    // accounts own transactions/import_batches (FK, no cascade): an account
+    // with history cannot be dropped wholesale
+    if (
+      err instanceof Error &&
+      err.message.includes("FOREIGN KEY constraint failed")
+    ) {
+      return NextResponse.json(
+        {
+          error: "account_in_use",
+          message: "account has transactions or import batches",
+        },
+        { status: 409 }
+      )
+    }
+    throw err
   }
-  return NextResponse.json({ deleted: result.changes })
 }

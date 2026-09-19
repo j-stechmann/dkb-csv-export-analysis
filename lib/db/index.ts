@@ -235,9 +235,9 @@ export function ensureSchema() {
 const colorHealSettled = new WeakSet<object>()
 
 /**
- * Drop pre-multi-user tables (no user_id column): children first, inside one
- * transaction. The canonical user-shaped DDL in createSchemaSqlite/migrateSchema
- * recreates them right after. Runs from both paths so a fresh singleton AND a
+ * Drop pre-multi-user tables (no user_id column): children first. The
+ * canonical user-shaped DDL in createSchemaSqlite/migrateSchema recreates
+ * them right after. Runs from both paths so a fresh singleton AND a
  * hot-reloaded one heal the file DB.
  */
 function dropLegacyUserlessTables(db: Db) {
@@ -255,16 +255,12 @@ function dropLegacyUserlessTables(db: Db) {
     return tableCols.length > 0 && !tableCols.includes("user_id")
   })
   if (stale.length === 0) return
-  db.transaction((tx) => {
-    tx.run(`PRAGMA foreign_keys = OFF`)
-    try {
-      for (const t of legacy) {
-        if (cols(t).length > 0) tx.run(`DROP TABLE IF EXISTS ${t}`)
-      }
-    } finally {
-      tx.run(`PRAGMA foreign_keys = ON`)
-    }
-  })
+  // FK enforcement cannot be toggled inside a transaction (SQLite ignores
+  // the pragma there) — drops run with FKs on, so the children-first order
+  // below is load-bearing. legacy is ordered children-first on purpose.
+  for (const t of legacy) {
+    if (cols(t).length > 0) db.run(`DROP TABLE IF EXISTS ${t}`)
+  }
 }
 
 export function migrateSchema(db: Db) {

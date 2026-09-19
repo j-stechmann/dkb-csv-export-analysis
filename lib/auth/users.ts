@@ -49,12 +49,30 @@ export function upsertUser(claims: {
       email: claims.email,
       createdAt: now,
     })
+    .onConflictDoNothing()
     .returning()
     .get()
-  if (!inserted) {
+  if (inserted) return inserted
+  // concurrent first login of the same identity lost the insert race —
+  // the winner's row is now visible, re-read it
+  const raced = db
+    .select()
+    .from(users)
+    .where(
+      and(eq(users.issuer, claims.issuer), eq(users.subject, claims.subject))
+    )
+    .get()
+  if (!raced) {
     throw new Error("could not provision user")
   }
-  return inserted
+  if (raced.name !== claims.name || raced.email !== claims.email) {
+    db.update(users)
+      .set({ name: claims.name, email: claims.email })
+      .where(eq(users.id, raced.id))
+      .run()
+    return { ...raced, name: claims.name, email: claims.email }
+  }
+  return raced
 }
 
 export function findUserById(id: number): DbUser | null {

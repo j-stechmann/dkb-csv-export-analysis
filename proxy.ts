@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { getSession } from "@/lib/auth/session-helpers"
+import { appUrl } from "@/lib/auth/oidc"
 
 /**
  * Auth gate (Next 16 proxy convention — middleware.ts is deprecated).
@@ -36,7 +37,10 @@ export default async function proxy(request: NextRequest) {
       headers: { "content-type": "application/json" },
     })
   }
-  const loginUrl = new URL("/auth/login", request.url)
+  // APP_ORIGIN (reverse-proxy deployments) so the browser is never sent to
+  // Next's internal origin, which differs from the public one behind a proxy
+  // (appUrl also preserves a sub-path APP_ORIGIN)
+  const loginUrl = appUrl(request.url, "/auth/login")
   return NextResponse.redirect(loginUrl.toString(), 302)
 }
 

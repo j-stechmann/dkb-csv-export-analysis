@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
-import { exchangeAuthorizationCode } from "@/lib/auth/oidc"
+import { appUrl, exchangeAuthorizationCode } from "@/lib/auth/oidc"
 import { upsertUser } from "@/lib/auth/users"
 import {
+  ID_TOKEN_COOKIE,
   STATE_COOKIE,
+  cookieValue,
   createSessionToken,
   serializeCookie,
   sessionCookieOptions,
@@ -11,15 +13,6 @@ import type { SessionClaims } from "@/lib/auth/session"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-
-function cookieValue(header: string | null, name: string): string | null {
-  if (!header) return null
-  const match = header
-    .split(";")
-    .map((c) => c.trim())
-    .find((c) => c.startsWith(`${name}=`))
-  return match ? decodeURIComponent(match.slice(name.length + 1)) : null
-}
 
 /**
  * OIDC redirect_uri target: verifies the state cookie, exchanges the code
@@ -56,8 +49,11 @@ export async function GET(request: NextRequest) {
     !nonce ||
     state !== expectedState
   ) {
-    // state mismatch/absence → restart the flow, never an error echo
-    return NextResponse.redirect(new URL("/auth/login", url.origin), 302)
+    // state mismatch/absence → restart the flow, never an error echo.
+    // appUrl: behind a reverse proxy request.url carries the internal
+    // origin — browser-facing redirects must use the public one (and keep
+    // a sub-path APP_ORIGIN).
+    return NextResponse.redirect(appUrl(request.url, "/auth/login"), 302)
   }
 
   try {
@@ -82,12 +78,13 @@ export async function GET(request: NextRequest) {
     }
     const token = await createSessionToken(claims)
     const opts = sessionCookieOptions()
-    const res = NextResponse.redirect(new URL("/", url.origin), 302)
+    const res = NextResponse.redirect(appUrl(request.url, "/"), 302)
     res.headers.append(
       "set-cookie",
       serializeCookie("dkb_session", token, opts)
     )
-    // flow cookies are single-use
+    // flow cookies are single-use; the id_token is kept for RP-initiated
+    // logout (id_token_hint)
     res.headers.append(
       "set-cookie",
       serializeCookie(STATE_COOKIE, "", { ...opts, maxAgeSeconds: 0 })
@@ -100,6 +97,15 @@ export async function GET(request: NextRequest) {
       "set-cookie",
       serializeCookie("dkb_oidc_nonce", "", { ...opts, maxAgeSeconds: 0 })
     )
+    if (result.idToken) {
+      res.headers.append(
+        "set-cookie",
+        serializeCookie(ID_TOKEN_COOKIE, result.idToken, {
+          ...opts,
+          maxAgeSeconds: opts.maxAgeSeconds,
+        })
+      )
+    }
     return res
   } catch (err) {
     console.error("[auth/callback] error:", err)

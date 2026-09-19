@@ -19,6 +19,7 @@ import { computeAnalytics } from "@/lib/analytics/engine"
 import { parseFilters, queryTransactions } from "@/lib/analytics/queries"
 import { GET as listLabels } from "@/app/api/labels/route"
 import { GET as listAccounts } from "@/app/api/accounts/route"
+import { DELETE as deleteAccount } from "@/app/api/accounts/route"
 import { GET as listBatches } from "@/app/api/imports/history/route"
 import { POST as assignLabel } from "@/app/api/transactions/[id]/label/route"
 import { claimLabelRows } from "@/lib/labeller/worker"
@@ -35,6 +36,7 @@ let userB: number
 beforeEach(() => {
   ;({ db, userId: userA } = setupTestDb())
   userB = seedUser(db, "user-2")
+  seedIbans.clear()
 })
 
 function seedTx(
@@ -65,17 +67,20 @@ function seedTx(
 }
 
 let accountCounter = 0
+const seedIbans = new Map<number, string>()
 function seedAccountFor(userId: number): number {
   accountCounter++
+  const iban = `DE00AA${String(accountCounter).padStart(18, "0")}`
   const id = db
     .insert(accounts)
     .values({
       userId,
-      iban: `DE00AA${String(accountCounter).padStart(18, "0")}`,
+      iban,
       name: "Konto",
     })
     .returning()
     .get().id
+  seedIbans.set(id, iban)
   return id
 }
 
@@ -271,5 +276,59 @@ describe("per-user data isolation", () => {
     const rows = db.select().from(accounts).all()
     expect(rows).toHaveLength(2)
     void and
+  })
+
+  it("deleting an account with transactions returns 409 account_in_use", async () => {
+    const acc = seedAccountFor(userA)
+    const txId = `tx-${crypto.randomUUID()}`
+    db.insert(transactions)
+      .values({
+        id: txId,
+        userId: userA,
+        accountId: acc,
+        bookingDate: "2026-02-03",
+        status: "Gebucht",
+        payer: "Max Mustermann",
+        payee: "Vermieter GmbH",
+        counterpartyIban: IBAN,
+        type: "Ausgang",
+        amountCents: -100,
+        sourceHash: `hash-${txId}`,
+      })
+      .run()
+    const req = await authedRequest(
+      `http://test/api/accounts?iban=${seedIbans.get(acc)}`,
+      userA,
+      { method: "DELETE" }
+    )
+    const res = await deleteAccount(req)
+    expect(res.status).toBe(409)
+    const data = (await res.json()) as { error: string }
+    expect(data.error).toBe("account_in_use")
+    expect(db.select().from(accounts).all()).toHaveLength(1)
+  })
+
+  it("deleting an unused account succeeds", async () => {
+    const acc = seedAccountFor(userA)
+    const req = await authedRequest(
+      `http://test/api/accounts?iban=${seedIbans.get(acc)}`,
+      userA,
+      { method: "DELETE" }
+    )
+    const res = await deleteAccount(req)
+    expect(res.status).toBe(200)
+    expect(db.select().from(accounts).all()).toHaveLength(0)
+  })
+
+  it("delete account rejects another user's account with 404", async () => {
+    const acc = seedAccountFor(userB)
+    const req = await authedRequest(
+      `http://test/api/accounts?iban=${seedIbans.get(acc)}`,
+      userA,
+      { method: "DELETE" }
+    )
+    const res = await deleteAccount(req)
+    expect(res.status).toBe(404)
+    expect(db.select().from(accounts).all()).toHaveLength(1)
   })
 })

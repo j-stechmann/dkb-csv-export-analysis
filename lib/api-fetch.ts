@@ -1,7 +1,5 @@
 "use client"
 
-"use client"
-
 /**
  * fetch wrapper: a 401 (expired/tampered session) bounces the browser to
  * /auth/login to start a fresh OIDC round-trip. All API calls go through

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { buildLoginRedirect } from "@/lib/auth/oidc"
-import { STATE_COOKIE, clearCookie, serializeCookie } from "@/lib/auth/session"
+import {
+  STATE_COOKIE,
+  clearCookie,
+  serializeCookie,
+  sessionCookieOptions,
+} from "@/lib/auth/session"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -12,28 +17,22 @@ export const dynamic = "force-dynamic"
 export async function GET(request: NextRequest) {
   try {
     const auth = await buildLoginRedirect(request.url)
-    const secure = new URL(request.url).protocol === "https:"
+    // Secure from APP_ORIGIN: behind a reverse proxy request.url carries the
+    // internal (often http) origin, while the browser sees https.
+    const opts = sessionCookieOptions()
+    const flowOpts = { secure: opts.secure, maxAgeSeconds: 600 }
     const res = NextResponse.redirect(auth.redirectUrl.toString(), 302)
     res.headers.append(
       "set-cookie",
-      serializeCookie(STATE_COOKIE, auth.state, {
-        secure,
-        maxAgeSeconds: 600,
-      })
+      serializeCookie(STATE_COOKIE, auth.state, flowOpts)
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_oidc_verifier", auth.codeVerifier, {
-        secure,
-        maxAgeSeconds: 600,
-      })
+      serializeCookie("dkb_oidc_verifier", auth.codeVerifier, flowOpts)
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_oidc_nonce", auth.nonce, {
-        secure,
-        maxAgeSeconds: 600,
-      })
+      serializeCookie("dkb_oidc_nonce", auth.nonce, flowOpts)
     )
     return res
   } catch (err) {
@@ -48,13 +47,16 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function DELETE(request: NextRequest) {
+export async function DELETE(): Promise<NextResponse> {
   // stray state cookies never hurt; provided for completeness
-  const secure = new URL(request.url).protocol === "https:"
+  const opts = sessionCookieOptions()
   return new NextResponse(null, {
     status: 204,
     headers: {
-      "set-cookie": clearCookie(STATE_COOKIE, { secure, maxAgeSeconds: 0 }),
+      "set-cookie": clearCookie(STATE_COOKIE, {
+        secure: opts.secure,
+        maxAgeSeconds: 0,
+      }),
     },
   })
 }

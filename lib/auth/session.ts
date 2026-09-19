@@ -3,6 +3,8 @@ import { getConfig } from "@/lib/config"
 
 export const SESSION_COOKIE = "dkb_session"
 export const STATE_COOKIE = "dkb_oidc_state"
+/** id_token from the last exchange — sent as id_token_hint at RP logout. */
+export const ID_TOKEN_COOKIE = "dkb_id_token"
 
 export interface SessionClaims {
   /** users.id (internal numeric key) */
@@ -25,8 +27,25 @@ let cachedSecret: SessionSecret | null = null
 function sessionKey(): Uint8Array {
   if (!cachedSecret) {
     const cfg = getConfig()
-    const secret = cfg.SESSION_SECRET ?? cfg.OIDC_CLIENT_SECRET
-    cachedSecret = { key: new TextEncoder().encode(secret) }
+    if (cfg.SESSION_SECRET) {
+      cachedSecret = { key: new TextEncoder().encode(cfg.SESSION_SECRET) }
+    } else {
+      // same minimum as SESSION_SECRET (32 chars): the client secret is
+      // otherwise allowed at any length and would silently weaken HS256
+      // (it also already serves provider auth — one secret, two purposes)
+      if (cfg.OIDC_CLIENT_SECRET.length < 32) {
+        throw new Error(
+          "SESSION_SECRET is unset and OIDC_CLIENT_SECRET is shorter than " +
+            "32 chars — set SESSION_SECRET (≥32 chars) explicitly"
+        )
+      }
+      console.warn(
+        "[auth/session] SESSION_SECRET unset — falling back to " +
+          "OIDC_CLIENT_SECRET as the HS256 key (dedicated SESSION_SECRET " +
+          "recommended)"
+      )
+      cachedSecret = { key: new TextEncoder().encode(cfg.OIDC_CLIENT_SECRET) }
+    }
   }
   return cachedSecret.key
 }
@@ -111,4 +130,21 @@ export function clearCookie(
   return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${
     options.secure ? "; Secure" : ""
   }`
+}
+
+/**
+ * Read one cookie value from a Cookie header (percent-decoded). Shared by
+ * the auth routes — serializeCookie writes percent-encoded session tokens
+ * and raw base64url flow values, both of which survive the round-trip.
+ */
+export function cookieValue(
+  header: string | null,
+  name: string
+): string | null {
+  if (!header) return null
+  const match = header
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${name}=`))
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : null
 }

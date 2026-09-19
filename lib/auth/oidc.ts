@@ -27,9 +27,21 @@ let cachedConfig: OidcConfig | null = null
 /** app origin: APP_ORIGIN override or derived from the incoming request. */
 export function appOrigin(requestUrl: string): string {
   const cfg = getConfig()
-  if (cfg.APP_ORIGIN) return cfg.APP_ORIGIN.replace(/\/$/, "")
+  if (cfg.APP_ORIGIN) return cfg.APP_ORIGIN.replace(/\/+$/, "")
   const url = new URL(requestUrl)
   return url.origin
+}
+
+/**
+ * Browser-facing URL for an app-relative path (leading slash required).
+ * Preserves a sub-path APP_ORIGIN (…/base) — `new URL(path, origin)` would
+ * discard it. Without APP_ORIGIN, the request's own origin is used (no base
+ * path to preserve; Next cannot know the public mount point then).
+ */
+export function appUrl(requestUrl: string, pathWithSlash: string): URL {
+  const base = appOrigin(requestUrl)
+  const basePath = new URL(base).pathname.replace(/\/+$/, "")
+  return new URL(`${basePath}${pathWithSlash}`, base)
 }
 
 export async function getOidcConfig(requestUrl: string): Promise<OidcConfig> {
@@ -47,7 +59,22 @@ export async function getOidcConfig(requestUrl: string): Promise<OidcConfig> {
 }
 
 function redirectUriFor(requestUrl: string): string {
-  return `${appOrigin(requestUrl)}/auth/callback`
+  return appUrl(requestUrl, "/auth/callback").toString()
+}
+
+/**
+ * The token-exchange redirect_uri must byte-match the authorize-request one
+ * (OIDC spec §3.1.2.2), but openid-client derives it from the callback URL
+ * itself — which behind a reverse proxy carries the internal origin. Rebuild
+ * the incoming callback onto the same appOrigin + path template both legs
+ * share, keeping query params (code/state) intact.
+ */
+/** Exported for tests: pins the authorize↔token redirect_uri contract. */
+export function callbackUrlFor(callbackUrl: string): URL {
+  const incoming = new URL(callbackUrl)
+  // sub-path APP_ORIGIN (…/base): the public path comes from the template —
+  // the internal request path must not leak into the redirect_uri
+  return new URL(`${redirectUriFor(callbackUrl)}${incoming.search}`)
 }
 
 /** For tests: drop the memoized discovery configuration. */
@@ -102,7 +129,7 @@ export async function exchangeAuthorizationCode(
   codeVerifier: string
 ): Promise<TokenResult> {
   const oidc = await getOidcConfig(callbackUrl)
-  const currentUrl = new URL(callbackUrl)
+  const currentUrl = callbackUrlFor(callbackUrl)
   const tokens = await authorizationCodeGrant(oidc.configuration, currentUrl, {
     expectedState,
     expectedNonce,
@@ -137,7 +164,7 @@ export async function buildLogoutRedirect(
   try {
     const oidc = await getOidcConfig(requestUrl)
     const params: Record<string, string> = {
-      post_logout_redirect_uri: `${appOrigin(requestUrl)}/`,
+      post_logout_redirect_uri: appUrl(requestUrl, "/").toString(),
     }
     if (idTokenHint) params.id_token_hint = idTokenHint
     return buildEndSessionUrl(oidc.configuration, params)
