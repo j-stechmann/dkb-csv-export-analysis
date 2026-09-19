@@ -244,9 +244,7 @@ describe("logout CSRF protection", () => {
     expect(res.status).toBe(403)
   })
 
-  it("accepts a same-origin POST (Origin matches APP_ORIGIN)", async () => {
-    // buildLogoutRedirect hits discovery — serve a minimal document without
-    // end_session_endpoint so the route falls back to the app redirect
+  function stubDiscovery() {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -264,6 +262,12 @@ describe("logout CSRF protection", () => {
           )
       )
     )
+  }
+
+  it("accepts a same-origin POST (Origin matches APP_ORIGIN)", async () => {
+    // buildLogoutRedirect hits discovery — serve a minimal document without
+    // end_session_endpoint so the route falls back to the app redirect
+    stubDiscovery()
     const res = await postLogout({
       origin: "https://app.example.com",
     })
@@ -273,25 +277,20 @@ describe("logout CSRF protection", () => {
   })
 
   it("accepts a request with only Sec-Fetch-Site: same-origin (no Origin)", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              issuer: process.env.OIDC_ISSUER_URL,
-              authorization_endpoint: "https://issuer.example.com/authorize",
-              token_endpoint: "https://issuer.example.com/token",
-            }),
-            {
-              status: 200,
-              headers: { "content-type": "application/json" },
-            }
-          )
-      )
-    )
+    stubDiscovery()
     const res = await postLogout({ "sec-fetch-site": "same-origin" })
     expect(res.status).toBe(302)
+  })
+
+  it("accepts a realistic browser POST with both matching headers", async () => {
+    stubDiscovery()
+    const res = await postLogout({
+      "sec-fetch-site": "same-origin",
+      origin: "https://app.example.com",
+    })
+    expect(res.status).toBe(302)
+    const setCookies = res.headers.getSetCookie()
+    expect(setCookies.some((c) => c.startsWith("dkb_session=;"))).toBe(true)
   })
 })
 

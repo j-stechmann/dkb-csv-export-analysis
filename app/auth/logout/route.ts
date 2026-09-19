@@ -35,11 +35,14 @@ export async function POST(request: NextRequest) {
   }
   const origin = request.headers.get("origin")
   if (origin) {
+    // second entry: new URL() normalizes trailing slashes/default ports/
+    // casing that a raw APP_ORIGIN string wouldn't — load-bearing for
+    // such configs
     const allowed = new Set([appOrigin(request.url)])
     try {
       allowed.add(new URL(appUrl(request.url, "/")).origin)
     } catch {
-      // appUrl can't produce anything new here (same origin); defensive only
+      // same-origin construction can't fail here; defensive only
     }
     if (!allowed.has(origin)) {
       return NextResponse.json(
