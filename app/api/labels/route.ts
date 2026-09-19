@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from "next/server"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories } from "@/lib/db/schema"
 import { normalizeCategoryKey, isValidLabelName } from "@/lib/labeller/service"
 import { pickCategoryColor } from "@/lib/category-colors"
+import {
+  assertSameOrigin,
+  requireSession,
+  unauthorized,
+} from "@/lib/auth/guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const session = await requireSession(request)
+  if (!session) return unauthorized()
   const db = getDb()
   const rows = db
     .select({
@@ -25,12 +32,17 @@ export async function GET() {
       ruleCount: sql<number>`(SELECT COUNT(*) FROM label_rules r WHERE r.label_id = categories.id)`,
     })
     .from(categories)
+    .where(eq(categories.userId, session.uid))
     .orderBy(sql`usage_count DESC, name ASC`)
     .all()
   return NextResponse.json({ labels: rows })
 }
 
 export async function POST(request: NextRequest) {
+  const session = await requireSession(request)
+  if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const body = (await request.json().catch(() => null)) as {
     name?: unknown
   } | null
@@ -51,7 +63,9 @@ export async function POST(request: NextRequest) {
   const existing = db
     .select({ id: categories.id })
     .from(categories)
-    .where(eq(categories.nameKey, nameKey))
+    .where(
+      and(eq(categories.userId, session.uid), eq(categories.nameKey, nameKey))
+    )
     .get()
   if (existing) {
     return NextResponse.json(
@@ -72,6 +86,7 @@ export async function POST(request: NextRequest) {
     return tx
       .insert(categories)
       .values({
+        userId: session.uid,
         name,
         nameKey,
         language: "de",
@@ -92,7 +107,9 @@ export async function POST(request: NextRequest) {
     const reread = db
       .select({ id: categories.id })
       .from(categories)
-      .where(eq(categories.nameKey, nameKey))
+      .where(
+        and(eq(categories.userId, session.uid), eq(categories.nameKey, nameKey))
+      )
       .get()
     if (!reread) {
       return NextResponse.json(

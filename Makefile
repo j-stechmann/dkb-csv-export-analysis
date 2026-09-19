@@ -25,6 +25,13 @@ LLM_HOST          ?= 127.0.0.1
 LLM_PORT          ?= 8080
 LLM_CTX           ?= 8192
 
+# ── Dev OIDC provider (Authentik in Docker) ─────────────────────────────────
+# Throwaway Authentik stack (compose.dev.yaml) for the mandatory OIDC login
+# (ADR-0032). OIDC_PORT is what the app's OIDC_ISSUER_URL points at
+# (issuer: http://localhost:$(OIDC_PORT)/application/o/dkb-analytics/).
+OIDC_PORT         ?= 8081
+OIDC_COMPOSE      ?= compose.dev.yaml
+
 # an empty MODEL_HF_REVISION means "track the repo default branch"
 MODEL_REV = $(if $(MODEL_HF_REVISION),$(MODEL_HF_REVISION),main)
 MODEL_URL = https://huggingface.co/$(MODEL_HF_REPO)/resolve/$(MODEL_REV)/$(MODEL_HF_FILE)
@@ -47,12 +54,16 @@ LLAMA_SERVER ?= $(shell command -v llama-server 2>/dev/null)
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-.PHONY: help dev app model llm stop llm-status test check format build start
+.PHONY: help dev app model llm stop llm-status oidc oidc-stop oidc-status oidc-logs test check format build start
 
 help:
 	@echo "DKB Analytics — make targets:"
 	@echo "  make dev        llama-server + dev app together (offers model download; Ctrl-C stops both)"
 	@echo "  make app        dev app only (llama-server must already run)"
+	@echo "  make oidc       start the dev OIDC provider (Authentik, :$(OIDC_PORT)) + provision the client"
+	@echo "  make oidc-stop  stop the dev OIDC provider (config survives in a named volume)"
+	@echo "  make oidc-status health check for the dev OIDC provider"
+	@echo "  make oidc-logs  tail the dev OIDC provider logs"
 	@echo "  make model      download the pinned model ($(MODEL_HF_FILE), ~$$(($(MODEL_SIZE) / 1000000000)) GB) — run once"
 	@echo "  make llm        start llama-server in the background (log: /tmp/llama-server.log)"
 	@echo "  make stop       stop llama-server"
@@ -69,9 +80,11 @@ help:
 	@echo "Custom model: make llm MODEL=/path/to/model.gguf"
 
 # ── combined / app ───────────────────────────────────────────────────────────
-# dev = llama-server (if not already running) + foreground app. When this
-# command started llama-server itself, Ctrl-C stops it again; a pre-existing
-# server is left alone.
+# dev = llama-server (if not already running) + dev OIDC provider (if not
+# already running) + foreground app. When this command started llama-server
+# itself, Ctrl-C stops it again; a pre-existing server is left alone. The
+# Authentik containers are stateful (named volume) and slow to restart, so
+# they are always left running — `make oidc-stop` when done.
 dev:
 	@if ! curl -s -m 2 http://$(LLM_HOST):$(LLM_PORT)/health >/dev/null 2>&1; then \
 		$(MAKE) --no-print-directory llm; \
@@ -80,11 +93,13 @@ dev:
 		echo "llama-server already running on :$(LLM_PORT) (left running after exit)"; \
 	fi; \
 	trap 'if [ -f /tmp/llama-server.managed ]; then rm -f /tmp/llama-server.managed; $(MAKE) --no-print-directory stop; fi' EXIT INT TERM; \
+	$(MAKE) --no-print-directory oidc; \
 	if [ ! -d node_modules ]; then echo "installing dependencies…"; bun install; fi; \
 	bun dev
 
 app:
 	@if [ ! -d node_modules ]; then echo "installing dependencies…"; bun install; fi; \
+	$(MAKE) --no-print-directory oidc; \
 	bun dev
 
 # ── model management ────────────────────────────────────────────────────────
@@ -219,6 +234,72 @@ llm-stop: stop
 llm-status:
 	@curl -s -m 3 http://$(LLM_HOST):$(LLM_PORT)/health && echo " (llama-server ok)" || echo "llama-server unreachable"
 	@nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader 2>/dev/null || true
+
+# ── dev OIDC provider (Authentik) ───────────────────────────────────────────
+# Starts the compose.dev.yaml stack when :$(OIDC_PORT) is not ready yet,
+# waits for first-boot migrations, then idempotently provisions the
+# dkb-analytics client (scripts/dev-oidc-provision.ts). OIDC_ISSUER_URL /
+# OIDC_CLIENT_* in .env must match the values baked in there.
+#
+# Credentials: compose.dev.yaml reads them from compose.dev.env (gitignored,
+# dockerignored). On first run a copy of compose.dev.env.example is created;
+# edit it to change any password. The stack is bound to 127.0.0.1 — it must
+# never be reachable from other network hosts.
+oidc:
+	@if [ ! -f compose.dev.env ]; then \
+		cp compose.dev.env.example compose.dev.env; \
+		echo "created compose.dev.env from compose.dev.env.example — edit it to set your dev IdP passwords"; \
+	fi; \
+	if curl -s -m 2 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1; then \
+		echo "dev OIDC provider already running on :$(OIDC_PORT)"; \
+	else \
+		if ! docker info >/dev/null 2>&1; then \
+			echo "docker is not running — start it (or the podman equivalent) first"; \
+			exit 1; \
+		fi; \
+		echo "starting dev OIDC provider (Authentik) on :$(OIDC_PORT)…"; \
+		docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) up -d --quiet-pull || exit 1; \
+	fi; \
+	$(MAKE) --no-print-directory oidc-wait; \
+	AUTHENTIK_BOOTSTRAP_TOKEN="$$(sed -n 's/^AUTHENTIK_BOOTSTRAP_TOKEN=//p' compose.dev.env)" bun scripts/dev-oidc-provision.ts; \
+	issuer="$$(grep -oP '^OIDC_ISSUER_URL=\K.*' .env 2>/dev/null || echo http://localhost:$(OIDC_PORT)/application/o/dkb-analytics/)"; \
+	if curl -sf -m 5 "$${issuer}.well-known/openid-configuration" >/dev/null 2>&1; then \
+		echo "OIDC discovery ready: $$issuer"; \
+	else \
+		echo "WARNING: OIDC discovery not reachable at $${issuer}.well-known/openid-configuration"; \
+		exit 1; \
+	fi
+
+# Polls /-/health/ready/ (200 when ready) while first-boot migrations run
+# (can take a minute on the very first start). OIDC discovery is confirmed
+# by the `oidc` target after provisioning.
+oidc-wait:
+	@echo -n "waiting for dev OIDC provider"; \
+	for i in $$(seq 1 60); do \
+		if curl -sf -m 2 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1; then \
+			echo " ready"; \
+			break; \
+		fi; \
+		printf "."; sleep 2; \
+	done; \
+	if ! curl -sf -m 2 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1; then \
+		echo; echo "timeout waiting for the dev OIDC provider — see: make oidc-logs"; exit 1; \
+	fi
+
+# compose `stop` (not `down -v`): the authentik-db named volume keeps the
+# provisioned dkb-analytics client, so the next `make oidc` is fast.
+oidc-stop:
+	@if [ ! -f compose.dev.env ]; then cp compose.dev.env.example compose.dev.env; fi; \
+	docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) stop
+
+oidc-status:
+	@curl -sf -m 3 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1 \
+		&& echo "dev OIDC provider ok on :$(OIDC_PORT)" \
+		|| echo "dev OIDC provider unreachable on :$(OIDC_PORT)"
+
+oidc-logs:
+	@if [ ! -f compose.dev.env ]; then cp compose.dev.env.example compose.dev.env; fi; \
+	docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) logs -f --tail=50
 
 # ── quality gates ────────────────────────────────────────────────────────────
 test:

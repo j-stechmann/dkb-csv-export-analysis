@@ -3,6 +3,11 @@ import { and, eq, ne } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories, labelRules } from "@/lib/db/schema"
 import { normalizeWhitespace } from "@/lib/money"
+import {
+  assertSameOrigin,
+  requireSession,
+  unauthorized,
+} from "@/lib/auth/guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -18,6 +23,10 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireSession(request)
+  if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const { id } = await params
   const ruleId = Number.parseInt(id, 10)
   if (!Number.isInteger(ruleId)) {
@@ -60,10 +69,14 @@ export async function PATCH(
   }
 
   const db = getDb()
+  const ruleScope = and(
+    eq(labelRules.id, ruleId),
+    eq(labelRules.userId, session.uid)
+  )
   const current = db
     .select({ id: labelRules.id })
     .from(labelRules)
-    .where(eq(labelRules.id, ruleId))
+    .where(ruleScope)
     .get()
   if (!current) {
     return NextResponse.json({ error: "not_found" }, { status: 404 })
@@ -72,7 +85,9 @@ export async function PATCH(
   const targetLabel = db
     .select({ id: categories.id })
     .from(categories)
-    .where(eq(categories.id, body.labelId))
+    .where(
+      and(eq(categories.id, body.labelId), eq(categories.userId, session.uid))
+    )
     .get()
   if (!targetLabel) {
     return NextResponse.json(
@@ -88,6 +103,7 @@ export async function PATCH(
     .from(labelRules)
     .where(
       and(
+        eq(labelRules.userId, session.uid),
         eq(labelRules.payer, payer),
         eq(labelRules.payee, payee),
         eq(labelRules.counterpartyIban, counterpartyIban),
@@ -112,7 +128,7 @@ export async function PATCH(
         counterpartyIban,
         updatedAt: now,
       })
-      .where(eq(labelRules.id, ruleId))
+      .where(ruleScope)
       .run()
   } catch (err) {
     if (err instanceof Error && err.message.includes("UNIQUE constraint")) {
@@ -133,15 +149,19 @@ export async function PATCH(
       counterpartyIban: labelRules.counterpartyIban,
     })
     .from(labelRules)
-    .where(eq(labelRules.id, ruleId))
+    .where(ruleScope)
     .get()
   return NextResponse.json({ rule: updated })
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireSession(request)
+  if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const { id } = await params
   const ruleId = Number.parseInt(id, 10)
   if (!Number.isInteger(ruleId)) {
@@ -149,7 +169,10 @@ export async function DELETE(
   }
 
   const db = getDb()
-  const result = db.delete(labelRules).where(eq(labelRules.id, ruleId)).run()
+  const result = db
+    .delete(labelRules)
+    .where(and(eq(labelRules.id, ruleId), eq(labelRules.userId, session.uid)))
+    .run()
   if (result.changes === 0) {
     return NextResponse.json({ error: "not_found" }, { status: 404 })
   }

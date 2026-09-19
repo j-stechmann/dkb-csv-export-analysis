@@ -19,18 +19,25 @@ function nextCategoryColor(tx: DbTx): string {
  * Resolve-or-create a category by name and bump its usageCount.
  * The single choke point for category writes (LLM apply + manual assign).
  * Runs inside the caller's transaction. Returns the category id.
+ * Categories are per-user (ADR-0032): the nameKey namespace is scoped by
+ * the owning user, colors stay globally unique.
  */
-export function resolveAndUseCategory(tx: DbTx, name: string): number | null {
+export function resolveAndUseCategory(
+  tx: DbTx,
+  userId: number,
+  name: string
+): number | null {
   const nameKey = normalizeCategoryKey(name)
   let cat = tx
     .select({ id: categories.id })
     .from(categories)
-    .where(eq(categories.nameKey, nameKey))
+    .where(and(eq(categories.userId, userId), eq(categories.nameKey, nameKey)))
     .get()
   if (!cat) {
     const inserted = tx
       .insert(categories)
       .values({
+        userId,
         name: name.trim(),
         nameKey,
         language: "de",
@@ -46,7 +53,9 @@ export function resolveAndUseCategory(tx: DbTx, name: string): number | null {
       tx
         .select({ id: categories.id })
         .from(categories)
-        .where(eq(categories.nameKey, nameKey))
+        .where(
+          and(eq(categories.userId, userId), eq(categories.nameKey, nameKey))
+        )
         .get()
   }
   if (!cat) return null
@@ -79,6 +88,7 @@ export function applyLabelResults(
         .select({
           batchId: transactions.batchId,
           labelAttempts: transactions.labelAttempts,
+          userId: transactions.userId,
         })
         .from(transactions)
         .where(eq(transactions.id, result.id))
@@ -87,7 +97,7 @@ export function applyLabelResults(
       if (row.labelAttempts !== claimedAttempts.get(result.id)) continue
       if (row.batchId) batchIds.add(row.batchId)
 
-      const catId = resolveAndUseCategory(tx, result.label)
+      const catId = resolveAndUseCategory(tx, row.userId, result.label)
       if (!catId) continue
       tx.update(transactions)
         .set({
@@ -312,15 +322,17 @@ export function resetTransactionsForLabelDeletion(
  * Finds transactions matching a learned rule exactly: payer, payee and
  * counterparty IBAN must all equal the rule's values (rule values are never
  * null/empty; SQL `=` on the transaction columns also excludes NULLs there).
- * Only 'Gebucht' rows are returned: the worker never claims anything else,
- * so including 'Nicht gebucht' rows would only inflate counts. With
- * `excludeLabelId`, rows already pointing at that label are skipped (any
- * label_status): re-applying a rule must neither rewrite them nor re-queue
- * them for a redundant LLM call — apply is for switching rows to the rule's
- * label, not for refreshing it.
+ * Scoped to the rule owner's rows (ADR-0032 user isolation). Only 'Gebucht'
+ * rows are returned: the worker never claims anything else, so including
+ * 'Nicht gebucht' rows would only inflate counts. With `excludeLabelId`,
+ * rows already pointing at that label are skipped (any label_status):
+ * re-applying a rule must neither rewrite them nor re-queue them for a
+ * redundant LLM call — apply is for switching rows to the rule's label, not
+ * for refreshing it.
  */
 export function findRuleMatches(
   db: Db | DbTx,
+  userId: number,
   payer: string,
   payee: string,
   counterpartyIban: string,
@@ -334,6 +346,7 @@ export function findRuleMatches(
     .from(transactions)
     .where(
       and(
+        eq(transactions.userId, userId),
         eq(transactions.status, "Gebucht"),
         eq(transactions.payer, payer),
         eq(transactions.payee, payee),
@@ -365,6 +378,7 @@ export function findRuleMatches(
  * Returns null if the label was deleted concurrently (nothing written).
  */
 export function applyRuleToTransactions(
+  userId: number,
   payer: string,
   payee: string,
   counterpartyIban: string,
@@ -378,7 +392,7 @@ export function applyRuleToTransactions(
     // Re-check the label inside the transaction: a concurrent label delete
     // would otherwise make the per-row updates fail on the category FK.
     const label = tx
-      .select({ id: categories.id })
+      .select({ id: categories.id, userId: categories.userId })
       .from(categories)
       .where(eq(categories.id, labelId))
       .get()
@@ -387,7 +401,14 @@ export function applyRuleToTransactions(
       return
     }
 
-    const matched = findRuleMatches(tx, payer, payee, counterpartyIban, labelId)
+    const matched = findRuleMatches(
+      tx,
+      label.userId,
+      payer,
+      payee,
+      counterpartyIban,
+      labelId
+    )
     const batchIds = new Set<string>()
     const now = new Date().toISOString()
     for (const row of matched) {

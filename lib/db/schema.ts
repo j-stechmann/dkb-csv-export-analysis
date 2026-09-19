@@ -8,17 +8,37 @@ import {
 } from "drizzle-orm/sqlite-core"
 import { sql } from "drizzle-orm"
 
+export const users = sqliteTable(
+  "users",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** OIDC issuer URL the identity was authenticated by */
+    issuer: text("issuer").notNull(),
+    /** OIDC subject claim (stable per issuer) */
+    subject: text("subject").notNull(),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [uniqueIndex("users_issuer_subject_unique").on(t.issuer, t.subject)]
+)
+
 export const accounts = sqliteTable(
   "accounts",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
     iban: text("iban").notNull(),
     name: text("name").notNull(),
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
   },
-  (t) => [uniqueIndex("accounts_iban_unique").on(t.iban)]
+  (t) => [uniqueIndex("accounts_user_iban_unique").on(t.userId, t.iban)]
 )
 
 export const importBatches = sqliteTable(
@@ -26,6 +46,9 @@ export const importBatches = sqliteTable(
   {
     id: text("id").primaryKey(),
     fileName: text("file_name").notNull(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
     accountId: integer("account_id").references(() => accounts.id),
     /** parsing | importing | labeling | completed | failed */
     status: text("status").notNull().default("parsing"),
@@ -54,6 +77,9 @@ export const categories = sqliteTable(
   "categories",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
     name: text("name").notNull(),
     nameKey: text("name_key").notNull(),
     language: text("language").notNull(),
@@ -68,7 +94,7 @@ export const categories = sqliteTable(
       .$defaultFn(() => new Date().toISOString()),
   },
   (t) => [
-    uniqueIndex("categories_name_key_unique").on(t.nameKey),
+    uniqueIndex("categories_user_name_key_unique").on(t.userId, t.nameKey),
     uniqueIndex("categories_color_unique").on(t.color),
   ]
 )
@@ -77,6 +103,9 @@ export const labelRules = sqliteTable(
   "label_rules",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
     labelId: integer("label_id")
       .notNull()
       .references(() => categories.id, { onDelete: "cascade" }),
@@ -95,6 +124,7 @@ export const labelRules = sqliteTable(
   },
   (t) => [
     uniqueIndex("label_rules_triple_unique").on(
+      t.userId,
       t.payer,
       t.payee,
       t.counterpartyIban
@@ -116,6 +146,9 @@ export const transactions = sqliteTable(
   "transactions",
   {
     id: text("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
     accountId: integer("account_id")
       .notNull()
       .references(() => accounts.id),
@@ -152,6 +185,7 @@ export const transactions = sqliteTable(
       t.sourceHash,
       t.occurrenceIndex
     ),
+    index("transactions_user_booking_idx").on(t.userId, t.bookingDate),
     index("transactions_account_booking_idx").on(t.accountId, t.bookingDate),
     index("transactions_booking_date_idx").on(t.bookingDate),
     index("transactions_label_status_idx").on(t.labelStatus),
@@ -161,6 +195,7 @@ export const transactions = sqliteTable(
   ]
 )
 
+export type User = typeof users.$inferSelect
 export type Account = typeof accounts.$inferSelect
 export type ImportBatch = typeof importBatches.$inferSelect
 export type Category = typeof categories.$inferSelect

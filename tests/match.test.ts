@@ -55,6 +55,7 @@ function incRow(
 function dbFromTransaction(id: string, t: ParsedTransactionRow): DbMatchRow {
   const tx: Transaction = {
     id,
+    userId: 1,
     accountId: 1,
     batchId: null,
     bookingDate: t.bookingDate,
@@ -614,6 +615,7 @@ describe("toDbMatchRow", () => {
     const tx = dbRow({ id: "x", valueDate: "" })
     const asTransaction = {
       id: tx.id,
+      userId: 1,
       accountId: 1,
       batchId: null,
       bookingDate: tx.bookingDate,

@@ -6,6 +6,7 @@ import { createTestDb, setTestDb, type Db } from "@/lib/db"
 import { parseDkbCsv } from "@/lib/csv/parser"
 import { runReconcileAndDedupeStage } from "@/lib/import/pipeline"
 import { computeDedupe } from "@/lib/db/dedupe"
+import { seedUser } from "./helpers"
 import { transactions, accounts, importBatches } from "@/lib/db/schema"
 
 interface ResolveManifest {
@@ -50,9 +51,12 @@ let db: Db
 let batchId2: string
 let stage2Result: ReturnType<typeof runReconcileAndDedupeStage>
 
+let userId: number
+
 beforeAll(() => {
   db = createTestDb()
   setTestDb(db)
+  userId = seedUser(db)
 
   // ── stage 1: plain full import of fixture.csv (batch-1) ─────────────
   const parsed1 = parseDkbCsv(csv1)
@@ -60,13 +64,14 @@ beforeAll(() => {
 
   const account = db
     .insert(accounts)
-    .values({ iban: parsed1.accountIban, name: parsed1.accountName })
+    .values({ userId, iban: parsed1.accountIban, name: parsed1.accountName })
     .returning()
     .get()
 
   const batch1 = db
     .insert(importBatches)
     .values({
+      userId,
       id: "reconcile-batch-1",
       fileName: "fixture.csv",
       accountId: account.id,
@@ -80,6 +85,7 @@ beforeAll(() => {
 
   const first = computeDedupe(
     parsed1.accountIban,
+    userId,
     account.id,
     batch1.id,
     parsed1.rows,
@@ -102,6 +108,7 @@ beforeAll(() => {
   const batch2 = db
     .insert(importBatches)
     .values({
+      userId,
       id: "reconcile-batch-2",
       fileName: "fixture-pending-resolved.csv",
       accountId: account.id,
@@ -116,6 +123,7 @@ beforeAll(() => {
 
   stage2Result = runReconcileAndDedupeStage(
     parsed2.accountIban,
+    userId,
     account.id,
     batchId2,
     parsed2.rows

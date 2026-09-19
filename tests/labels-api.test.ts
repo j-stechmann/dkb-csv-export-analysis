@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { eq } from "drizzle-orm"
 import { NextRequest } from "next/server"
-import { createTestDb, setTestDb, type Db } from "@/lib/db"
+import type { Db } from "@/lib/db"
 import { accounts, categories, labelRules, transactions } from "@/lib/db/schema"
 import { GET as listLabels, POST as createLabel } from "@/app/api/labels/route"
 import {
@@ -11,20 +11,27 @@ import {
 import { DELETE as deleteRule } from "@/app/api/label-rules/[id]/route"
 import { GET as listRules } from "@/app/api/labels/[id]/rules/route"
 import { POST as assignLabel } from "@/app/api/transactions/[id]/label/route"
+import { authedRequest, setupTestDb } from "./helpers"
 
 const IBAN = "DE02120300000000202051"
 
 let db: Db
 let accountId: number
 
-function jsonReq(url: string, body: unknown, method = "POST"): NextRequest {
-  return new NextRequest(
-    new Request(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-  )
+function jsonReq(
+  url: string,
+  body: unknown,
+  method = "POST"
+): Promise<NextRequest> {
+  return authedRequest(url, userId, { method, body })
+}
+
+function authedGet(url: string): Promise<NextRequest> {
+  return authedRequest(url, userId)
+}
+
+function authedDelete(url: string): Promise<NextRequest> {
+  return authedRequest(url, userId, { method: "DELETE" })
 }
 
 function seedTx(
@@ -41,6 +48,7 @@ function seedTx(
   db.insert(transactions)
     .values({
       id,
+      userId,
       accountId,
       bookingDate: "2026-02-03",
       status: "Gebucht",
@@ -62,12 +70,13 @@ function getTx(id: string) {
   return db.select().from(transactions).where(eq(transactions.id, id)).get()
 }
 
-beforeEach(() => {
-  db = createTestDb()
-  setTestDb(db)
+let userId: number
+
+beforeEach(async () => {
+  ;({ db, userId } = setupTestDb())
   accountId = db
     .insert(accounts)
-    .values({ iban: IBAN, name: "Girokonto" })
+    .values({ userId, iban: IBAN, name: "Girokonto" })
     .returning()
     .get().id
 })
@@ -77,6 +86,7 @@ describe("GET /api/labels", () => {
     const miete = db
       .insert(categories)
       .values({
+        userId,
         name: "Miete",
         nameKey: "miete",
         language: "de",
@@ -92,6 +102,7 @@ describe("GET /api/labels", () => {
     db.insert(labelRules)
       .values([
         {
+          userId,
           labelId: miete.id,
           payer: "Max Mustermann",
           payee: "Vermieter GmbH",
@@ -100,6 +111,7 @@ describe("GET /api/labels", () => {
           updatedAt: new Date().toISOString(),
         },
         {
+          userId,
           labelId: miete.id,
           payer: "Max Mustermann",
           payee: "Vermieter GmbH",
@@ -110,7 +122,7 @@ describe("GET /api/labels", () => {
       ])
       .run()
 
-    const res = await listLabels()
+    const res = await listLabels(await authedGet("http://test/api/labels"))
     const data = (await res.json()) as {
       labels: Array<{
         id: number
@@ -134,7 +146,7 @@ describe("GET /api/labels", () => {
 describe("POST /api/labels", () => {
   it("creates a manual label", async () => {
     const out = await createLabel(
-      jsonReq("http://test/api/labels", { name: "Lebensmittel" })
+      await jsonReq("http://test/api/labels", { name: "Lebensmittel" })
     )
     expect(out.status).toBe(201)
     const data = (await out.json()) as { id: number }
@@ -145,9 +157,11 @@ describe("POST /api/labels", () => {
   })
 
   it("rejects duplicate names with 409", async () => {
-    await createLabel(jsonReq("http://test/api/labels", { name: "Miete" }))
+    await createLabel(
+      await jsonReq("http://test/api/labels", { name: "Miete" })
+    )
     const out = await createLabel(
-      jsonReq("http://test/api/labels", { name: "  miete " })
+      await jsonReq("http://test/api/labels", { name: "  miete " })
     )
     expect(out.status).toBe(409)
   })
@@ -165,7 +179,7 @@ describe("POST /api/labels", () => {
        END`
     )
     const out = await createLabel(
-      jsonReq("http://test/api/labels", { name: "Farbtest" })
+      await jsonReq("http://test/api/labels", { name: "Farbtest" })
     )
     expect(out.status).toBe(500)
     expect((await out.json()) as { error: string }).toMatchObject({
@@ -182,13 +196,13 @@ describe("POST /api/labels", () => {
 
   it("rejects empty or oversized names with 400", async () => {
     expect(
-      (await createLabel(jsonReq("http://test/api/labels", { name: "" })))
+      (await createLabel(await jsonReq("http://test/api/labels", { name: "" })))
         .status
     ).toBe(400)
     expect(
       (
         await createLabel(
-          jsonReq("http://test/api/labels", { name: "x".repeat(65) })
+          await jsonReq("http://test/api/labels", { name: "x".repeat(65) })
         )
       ).status
     ).toBe(400)
@@ -196,7 +210,7 @@ describe("POST /api/labels", () => {
     expect(
       (
         await createLabel(
-          jsonReq("http://test/api/labels", { name: "ä".repeat(64) })
+          await jsonReq("http://test/api/labels", { name: "ä".repeat(64) })
         )
       ).status
     ).toBe(400)
@@ -205,7 +219,7 @@ describe("POST /api/labels", () => {
     expect(
       (
         await createLabel(
-          jsonReq("http://test/api/labels", { name: "a\u0007b" })
+          await jsonReq("http://test/api/labels", { name: "a\u0007b" })
         )
       ).status
     ).toBe(400)
@@ -215,7 +229,9 @@ describe("POST /api/labels", () => {
     // sanitizeField turns these into different strings in suggested_labels,
     // so the model echo could never map back to the stored nameKey
     for (const name of ["Miete | Nebenkosten", "a<<b", "a>>b", "index=0"]) {
-      const out = await createLabel(jsonReq("http://test/api/labels", { name }))
+      const out = await createLabel(
+        await jsonReq("http://test/api/labels", { name })
+      )
       expect(out.status).toBe(400)
       const data = (await out.json()) as { message?: string }
       expect(data.message).toContain("| < > index=")
@@ -226,7 +242,7 @@ describe("POST /api/labels", () => {
 describe("GET /api/labels/[id]/rules", () => {
   it("returns 404 for an unknown label id", async () => {
     const res = await listRules(
-      new NextRequest(new Request("http://x/api/labels/999/rules")),
+      await authedGet("http://x/api/labels/999/rules"),
       { params: Promise.resolve({ id: "999" }) }
     )
     expect(res.status).toBe(404)
@@ -234,11 +250,12 @@ describe("GET /api/labels/[id]/rules", () => {
 
   it("returns rules for an existing label", async () => {
     const created = await createLabel(
-      jsonReq("http://test/api/labels", { name: "Miete" })
+      await jsonReq("http://test/api/labels", { name: "Miete" })
     )
     const { id } = (await created.json()) as { id: number }
     db.insert(labelRules)
       .values({
+        userId,
         labelId: id,
         payer: "Max Mustermann",
         payee: "Vermieter GmbH",
@@ -249,7 +266,7 @@ describe("GET /api/labels/[id]/rules", () => {
       .run()
 
     const res = await listRules(
-      new NextRequest(new Request(`http://x/api/labels/${id}/rules`)),
+      await authedGet(`http://x/api/labels/${id}/rules`),
       { params: Promise.resolve({ id: String(id) }) }
     )
     expect(res.status).toBe(200)
@@ -262,7 +279,7 @@ describe("GET /api/labels/[id]/rules", () => {
 describe("PATCH /api/labels/[id]", () => {
   it("renames and flips origin to manual", async () => {
     const created = await createLabel(
-      jsonReq("http://test/api/labels", { name: "Alt" })
+      await jsonReq("http://test/api/labels", { name: "Alt" })
     )
     const { id } = (await created.json()) as { id: number }
     // simulate an llm-invented label
@@ -272,7 +289,7 @@ describe("PATCH /api/labels/[id]", () => {
       .run()
 
     const out = await patchLabel(
-      jsonReq(`http://test/api/labels/${id}`, { name: "Neu" }, "PATCH"),
+      await jsonReq(`http://test/api/labels/${id}`, { name: "Neu" }, "PATCH"),
       { params: Promise.resolve({ id: String(id) }) }
     )
     expect(out.status).toBe(200)
@@ -283,14 +300,20 @@ describe("PATCH /api/labels/[id]", () => {
   })
 
   it("rejects renames onto an existing nameKey with 409", async () => {
-    await createLabel(jsonReq("http://test/api/labels", { name: "Alpha" }))
+    await createLabel(
+      await jsonReq("http://test/api/labels", { name: "Alpha" })
+    )
     const b = await createLabel(
-      jsonReq("http://test/api/labels", { name: "Beta" })
+      await jsonReq("http://test/api/labels", { name: "Beta" })
     )
     const bData = (await b.json()) as { id: number }
 
     const out = await patchLabel(
-      jsonReq(`http://test/api/labels/${bData.id}`, { name: "alpha" }, "PATCH"),
+      await jsonReq(
+        `http://test/api/labels/${bData.id}`,
+        { name: "alpha" },
+        "PATCH"
+      ),
       { params: Promise.resolve({ id: String(bData.id) }) }
     )
     expect(out.status).toBe(409)
@@ -298,7 +321,7 @@ describe("PATCH /api/labels/[id]", () => {
 
   it("maps a unique-constraint violation on rename to 409", async () => {
     const created = await createLabel(
-      jsonReq("http://test/api/labels", { name: "Alpha" })
+      await jsonReq("http://test/api/labels", { name: "Alpha" })
     )
     const { id } = (await created.json()) as { id: number }
     // simulate the concurrent-write window: the advisory pre-check passes,
@@ -314,7 +337,7 @@ describe("PATCH /api/labels/[id]", () => {
     )
 
     const out = await patchLabel(
-      jsonReq(`http://test/api/labels/${id}`, { name: "Alpha" }, "PATCH"),
+      await jsonReq(`http://test/api/labels/${id}`, { name: "Alpha" }, "PATCH"),
       { params: Promise.resolve({ id: String(id) }) }
     )
     expect(out.status).toBe(409)
@@ -322,7 +345,7 @@ describe("PATCH /api/labels/[id]", () => {
 
   it("returns 404 for unknown labels", async () => {
     const out = await patchLabel(
-      jsonReq("http://test/api/labels/999", { name: "X" }, "PATCH"),
+      await jsonReq("http://test/api/labels/999", { name: "X" }, "PATCH"),
       {
         params: Promise.resolve({ id: "999" }),
       }
@@ -334,7 +357,7 @@ describe("PATCH /api/labels/[id]", () => {
 describe("DELETE /api/labels/[id]", () => {
   it("resets transactions, cascades rules and deletes the label", async () => {
     const created = await createLabel(
-      jsonReq("http://test/api/labels", { name: "Miete" })
+      await jsonReq("http://test/api/labels", { name: "Miete" })
     )
     const { id } = (await created.json()) as { id: number }
     const txId = seedTx({ labelStatus: "labeled" })
@@ -344,6 +367,7 @@ describe("DELETE /api/labels/[id]", () => {
       .run()
     db.insert(labelRules)
       .values({
+        userId,
         labelId: id,
         payer: "Max Mustermann",
         payee: "Vermieter GmbH",
@@ -354,9 +378,7 @@ describe("DELETE /api/labels/[id]", () => {
       .run()
 
     const out = await deleteLabel(
-      new NextRequest(
-        new Request(`http://x/api/labels/${id}`, { method: "DELETE" })
-      ),
+      await authedDelete(`http://x/api/labels/${id}`),
       { params: Promise.resolve({ id: String(id) }) }
     )
     expect(out.status).toBe(200)
@@ -373,9 +395,7 @@ describe("DELETE /api/labels/[id]", () => {
 
   it("returns 404 for unknown ids", async () => {
     const out = await deleteLabel(
-      new NextRequest(
-        new Request("http://x/api/labels/999", { method: "DELETE" })
-      ),
+      await authedDelete("http://x/api/labels/999"),
       { params: Promise.resolve({ id: "999" }) }
     )
     expect(out.status).toBe(404)
@@ -385,13 +405,13 @@ describe("DELETE /api/labels/[id]", () => {
 describe("POST /api/transactions/[id]/label", () => {
   it("assigns an existing label, learns the rule and flips origin", async () => {
     const created = await createLabel(
-      jsonReq("http://test/api/labels", { name: "Miete" })
+      await jsonReq("http://test/api/labels", { name: "Miete" })
     )
     const { id: labelId } = (await created.json()) as { id: number }
     const txId = seedTx()
 
     const out = await assignLabel(
-      jsonReq(`http://test/api/transactions/${txId}/label`, { labelId }),
+      await jsonReq(`http://test/api/transactions/${txId}/label`, { labelId }),
       { params: Promise.resolve({ id: txId }) }
     )
     expect(out.status).toBe(200)
@@ -414,7 +434,7 @@ describe("POST /api/transactions/[id]/label", () => {
 
   it("does not learn a rule when the transaction lacks payer or IBAN", async () => {
     const created = await createLabel(
-      jsonReq("http://test/api/labels", { name: "Miete" })
+      await jsonReq("http://test/api/labels", { name: "Miete" })
     )
     const { id: labelId } = (await created.json()) as { id: number }
     const noPayer = seedTx({ payer: null })
@@ -422,7 +442,9 @@ describe("POST /api/transactions/[id]/label", () => {
 
     for (const txId of [noPayer, noIban]) {
       const out = await assignLabel(
-        jsonReq(`http://test/api/transactions/${txId}/label`, { labelId }),
+        await jsonReq(`http://test/api/transactions/${txId}/label`, {
+          labelId,
+        }),
         { params: Promise.resolve({ id: txId }) }
       )
       expect(out.status).toBe(200)
@@ -434,7 +456,7 @@ describe("POST /api/transactions/[id]/label", () => {
   it("creates a new label inline via labelName", async () => {
     const txId = seedTx()
     const out = await assignLabel(
-      jsonReq(`http://test/api/transactions/${txId}/label`, {
+      await jsonReq(`http://test/api/transactions/${txId}/label`, {
         labelName: "Sonstiges",
       }),
       { params: Promise.resolve({ id: txId }) }
@@ -446,10 +468,12 @@ describe("POST /api/transactions/[id]/label", () => {
   })
 
   it("allocates a unique color when creating a label inline via labelName", async () => {
-    await createLabel(jsonReq("http://test/api/labels", { name: "Miete" }))
+    await createLabel(
+      await jsonReq("http://test/api/labels", { name: "Miete" })
+    )
     const txId = seedTx()
     const out = await assignLabel(
-      jsonReq(`http://test/api/transactions/${txId}/label`, {
+      await jsonReq(`http://test/api/transactions/${txId}/label`, {
         labelName: "Sonstiges",
       }),
       { params: Promise.resolve({ id: txId }) }
@@ -466,7 +490,7 @@ describe("POST /api/transactions/[id]/label", () => {
   it("rejects labelName over 64 UTF-8 bytes with 400", async () => {
     const txId = seedTx()
     const out = await assignLabel(
-      jsonReq(`http://test/api/transactions/${txId}/label`, {
+      await jsonReq(`http://test/api/transactions/${txId}/label`, {
         labelName: "ä".repeat(64),
       }),
       { params: Promise.resolve({ id: txId }) }
@@ -477,7 +501,7 @@ describe("POST /api/transactions/[id]/label", () => {
   it("rejects labelName with control characters with 400", async () => {
     const txId = seedTx()
     const out = await assignLabel(
-      jsonReq(`http://test/api/transactions/${txId}/label`, {
+      await jsonReq(`http://test/api/transactions/${txId}/label`, {
         labelName: "a\u0007b",
       }),
       { params: Promise.resolve({ id: txId }) }
@@ -488,7 +512,7 @@ describe("POST /api/transactions/[id]/label", () => {
   it("rejects labelName the prompt renderer would rewrite with 400", async () => {
     const txId = seedTx()
     const out = await assignLabel(
-      jsonReq(`http://test/api/transactions/${txId}/label`, {
+      await jsonReq(`http://test/api/transactions/${txId}/label`, {
         labelName: "Miete | Nebenkosten",
       }),
       { params: Promise.resolve({ id: txId }) }
@@ -499,14 +523,18 @@ describe("POST /api/transactions/[id]/label", () => {
 
   it("returns 404 for unknown transactions and labels", async () => {
     const out = await assignLabel(
-      jsonReq("http://test/api/transactions/missing/label", { labelName: "X" }),
+      await jsonReq("http://test/api/transactions/missing/label", {
+        labelName: "X",
+      }),
       { params: Promise.resolve({ id: "missing" }) }
     )
     expect(out.status).toBe(404)
 
     const txId = seedTx()
     const out2 = await assignLabel(
-      jsonReq(`http://test/api/transactions/${txId}/label`, { labelId: 999 }),
+      await jsonReq(`http://test/api/transactions/${txId}/label`, {
+        labelId: 999,
+      }),
       { params: Promise.resolve({ id: txId }) }
     )
     expect(out2.status).toBe(404)
@@ -517,12 +545,13 @@ describe("DELETE /api/label-rules/[id]", () => {
   it("removes a learned rule", async () => {
     const catId = db
       .insert(categories)
-      .values({ name: "A", nameKey: "a", language: "de" })
+      .values({ userId, name: "A", nameKey: "a", language: "de" })
       .returning()
       .get().id
     const ruleId = db
       .insert(labelRules)
       .values({
+        userId,
         labelId: catId,
         payer: "Max Mustermann",
         payee: "Vermieter GmbH",
@@ -534,9 +563,7 @@ describe("DELETE /api/label-rules/[id]", () => {
       .get().id
 
     const out = await deleteRule(
-      new NextRequest(
-        new Request(`http://x/api/label-rules/${ruleId}`, { method: "DELETE" })
-      ),
+      await authedDelete(`http://x/api/label-rules/${ruleId}`),
       { params: Promise.resolve({ id: String(ruleId) }) }
     )
     expect(out.status).toBe(200)
@@ -545,9 +572,7 @@ describe("DELETE /api/label-rules/[id]", () => {
 
   it("returns 404 for unknown rules", async () => {
     const out = await deleteRule(
-      new NextRequest(
-        new Request("http://x/api/label-rules/999", { method: "DELETE" })
-      ),
+      await authedDelete("http://x/api/label-rules/999"),
       { params: Promise.resolve({ id: "999" }) }
     )
     expect(out.status).toBe(404)

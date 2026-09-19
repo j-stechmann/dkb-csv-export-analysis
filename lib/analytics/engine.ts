@@ -70,7 +70,10 @@ interface BalanceAnchor {
  * absolute balance point). Current balance = snapshot + Σ(booked amounts
  * with booking_date > snapshot_date) — robust to missing older history.
  */
-function latestAnchor(accountId?: number): BalanceAnchor | null {
+function latestAnchor(
+  userId: number,
+  accountId?: number
+): BalanceAnchor | null {
   const db = getDb()
   const rows = db
     .select({
@@ -81,10 +84,11 @@ function latestAnchor(accountId?: number): BalanceAnchor | null {
     .where(
       accountId !== undefined
         ? and(
+            eq(importBatches.userId, userId),
             eq(importBatches.accountId, accountId),
             sql`${importBatches.snapshotDate} IS NOT NULL AND ${importBatches.snapshotAmountCents} IS NOT NULL`
           )
-        : sql`${importBatches.snapshotDate} IS NOT NULL AND ${importBatches.snapshotAmountCents} IS NOT NULL`
+        : sql`${importBatches.userId} = ${userId} AND ${importBatches.snapshotDate} IS NOT NULL AND ${importBatches.snapshotAmountCents} IS NOT NULL`
     )
     .all()
   const valid = rows.filter(
@@ -132,12 +136,13 @@ function lastDayOfMonth(iso: string): string {
  */
 export function computeAnalytics(
   f: TransactionFilters,
+  userId: number,
   today: string
 ): AnalyticsResult {
   const db = getDb()
 
   // ── flow aggregates: single filter source, shared with the table ──
-  const flowWhere = buildWhere(f)
+  const flowWhere = buildWhere(f, userId)
 
   const monthlyRows = db
     .select({
@@ -284,7 +289,7 @@ export function computeAnalytics(
     dateFrom: undefined,
     dateTo: undefined,
   }
-  const savingsWhere = buildWhere(savingsScope)
+  const savingsWhere = buildWhere(savingsScope, userId)
 
   let savingsHistory: SavingsHistory | null = null
 
@@ -347,6 +352,9 @@ export function computeAnalytics(
       }
     })
     const last = months[months.length - 1]
+    // an empty window (no bookings in [windowStart, lastCompleteMonth]) must
+    // not crash: report zero net for the last complete month
+    const lastMonthNetCents = last ? last.netCents : 0
 
     // the running month is appended separately (UI marks it incomplete)
     const currentRow = byMonth.get(currentMonthKey)
@@ -361,7 +369,7 @@ export function computeAnalytics(
 
     savingsHistory = {
       lastMonth: lastCompleteMonth,
-      lastMonthNetCents: last.netCents,
+      lastMonthNetCents,
       // stale = the series does not reach the previous calendar month
       lastMonthIsStale: lastCompleteMonth < prevOfToday,
       months,
@@ -370,7 +378,7 @@ export function computeAnalytics(
   }
 
   // ── balance: snapshot anchor math, time-scoped only ───────────────
-  const anchor = latestAnchor(f.accountId)
+  const anchor = latestAnchor(userId, f.accountId)
   const { dateFrom, dateTo } = f
 
   const balanceScope: TransactionFilters = {
@@ -388,7 +396,10 @@ export function computeAnalytics(
     anchor !== null && dateTo !== undefined && dateTo < anchor.snapshotDate
       ? anchor.snapshotDate
       : dateTo
-  const reconWhere = buildWhere({ ...balanceScope, dateTo: reconDateTo })
+  const reconWhere = buildWhere(
+    { ...balanceScope, dateTo: reconDateTo },
+    userId
+  )
 
   const dailyRows = db
     .select({

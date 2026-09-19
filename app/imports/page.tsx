@@ -16,6 +16,7 @@ import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { useActiveImport } from "@/components/active-import-provider"
 import { cn } from "@/lib/utils"
+import { apiFetch } from "@/lib/api-fetch"
 
 interface BatchRow {
   id: string
@@ -51,7 +52,7 @@ function ImportDropzone() {
     try {
       const body = new FormData()
       body.append("file", file)
-      const res = await fetch("/api/imports", { method: "POST", body })
+      const res = await apiFetch("/api/imports", { method: "POST", body })
       const data = (await res.json()) as {
         batchId?: string
         error?: string
@@ -139,7 +140,7 @@ function RetryLabelingButton() {
       onClick={async () => {
         setBusy(true)
         try {
-          const res = await fetch("/api/labels/retry", { method: "POST" })
+          const res = await apiFetch("/api/labels/retry", { method: "POST" })
           const data = (await res.json()) as {
             queued?: number
             message?: string
@@ -256,7 +257,7 @@ function HistoryTable() {
   const { data, isLoading } = useQuery<{ batches: BatchRow[] }>({
     queryKey: ["imports"],
     queryFn: async () => {
-      const res = await fetch("/api/imports/history")
+      const res = await apiFetch("/api/imports/history")
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },

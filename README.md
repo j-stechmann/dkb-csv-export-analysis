@@ -20,6 +20,24 @@ bun install
 make dev   # offers the model download on first run, then starts everything
 ```
 
+`make dev` (and `make app`) also bring up the **dev OIDC provider** the login
+requires: a throwaway Authentik stack in Docker
+([compose.dev.yaml](compose.dev.yaml), `127.0.0.1:8081`), with the app's OIDC
+client provisioned automatically. Its credentials live in `compose.dev.env`
+(gitignored — created from `compose.dev.env.example` on first `make oidc`;
+login is `akadmin` / your `AUTHENTIK_BOOTSTRAP_PASSWORD`). The stack is bound
+to localhost only and must never be exposed to other network hosts.
+Different usernames test multi-user provisioning. The containers are left
+running after Ctrl-C — `make oidc-stop` stops them (the provisioned client
+survives in a named volume); `make oidc` starts them again. `.env` is
+preconfigured for this provider:
+
+```bash
+OIDC_ISSUER_URL=http://localhost:8081/application/o/dkb-analytics/
+OIDC_CLIENT_ID=dkb-analytics
+OIDC_CLIENT_SECRET=dev-only-not-secret-32-chars-min!!
+```
+
 ## Documentation
 
 Extensive documentation lives in [`docs/`](docs/README.md): architecture,
@@ -89,6 +107,13 @@ Environment (all optional):
 | `LLM_CTX`               | `8192`                  | llama-server context window used by the client-side budget guard |
 | `LLM_MAX_ATTEMPTS`      | `5`                     | per-transaction labeling attempt cap                             |
 | `LLM_MAX_LABELS_PROMPT` | `200`                   | max existing labels injected into the prompt                     |
+| `OIDC_ISSUER_URL`       | — (required)            | OIDC issuer URL (any compliant provider)                         |
+| `OIDC_CLIENT_ID`        | — (required)            | OIDC client id                                                   |
+| `OIDC_CLIENT_SECRET`    | — (required)            | OIDC client secret                                               |
+| `OIDC_SCOPES`           | `openid profile email`  | requested scopes                                                 |
+| `SESSION_TTL_SECONDS`   | `604800`                | session cookie lifetime (7 days)                                 |
+| `SESSION_SECRET`        | client secret fallback  | HS256 session-cookie key (min 32 chars)                          |
+| `APP_ORIGIN`            | derived from request    | public origin behind a reverse proxy                             |
 
 Raising `LLM_BATCH_SIZE` substantially (> ~40) can make the completion
 budget exceed the server's context window (`-c` in `make llm`, 8192 by
@@ -150,7 +175,11 @@ services:
     environment:
       DATABASE_PATH: /app/data/dkb.db
       LLM_BASE_URL: http://llama-server:8080 # llama-server on the compose network
-      # LLM_LANGUAGE: de                    # optional, defaults in lib/config.ts
+      OIDC_ISSUER_URL: https://id.example.com # required: your OIDC provider
+      OIDC_CLIENT_ID: dkb-analytics # required
+      OIDC_CLIENT_SECRET: <secret> # required
+      APP_ORIGIN: https://dkb.example.com # public origin (behind reverse proxy)
+      # LLM_LANGUAGE: de                     # optional, defaults in lib/config.ts
       # LLM_BATCH_SIZE: "100"
       # LLM_MAX_RETRIES: "2"
     volumes:
@@ -176,6 +205,30 @@ volumes:
 ```
 
 The database schema is created automatically on first boot.
+
+## Login & multi-user
+
+Login is **mandatory** ([ADR-0032](docs/adr/adr-0032-multi-user-oidc.md)):
+the app talks to any OIDC-compliant provider (Keycloak, Authentik, Authelia,
+Pocket ID, …) via issuer discovery and authorization-code + PKCE. Users are
+provisioned automatically on first login — each user sees **only their own**
+accounts, imports, transactions, labels and learned rules. The v1 → v2
+migration starts everyone empty (pre-user data cannot be attributed to an
+owner). Configure your provider's redirect URI as
+`<APP_ORIGIN>/auth/callback`.
+
+In dev, `make dev`/`make app` start a local Authentik for this (see Setup);
+log in as `akadmin` or any user you create in its admin UI
+(`http://localhost:8081/if/admin/`) to see per-user isolation. Note the app
+only allows plain-HTTP issuers (`http://…`) — a provider behind HTTPS always
+works; for production, put TLS in front of Authentik or the reverse proxy.
+
+**HTTPS in front of the app is mandatory for any deployment beyond
+localhost.** Without TLS, anyone on the same network can read sessions and
+bank data and can inject scripts into served pages; the app logs a loud
+startup warning when `APP_ORIGIN` is set and not `https://` (so always set
+`APP_ORIGIN` behind a proxy). See
+[docs/operations.md](docs/operations.md#security--privacy-posture).
 
 ## Correctness
 

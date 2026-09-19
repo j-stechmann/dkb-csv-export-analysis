@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select"
 import { EMPTY_FILTERS, type DashboardFilters } from "@/lib/filters"
 import { resolveCategoryColor } from "@/lib/category-colors"
+import { apiFetch } from "@/lib/api-fetch"
 
 interface CategoryOption {
   id: number
@@ -55,7 +56,7 @@ export function FilterBar({
   const { data: categories } = useQuery<CategoryOption[]>({
     queryKey: ["categories"],
     queryFn: async () => {
-      const res = await fetch("/api/categories")
+      const res = await apiFetch("/api/categories")
       const data = (await res.json()) as { categories: CategoryOption[] }
       return data.categories
     },

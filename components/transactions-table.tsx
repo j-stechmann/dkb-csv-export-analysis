@@ -36,6 +36,7 @@ import { filtersToParams, type DashboardFilters } from "@/lib/filters"
 import { resolveCategoryColor } from "@/lib/category-colors"
 import { ErrorState } from "@/components/error-state"
 import { cn } from "@/lib/utils"
+import { apiFetch } from "@/lib/api-fetch"
 
 interface TxRow {
   id: string
@@ -133,7 +134,7 @@ function AssignLabelDialog({
   const { data } = useQuery<{ labels: LabelOption[] }>({
     queryKey: ["labels"],
     queryFn: async () => {
-      const res = await fetch("/api/labels")
+      const res = await apiFetch("/api/labels")
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },
@@ -158,7 +159,7 @@ function AssignLabelDialog({
     if (!id) return
     setBusy(true)
     try {
-      const res = await fetch(`/api/transactions/${row.id}/label`, {
+      const res = await apiFetch(`/api/transactions/${row.id}/label`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ labelId: id }),
@@ -190,7 +191,7 @@ function AssignLabelDialog({
     if (!search.trim() || exactMatch) return
     setBusy(true)
     try {
-      const res = await fetch(`/api/transactions/${row.id}/label`, {
+      const res = await apiFetch(`/api/transactions/${row.id}/label`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ labelName: search.trim() }),
@@ -351,7 +352,7 @@ export function TransactionsTable({ filters }: { filters: DashboardFilters }) {
     useQuery<TransactionsResponse>({
       queryKey: ["transactions", params.toString()],
       queryFn: async () => {
-        const res = await fetch(`/api/transactions?${params}`)
+        const res = await apiFetch(`/api/transactions?${params}`)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()
       },

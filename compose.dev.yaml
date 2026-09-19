@@ -1,0 +1,99 @@
+# Throwaway Authentik stack for local development of the OIDC login
+# (ADR-0032). Started/stopped via `make oidc` / `make oidc-stop` — do not
+# `docker compose down -v` unless you want to wipe the provider config:
+# the named volume keeps the provisioned dkb-analytics client across
+# restarts. This is dev tooling only; production images use the plain
+# Dockerfile (no compose file ships with releases).
+#
+# Credentials come from compose.dev.env (gitignored; created on first
+# `make oidc` from compose.dev.env.example if absent) and are bound to
+# 127.0.0.1 so the stack is never reachable from other network hosts.
+# Login for the app flow: user `akadmin`, password from AUTHENTIK_BOOTSTRAP_PASSWORD.
+# Admin UI: http://localhost:8081/if/admin/
+
+name: dkb-analytics-dev-oidc
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:?compose.dev.env missing}
+    volumes:
+      - authentik-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik -d authentik"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    image: ghcr.io/goauthentik/server:2026.8.3
+    restart: unless-stopped
+    command: server
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?compose.dev.env missing}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?compose.dev.env missing}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?compose.dev.env missing}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?compose.dev.env missing}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_LOG_LEVEL: warning
+    ports:
+      - "127.0.0.1:8081:9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Distroless image: no wget/curl — use the bundled python
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/-/health/ready/', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  worker:
+    image: ghcr.io/goauthentik/server:2026.8.3
+    restart: unless-stopped
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD:?compose.dev.env missing}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?compose.dev.env missing}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:?compose.dev.env missing}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?compose.dev.env missing}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_LOG_LEVEL: warning
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  authentik-db:
