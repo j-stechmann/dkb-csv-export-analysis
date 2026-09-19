@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { appOrigin, appUrl, buildLogoutRedirect } from "@/lib/auth/oidc"
+import { appUrl, buildLogoutRedirect } from "@/lib/auth/oidc"
+import { assertSameOrigin } from "@/lib/auth/guard"
 import {
   ID_TOKEN_COOKIE,
   STATE_COOKIE,
@@ -16,41 +17,16 @@ export const dynamic = "force-dynamic"
  * end_session_endpoint, the browser is sent there afterwards (RP-initiated
  * logout with id_token_hint and post_logout_redirect_uri back to /).
  *
- * POST-only with an Origin/Sec-Fetch-Site check: cross-site POSTs are
- * rejected before any state changes, which eliminates logout CSRF (the
- * check needs the request itself, so it can't be forged by a cross-site
- * form — browsers always attach Origin to POSTs and it can't be spoofed
- * by attacker-controlled pages).
+ * POST-only with the shared Origin/Sec-Fetch-Site CSRF guard
+ * (lib/auth/guard.ts assertSameOrigin): cross-site POSTs are rejected before
+ * any state changes, which eliminates logout CSRF (the check needs the
+ * request itself, so it can't be forged by a cross-site form — browsers
+ * always attach Origin to POSTs and it can't be spoofed by
+ * attacker-controlled pages).
  */
 export async function POST(request: NextRequest) {
-  // CSRF check: browsers attach Origin to every POST submission and
-  // Sec-Fetch-Site to every fetch-driven one. A cross-site attacker page can
-  // trigger this route but cannot forge either header value.
-  const fetchSite = request.headers.get("sec-fetch-site")
-  if (fetchSite && fetchSite !== "same-origin") {
-    return NextResponse.json(
-      { error: "cross_site_logout_rejected" },
-      { status: 403 }
-    )
-  }
-  const origin = request.headers.get("origin")
-  if (origin) {
-    // second entry: new URL() normalizes trailing slashes/default ports/
-    // casing that a raw APP_ORIGIN string wouldn't — load-bearing for
-    // such configs
-    const allowed = new Set([appOrigin(request.url)])
-    try {
-      allowed.add(new URL(appUrl(request.url, "/")).origin)
-    } catch {
-      // same-origin construction can't fail here; defensive only
-    }
-    if (!allowed.has(origin)) {
-      return NextResponse.json(
-        { error: "cross_site_logout_rejected" },
-        { status: 403 }
-      )
-    }
-  }
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const opts = sessionCookieOptions(request)
   const idToken = cookieValue(request.headers.get("cookie"), ID_TOKEN_COOKIE)
   const providerLogout = await buildLogoutRedirect(request.url, idToken)

@@ -22,12 +22,15 @@ make dev   # offers the model download on first run, then starts everything
 
 `make dev` (and `make app`) also bring up the **dev OIDC provider** the login
 requires: a throwaway Authentik stack in Docker
-([compose.dev.yaml](compose.dev.yaml), `:8081`), with the app's OIDC client
-provisioned automatically. Login is `akadmin` / `dev-only-not-secret` (see
-compose file); different usernames test multi-user provisioning. The
-containers are left running after Ctrl-C — `make oidc-stop` stops them (the
-provisioned client survives in a named volume); `make oidc` starts them
-again. `.env` is preconfigured for this provider:
+([compose.dev.yaml](compose.dev.yaml), `127.0.0.1:8081`), with the app's OIDC
+client provisioned automatically. Its credentials live in `compose.dev.env`
+(gitignored — created from `compose.dev.env.example` on first `make oidc`;
+login is `akadmin` / your `AUTHENTIK_BOOTSTRAP_PASSWORD`). The stack is bound
+to localhost only and must never be exposed to other network hosts.
+Different usernames test multi-user provisioning. The containers are left
+running after Ctrl-C — `make oidc-stop` stops them (the provisioned client
+survives in a named volume); `make oidc` starts them again. `.env` is
+preconfigured for this provider:
 
 ```bash
 OIDC_ISSUER_URL=http://localhost:8081/application/o/dkb-analytics/
@@ -219,6 +222,13 @@ log in as `akadmin` or any user you create in its admin UI
 (`http://localhost:8081/if/admin/`) to see per-user isolation. Note the app
 only allows plain-HTTP issuers (`http://…`) — a provider behind HTTPS always
 works; for production, put TLS in front of Authentik or the reverse proxy.
+
+**HTTPS in front of the app is mandatory for any deployment beyond
+localhost.** Without TLS, anyone on the same network can read sessions and
+bank data and can inject scripts into served pages; the app logs a loud
+startup warning when `APP_ORIGIN` is set and not `https://` (so always set
+`APP_ORIGIN` behind a proxy). See
+[docs/operations.md](docs/operations.md#security--privacy-posture).
 
 ## Correctness
 

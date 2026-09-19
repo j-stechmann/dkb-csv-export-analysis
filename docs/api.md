@@ -14,15 +14,20 @@ a valid session cookie ([ADR-0032](adr/adr-0032-multi-user-oidc.md)). The
 `proxy.ts` gate returns `401 {"error":"unauthorized"}` for unauthenticated
 `/api/*` requests; page requests redirect to `/auth/login`. Auth endpoints:
 
-| Method & path        | Success                             | Errors                                                                               | Purpose                                                                                            |
-| -------------------- | ----------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `GET /auth/login`    | 302 → OIDC provider                 | 502 `login_failed` (provider unreachable/misconfigured)                              | Starts the authorization-code flow (PKCE + state + nonce; state in HttpOnly cookie)                |
-| `GET /auth/callback` | 302 → `/` + session cookie          | 401 `provider_error` / `exchange_failed`; state mismatch → restart via `/auth/login` | Verifies state, exchanges the code, provisions the user, issues the session cookie                 |
-| `POST /auth/logout`  | 302 → provider end-session (or `/`) | 403 `cross_site_logout_rejected` (Origin/`Sec-Fetch-Site` mismatch)                  | Clears the session cookie; RP-initiated logout when the provider advertises `end_session_endpoint` |
-| `GET /api/me`        | `{user: {name, email}}`             | 401                                                                                  | Whoami for the header user chip                                                                    |
+| Method & path        | Success                             | Errors                                                                               | Purpose                                                                                                    |
+| -------------------- | ----------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `GET /auth/login`    | 302 → OIDC provider                 | 502 `login_failed` (provider unreachable/misconfigured)                              | Starts the authorization-code flow (PKCE + state + nonce; state in HttpOnly cookie)                        |
+| `GET /auth/callback` | 302 → `/` + session cookie          | 401 `provider_error` / `exchange_failed`; state mismatch → restart via `/auth/login` | Verifies state (constant-time compare), exchanges the code, provisions the user, issues the session cookie |
+| `POST /auth/logout`  | 302 → provider end-session (or `/`) | 403 `cross_site_request_rejected` (Origin/`Sec-Fetch-Site` mismatch)                 | Clears the session cookie; RP-initiated logout when the provider advertises `end_session_endpoint`         |
+| `GET /api/me`        | `{user: {name, email}}`             | 401                                                                                  | Whoami for the header user chip                                                                            |
 
 All data endpoints are **scoped to the session user**: they only see and
 mutate their own accounts, imports, transactions, labels and rules.
+
+**CSRF**: every mutating (non-GET) endpoint validates `Origin`/`Sec-Fetch-Site`
+against the app origin (lib/auth/guard.ts `assertSameOrigin`) and answers
+`403 {"error":"cross_site_request_rejected"}` on mismatch, on top of the
+SameSite=Lax session cookie.
 
 ## Endpoints
 

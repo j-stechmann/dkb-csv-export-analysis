@@ -6,7 +6,7 @@
  *
  * Run: bun scripts/dev-oidc-provision.ts
  * Env: OIDC_CLIENT_ID / OIDC_CLIENT_SECRET (defaults match .env),
- *      AUTHENTIK_BOOTSTRAP_TOKEN (must match compose.dev.yaml)
+ *      AUTHENTIK_BOOTSTRAP_TOKEN (must match compose.dev.env)
  *
  * First boot runs database migrations and can take a minute — the script
  * polls /-/health/ready/ before talking to the API.
@@ -15,7 +15,10 @@ import { getConfig } from "../lib/config"
 
 const HOST = "http://localhost:8081"
 const API = `${HOST}/api/v3`
-const TOKEN = process.env.AUTHENTIK_BOOTSTRAP_TOKEN ?? "dev-bootstrap-token"
+// compose.dev.yaml sources AUTHENTIK_BOOTSTRAP_TOKEN from the gitignored
+// compose.dev.env — no token default here, a mismatch fails loudly at the
+// first API call instead of silently provisioning against the wrong stack.
+const TOKEN = process.env.AUTHENTIK_BOOTSTRAP_TOKEN
 const APP_SLUG = "dkb-analytics"
 // Must stay in sync with .env (the app reads the same values). Kept as a
 // module-level default so findProvider() works before main() loads config.
@@ -237,7 +240,7 @@ async function main(): Promise<void> {
 
   console.log(
     `[dev-oidc] ready — issuer: ${HOST}/application/o/${APP_SLUG}/\n` +
-      `           login as akadmin (bootstrap password from compose.dev.yaml)\n` +
+      `           login as akadmin (bootstrap password from compose.dev.env)\n` +
       `           admin UI: ${HOST}/if/admin/`
   )
 }

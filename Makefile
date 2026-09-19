@@ -240,8 +240,17 @@ llm-status:
 # waits for first-boot migrations, then idempotently provisions the
 # dkb-analytics client (scripts/dev-oidc-provision.ts). OIDC_ISSUER_URL /
 # OIDC_CLIENT_* in .env must match the values baked in there.
+#
+# Credentials: compose.dev.yaml reads them from compose.dev.env (gitignored,
+# dockerignored). On first run a copy of compose.dev.env.example is created;
+# edit it to change any password. The stack is bound to 127.0.0.1 — it must
+# never be reachable from other network hosts.
 oidc:
-	@if curl -s -m 2 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1; then \
+	@if [ ! -f compose.dev.env ]; then \
+		cp compose.dev.env.example compose.dev.env; \
+		echo "created compose.dev.env from compose.dev.env.example — edit it to set your dev IdP passwords"; \
+	fi; \
+	if curl -s -m 2 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1; then \
 		echo "dev OIDC provider already running on :$(OIDC_PORT)"; \
 	else \
 		if ! docker info >/dev/null 2>&1; then \
@@ -249,10 +258,10 @@ oidc:
 			exit 1; \
 		fi; \
 		echo "starting dev OIDC provider (Authentik) on :$(OIDC_PORT)…"; \
-		docker compose -f $(OIDC_COMPOSE) up -d --quiet-pull || exit 1; \
+		docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) up -d --quiet-pull || exit 1; \
 	fi; \
 	$(MAKE) --no-print-directory oidc-wait; \
-	bun scripts/dev-oidc-provision.ts; \
+	AUTHENTIK_BOOTSTRAP_TOKEN="$$(sed -n 's/^AUTHENTIK_BOOTSTRAP_TOKEN=//p' compose.dev.env)" bun scripts/dev-oidc-provision.ts; \
 	issuer="$$(grep -oP '^OIDC_ISSUER_URL=\K.*' .env 2>/dev/null || echo http://localhost:$(OIDC_PORT)/application/o/dkb-analytics/)"; \
 	if curl -sf -m 5 "$${issuer}.well-known/openid-configuration" >/dev/null 2>&1; then \
 		echo "OIDC discovery ready: $$issuer"; \
@@ -280,7 +289,8 @@ oidc-wait:
 # compose `stop` (not `down -v`): the authentik-db named volume keeps the
 # provisioned dkb-analytics client, so the next `make oidc` is fast.
 oidc-stop:
-	@docker compose -f $(OIDC_COMPOSE) stop
+	@if [ ! -f compose.dev.env ]; then cp compose.dev.env.example compose.dev.env; fi; \
+	docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) stop
 
 oidc-status:
 	@curl -sf -m 3 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1 \
@@ -288,7 +298,8 @@ oidc-status:
 		|| echo "dev OIDC provider unreachable on :$(OIDC_PORT)"
 
 oidc-logs:
-	@docker compose -f $(OIDC_COMPOSE) logs -f --tail=50
+	@if [ ! -f compose.dev.env ]; then cp compose.dev.env.example compose.dev.env; fi; \
+	docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) logs -f --tail=50
 
 # ── quality gates ────────────────────────────────────────────────────────────
 test:

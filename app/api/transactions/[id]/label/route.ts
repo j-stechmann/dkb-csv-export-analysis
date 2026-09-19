@@ -5,7 +5,11 @@ import { categories, transactions } from "@/lib/db/schema"
 import { normalizeCategoryKey, isValidLabelName } from "@/lib/labeller/service"
 import { learnRule } from "@/lib/labels/matching"
 import { pickCategoryColor } from "@/lib/category-colors"
-import { requireSession, unauthorized } from "@/lib/auth/guard"
+import {
+  assertSameOrigin,
+  requireSession,
+  unauthorized,
+} from "@/lib/auth/guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -24,6 +28,8 @@ export async function POST(
 ) {
   const session = await requireSession(request)
   if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const { id } = await params
 
   const body = (await request.json().catch(() => null)) as {

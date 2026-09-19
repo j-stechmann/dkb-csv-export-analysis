@@ -115,11 +115,23 @@ Process rules (git-flow, Conventional Commits, release/hotfix flows) live in
 This is a **local-first, multi-user** app ([ADR-0032](adr/adr-0032-multi-user-oidc.md),
 superseding the no-auth posture of [ADR-0031](adr/adr-0031-no-auth-local-first-privacy.md)):
 
+- **TLS is mandatory for any non-localhost deployment.** The app must sit
+  behind an HTTPS reverse proxy; set `APP_ORIGIN` to the public `https://`
+  origin. Startup logs a loud warning when `APP_ORIGIN` is set and not
+  HTTPS (an unset `APP_ORIGIN` means no public origin is declared and the
+  check can't judge the transport): over plain HTTP, any same-network guest
+  can read session cookies, OIDC tokens and all bank-data traffic, and can
+  inject scripts into served pages. Add `Strict-Transport-Security` at the
+  proxy.
 - **Mandatory OIDC login** (PKCE + state + nonce, signed HttpOnly session
   cookie). `proxy.ts` gates everything except `/auth/*`, `/api/llm/health`
   (shallow healthcheck, [ADR-0028]) and static assets. Users are
   JIT-provisioned on first login keyed on `(issuer, subject)` — no allowlist;
   the provider is trusted to gate identities.
+- **CSRF protection on every mutating route**: non-GET API handlers and
+  `/auth/logout` validate `Origin`/`Sec-Fetch-Site` against the app origin
+  (lib/auth/guard.ts `assertSameOrigin`), on top of the SameSite=Lax session
+  cookie.
 - **Per-user data isolation**: every table row carries `user_id`; queries,
   import jobs and label-worker claims are user-scoped. Learned rules and
   labels are per user.
@@ -131,8 +143,17 @@ superseding the no-auth posture of [ADR-0031](adr/adr-0031-no-auth-local-first-p
   (`make model`), LLM calls to llama-server (127.0.0.1 in local dev), and the
   OIDC provider round-trips you configured.
 - `.gitignore` and `.dockerignore` exclude `data/`, `*.db*`, `.env*`,
-  `models/`, `.llm-model`, `Makefile.local` — bank data and machine state
-  never leave the machine.
+  `compose.dev.env`, `models/`, `.llm-model`, `Makefile.local` — bank data
+  and machine state never leave the machine.
+- **File permissions on multi-user hosts**: the SQLite database (WAL) and
+  `.env` hold plaintext financial data and the session secret — keep them
+  owner-only (`umask 077`, `chmod 600 data/* .env`; Docker deployments are
+  already isolated by `USER node` + the chowned volume). A reminder is
+  logged at startup.
+- **Dev IdP hardening**: the Authentik stack binds `127.0.0.1` only and
+  reads its credentials from the gitignored `compose.dev.env` (template:
+  `compose.dev.env.example`; created on first `make oidc`). Never expose it
+  beyond localhost — the app trusts the provider to gate identities.
 - In Docker, llama-server must reach the app's compose network (the README
   example binds `0.0.0.0` _inside_ the compose network only); restrict port
   publishing if you adapt it.

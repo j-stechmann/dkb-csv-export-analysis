@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getDb } from "@/lib/db"
 import { accounts } from "@/lib/db/schema"
-import { requireSession, unauthorized } from "@/lib/auth/guard"
+import {
+  assertSameOrigin,
+  requireSession,
+  unauthorized,
+} from "@/lib/auth/guard"
 import { and, eq } from "drizzle-orm"
 
 export const runtime = "nodejs"
@@ -22,6 +26,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await requireSession(request)
   if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const body = (await request.json().catch(() => null)) as {
     iban?: string
     name?: string
@@ -49,6 +55,8 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const session = await requireSession(request)
   if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   const iban = new URL(request.url).searchParams.get("iban")
   if (!iban) {
     return NextResponse.json({ error: "iban required" }, { status: 400 })

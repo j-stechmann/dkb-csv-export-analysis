@@ -6,7 +6,11 @@ import {
   ImportInProgressError,
 } from "@/lib/import/pipeline"
 import { CsvParseError } from "@/lib/csv/parser"
-import { requireSession, unauthorized } from "@/lib/auth/guard"
+import {
+  assertSameOrigin,
+  requireSession,
+  unauthorized,
+} from "@/lib/auth/guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -16,6 +20,8 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024 // 25 MB
 export async function POST(request: NextRequest) {
   const session = await requireSession(request)
   if (!session) return unauthorized()
+  const csrf = assertSameOrigin(request)
+  if (csrf) return csrf
   try {
     const formData = await request.formData()
     const file = formData.get("file")
