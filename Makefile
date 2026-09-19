@@ -261,7 +261,7 @@ oidc:
 		docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) up -d --quiet-pull || exit 1; \
 	fi; \
 	$(MAKE) --no-print-directory oidc-wait; \
-	AUTHENTIK_BOOTSTRAP_TOKEN="$$(grep -oP '^AUTHENTIK_BOOTSTRAP_TOKEN=\K.*' compose.dev.env)" bun scripts/dev-oidc-provision.ts; \
+	AUTHENTIK_BOOTSTRAP_TOKEN="$$(sed -n 's/^AUTHENTIK_BOOTSTRAP_TOKEN=//p' compose.dev.env)" bun scripts/dev-oidc-provision.ts; \
 	issuer="$$(grep -oP '^OIDC_ISSUER_URL=\K.*' .env 2>/dev/null || echo http://localhost:$(OIDC_PORT)/application/o/dkb-analytics/)"; \
 	if curl -sf -m 5 "$${issuer}.well-known/openid-configuration" >/dev/null 2>&1; then \
 		echo "OIDC discovery ready: $$issuer"; \
