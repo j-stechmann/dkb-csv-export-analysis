@@ -131,6 +131,79 @@ describe("redirect_uri consistency across the OIDC flow", () => {
   })
 })
 
+describe("sessionCookieOptions", () => {
+  const ORIG = process.env.APP_ORIGIN
+
+  afterEach(() => {
+    process.env.APP_ORIGIN = ORIG
+    resetConfigCache()
+  })
+
+  it("sets Secure when X-Forwarded-Proto is https, even on an internal http origin", async () => {
+    delete process.env.APP_ORIGIN
+    resetConfigCache()
+    const { sessionCookieOptions } = await import("@/lib/auth/session")
+    const opts = sessionCookieOptions(
+      new Request("http://localhost:3000/auth/login", {
+        headers: { "x-forwarded-proto": "https" },
+      })
+    )
+    expect(opts.secure).toBe(true)
+  })
+
+  it("reads the first value of a comma-separated X-Forwarded-Proto", async () => {
+    delete process.env.APP_ORIGIN
+    resetConfigCache()
+    const { sessionCookieOptions } = await import("@/lib/auth/session")
+    const opts = sessionCookieOptions(
+      new Request("http://localhost:3000/auth/login", {
+        headers: { "x-forwarded-proto": "https, http" },
+      })
+    )
+    expect(opts.secure).toBe(true)
+  })
+
+  it("sets Secure=false when X-Forwarded-Proto is http", async () => {
+    delete process.env.APP_ORIGIN
+    resetConfigCache()
+    const { sessionCookieOptions } = await import("@/lib/auth/session")
+    const opts = sessionCookieOptions(
+      new Request("http://localhost:3000/auth/login", {
+        headers: { "x-forwarded-proto": "http" },
+      })
+    )
+    expect(opts.secure).toBe(false)
+  })
+
+  it("falls back to APP_ORIGIN when no X-Forwarded-Proto is present", async () => {
+    const { sessionCookieOptions } = await import("@/lib/auth/session")
+    // APP_ORIGIN is https in setup.ts; the request URL is internal http
+    const opts = sessionCookieOptions(
+      new Request("http://localhost:3000/auth/login", { headers: {} })
+    )
+    expect(opts.secure).toBe(true)
+  })
+
+  it("falls back to APP_ORIGIN when no request is passed", async () => {
+    const { sessionCookieOptions } = await import("@/lib/auth/session")
+    expect(sessionCookieOptions().secure).toBe(true)
+  })
+
+  it("uses the request protocol without X-Forwarded-Proto and APP_ORIGIN", async () => {
+    delete process.env.APP_ORIGIN
+    resetConfigCache()
+    const { sessionCookieOptions } = await import("@/lib/auth/session")
+    expect(
+      sessionCookieOptions(new Request("https://app.example.com/auth/login"))
+        .secure
+    ).toBe(true)
+    expect(
+      sessionCookieOptions(new Request("http://localhost:3000/auth/login"))
+        .secure
+    ).toBe(false)
+  })
+})
+
 describe("proxy auth gate", () => {
   it("redirects unauthenticated page requests to the APP_ORIGIN login", async () => {
     const { default: proxy } = await import("../proxy")

@@ -71,3 +71,9 @@ Keycloak, Authentik, Authelia, Pocket ID, …) plus **per-user data isolation**:
   revocable (mitigated by short-ish TTL via `SESSION_TTL_SECONDS`).
 - Neutral: the Docker HEALTHCHECK path stays unauthenticated by design
   (shallow, no data, [ADR-0028]).
+- Neutral: the import single-flight lock
+  ([ADR-0010](adr-0010-single-flight-import.md)) remains process-global, so
+  under multi-user one user's import makes another user's upload fail with
+  `409 import_in_progress` and pauses the label worker for everyone. Accepted
+  for now (SQLite, single process, imports are rare and short); revisit with
+  a per-user lock if concurrent imports become common.

@@ -17,9 +17,10 @@ export const dynamic = "force-dynamic"
 export async function GET(request: NextRequest) {
   try {
     const auth = await buildLoginRedirect(request.url)
-    // Secure from APP_ORIGIN: behind a reverse proxy request.url carries the
-    // internal (often http) origin, while the browser sees https.
-    const opts = sessionCookieOptions()
+    // Secure from the forwarded protocol/APP_ORIGIN: behind a reverse proxy
+    // request.url carries the internal (often http) origin, while the browser
+    // sees https.
+    const opts = sessionCookieOptions(request)
     const flowOpts = { secure: opts.secure, maxAgeSeconds: 600 }
     const res = NextResponse.redirect(auth.redirectUrl.toString(), 302)
     res.headers.append(

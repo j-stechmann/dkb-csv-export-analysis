@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
       email: user.email,
     }
     const token = await createSessionToken(claims)
-    const opts = sessionCookieOptions()
+    const opts = sessionCookieOptions(request)
     const res = NextResponse.redirect(appUrl(request.url, "/"), 302)
     res.headers.append(
       "set-cookie",

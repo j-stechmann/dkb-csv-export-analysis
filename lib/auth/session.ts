@@ -104,10 +104,23 @@ export interface SessionCookieOptions {
   maxAgeSeconds: number
 }
 
-export function sessionCookieOptions(): SessionCookieOptions {
+export function sessionCookieOptions(request?: Request): SessionCookieOptions {
   const cfg = getConfig()
+  // Secure must reflect what the browser sees, not Next's internal origin.
+  // Precedence: X-Forwarded-Proto (TLS-terminating proxy) → APP_ORIGIN
+  // (documented requirement for proxied deployments; request.url carries the
+  // internal http origin there) → the request's own protocol (direct TLS).
+  const forwarded = request?.headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim()
+  const secure = forwarded
+    ? forwarded === "https"
+    : cfg.APP_ORIGIN
+      ? cfg.APP_ORIGIN.startsWith("https://")
+      : new URL(request?.url ?? "http://localhost").protocol === "https:"
   return {
-    secure: cfg.APP_ORIGIN?.startsWith("https://") ?? false,
+    secure,
     maxAgeSeconds: cfg.SESSION_TTL_SECONDS,
   }
 }
