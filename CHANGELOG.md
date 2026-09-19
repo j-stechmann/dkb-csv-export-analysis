@@ -1,6 +1,39 @@
 # Changelog
 
-## Unreleased
+## v1.10.0
+
+### Breaking
+
+- **Multi-user migration starts fresh**: tables pre-dating the users table
+  (accounts, import batches, transactions, categories, label rules) are
+  dropped and recreated user-shaped on startup — pre-multi-user rows cannot
+  be attributed to an owner, so all existing data is discarded. The
+  migration is idempotent across hot reloads (ADR-0005). See
+  `docs/adr/adr-0032-multi-user-oidc.md`.
+
+### Added
+
+- **Mandatory OIDC login with per-user data isolation** (supersedes the
+  no-auth posture of ADR-0031): generic OIDC provider via issuer discovery
+  (`openid-client`) with PKCE + state + nonce, a `jose`-signed HS256 session
+  cookie, auth routes under `/auth/*`, and a `proxy.ts` gate (Next 16
+  middleware convention) that redirects pages to `/auth/login` and returns
+  401 JSON for `/api/*` (the health endpoint stays open for the Docker
+  healthcheck). Users are JIT-provisioned on first login keyed on
+  (issuer, subject); no allowlist.
+- **Per-user isolation**: `user_id` stamped on accounts, import batches,
+  transactions (denormalized), categories and label rules. All 17 route
+  handlers, the import pipeline, the label worker and analytics are
+  user-scoped; account uniqueness moved to (user_id, iban) so the same IBAN
+  can exist per user; learned rules and prompt label vocabulary are per
+  owner. UI: header user chip + logout, `/api/me` whoami, and an `apiFetch`
+  wrapper that redirects to `/auth/login` on 401.
+- **Dockerized dev OIDC provider**: throwaway Authentik stack
+  (`make oidc`, compose.dev.yaml) auto-started by `make dev` / `make app`,
+  provisioned idempotently via API; config survives restarts in a named
+  volume. New targets `oidc-stop`, `oidc-status`, `oidc-logs`.
+- **Mobile navigation**: hamburger nav sheet replacing the overflow header;
+  the LLM badge shows the full label only from the `md` breakpoint.
 
 ### Security
 
@@ -36,6 +69,8 @@ Security-audit follow-ups (threat model: a guest on the same network):
   file and the admin UI listened on all interfaces.
 - Startup reminder to keep `data/` and `.env` owner-only on multi-user
   hosts (umask 077 / chmod 600).
+
+## v1.9.1
 
 ### Fixed
 
