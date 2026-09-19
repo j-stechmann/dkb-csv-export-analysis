@@ -204,6 +204,97 @@ describe("sessionCookieOptions", () => {
   })
 })
 
+describe("logout CSRF protection", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  async function postLogout(headers: Record<string, string>) {
+    const { POST } = await import("@/app/auth/logout/route")
+    const { NextRequest } = await import("next/server")
+    const req = new NextRequest(
+      new Request("http://localhost:3000/auth/logout", {
+        method: "POST",
+        headers,
+      })
+    )
+    return POST(req)
+  }
+
+  it("rejects a cross-site Sec-Fetch-Site with 403", async () => {
+    const res = await postLogout({
+      "sec-fetch-site": "cross-site",
+      origin: "https://evil.example.com",
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it("rejects a same-site (but not same-origin) request with 403", async () => {
+    const res = await postLogout({
+      "sec-fetch-site": "same-site",
+      origin: "https://evil.example.com",
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it("rejects a mismatching Origin header with 403", async () => {
+    const res = await postLogout({
+      origin: "https://evil.example.com",
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it("accepts a same-origin POST (Origin matches APP_ORIGIN)", async () => {
+    // buildLogoutRedirect hits discovery — serve a minimal document without
+    // end_session_endpoint so the route falls back to the app redirect
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              issuer: process.env.OIDC_ISSUER_URL,
+              authorization_endpoint: "https://issuer.example.com/authorize",
+              token_endpoint: "https://issuer.example.com/token",
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }
+          )
+      )
+    )
+    const res = await postLogout({
+      origin: "https://app.example.com",
+    })
+    expect(res.status).toBe(302)
+    const setCookies = res.headers.getSetCookie()
+    expect(setCookies.some((c) => c.startsWith("dkb_session=;"))).toBe(true)
+  })
+
+  it("accepts a request with only Sec-Fetch-Site: same-origin (no Origin)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              issuer: process.env.OIDC_ISSUER_URL,
+              authorization_endpoint: "https://issuer.example.com/authorize",
+              token_endpoint: "https://issuer.example.com/token",
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }
+          )
+      )
+    )
+    const res = await postLogout({ "sec-fetch-site": "same-origin" })
+    expect(res.status).toBe(302)
+  })
+})
+
 describe("proxy auth gate", () => {
   it("redirects unauthenticated page requests to the APP_ORIGIN login", async () => {
     const { default: proxy } = await import("../proxy")
