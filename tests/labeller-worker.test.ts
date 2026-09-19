@@ -1,23 +1,27 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest"
 import { eq } from "drizzle-orm"
-import { createTestDb, setTestDb, type Db } from "@/lib/db"
+import type { Db } from "@/lib/db"
 import {
   accounts,
   categories,
   importBatches,
   labelRules,
   transactions,
+  users,
 } from "@/lib/db/schema"
 import { claimLabelRows, isWorkerTicking, tick } from "@/lib/labeller/worker"
 import { computeLabelCounters } from "@/lib/import/counters"
 import { applyLabelResults, markRowsFailed } from "@/lib/labeller/service"
 import { resetFailedLabels } from "@/lib/import/pipeline"
-import { getConfig } from "@/lib/config"
+import { getConfig, resetConfigCache } from "@/lib/config"
+import { resetWorkerConfigFailureForTest } from "@/lib/labeller/worker"
+import { setupTestDb } from "./helpers"
 
 const ACC_IBAN = "DE02120300000000202051"
 const ACC_NAME = "Girokonto"
 
 let db: Db
+let userId: number
 let accountId: number
 let batchCounter = 0
 
@@ -25,7 +29,7 @@ function seedBatch(status = "labeling"): string {
   batchCounter++
   const id = `b${batchCounter}`
   db.insert(importBatches)
-    .values({ id, fileName: `${id}.csv`, accountId, status })
+    .values({ id, userId, fileName: `${id}.csv`, accountId, status })
     .run()
   return id
 }
@@ -45,6 +49,7 @@ function seedTx(
   db.insert(transactions)
     .values({
       id,
+      userId,
       accountId,
       batchId,
       bookingDate: "2026-02-03",
@@ -72,13 +77,14 @@ function getBatch(id: string) {
 }
 
 beforeEach(() => {
-  db = createTestDb()
-  setTestDb(db)
+  ;({ db, userId } = setupTestDb())
   accountId = db
     .insert(accounts)
-    .values({ iban: ACC_IBAN, name: ACC_NAME })
+    .values({ userId, iban: ACC_IBAN, name: ACC_NAME })
     .returning()
     .get().id
+  resetWorkerConfigFailureForTest()
+  resetConfigCache()
 })
 
 describe("claimLabelRows", () => {
@@ -225,6 +231,7 @@ describe("tick", () => {
     const cat = db
       .insert(categories)
       .values({
+        userId,
         name: "Miete",
         nameKey: "miete",
         language: "de",
@@ -234,6 +241,7 @@ describe("tick", () => {
       .get()
     db.insert(labelRules)
       .values({
+        userId,
         labelId: cat.id,
         payer: "Max Mustermann",
         payee: "REWE",
@@ -277,6 +285,228 @@ describe("tick", () => {
     const row = getTx(id)!
     expect(row.labelStatus).toBe("labeled")
     expect(row.categoryId).toBe(cat.id)
+  })
+
+  it("issues one LLM call per user with only that user's label vocabulary", async () => {
+    // a second user in the same claim batch
+    const otherUser = db
+      .insert(users)
+      .values({
+        issuer: "https://issuer.example.com",
+        subject: "worker-user-2",
+        name: "Worker User 2",
+        email: "worker-user-2@example.com",
+        createdAt: new Date().toISOString(),
+      })
+      .returning()
+      .get().id
+    const otherAccountId = db
+      .insert(accounts)
+      .values({
+        userId: otherUser,
+        iban: "DE03999999990000001234",
+        name: "Konto B",
+      })
+      .returning()
+      .get().id
+    const batchId = seedBatch()
+    const otherBatchId = seedBatch()
+    // user A's pending row: account/batch belong to A
+    db.update(importBatches)
+      .set({ userId: otherUser, accountId: otherAccountId })
+      .where(eq(importBatches.id, otherBatchId))
+      .run()
+    const otherTxId = `tx-${crypto.randomUUID()}`
+    db.insert(transactions)
+      .values({
+        id: otherTxId,
+        userId: otherUser,
+        accountId: otherAccountId,
+        batchId: otherBatchId,
+        bookingDate: "2026-02-03",
+        status: "Gebucht",
+        payer: "Max Mustermann",
+        payee: "REWE",
+        type: "Ausgang",
+        counterpartyIban: "DE02120300000000202051",
+        amountCents: -100,
+        sourceHash: `hash-${otherTxId}`,
+        labelStatus: "pending",
+        labelAttempts: 0,
+      })
+      .run()
+    seedTx(batchId)
+
+    // each user's vocabulary: A has "Miete", B has "Ausland"
+    db.insert(categories)
+      .values({
+        userId,
+        name: "Miete",
+        nameKey: "miete",
+        language: "de",
+      })
+      .run()
+    db.insert(categories)
+      .values({
+        userId: otherUser,
+        name: "Ausland",
+        nameKey: "ausland",
+        language: "de",
+      })
+      .run()
+
+    const seenSystemPrompts: string[] = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/health") && !url.includes("chat")) {
+        return new Response("{}", { status: 200 })
+      }
+      const b = JSON.parse(String(init?.body)) as {
+        messages: Array<{ role: string; content: string }>
+      }
+      seenSystemPrompts.push(
+        b.messages.find((m) => m.role === "system")!.content
+      )
+      const userMsg = b.messages.find((m) => m.role === "user")!
+      const count = (userMsg.content.match(/^\[\d+\]/gm) ?? []).length
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  results: Array.from({ length: count }, (_, i) => ({
+                    index: i,
+                    label: "Miete",
+                  })),
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await tick()
+
+    // one chat call per user (plus the health probe)
+    expect(seenSystemPrompts).toHaveLength(2)
+    // each prompt carries only its owner's vocabulary — no cross-user leak
+    for (const prompt of seenSystemPrompts) {
+      const hasMiete = prompt.includes("Miete")
+      const hasAusland = prompt.includes("Ausland")
+      expect(hasMiete && hasAusland).toBe(false)
+      expect(hasMiete || hasAusland).toBe(true)
+    }
+    expect(seenSystemPrompts.filter((p) => p.includes("Miete"))).toHaveLength(1)
+    expect(seenSystemPrompts.filter((p) => p.includes("Ausland"))).toHaveLength(
+      1
+    )
+  })
+
+  it("contains one user's LLM failure — the other user's rows still label", async () => {
+    const otherUser = db
+      .insert(users)
+      .values({
+        issuer: "https://issuer.example.com",
+        subject: "worker-user-3",
+        name: "Worker User 3",
+        email: "worker-user-3@example.com",
+        createdAt: new Date().toISOString(),
+      })
+      .returning()
+      .get().id
+    const otherAccountId = db
+      .insert(accounts)
+      .values({
+        userId: otherUser,
+        iban: "DE04999999990000001234",
+        name: "Konto C",
+      })
+      .returning()
+      .get().id
+    const batchId = seedBatch()
+    const otherBatchId = seedBatch()
+    db.update(importBatches)
+      .set({ userId: otherUser, accountId: otherAccountId })
+      .where(eq(importBatches.id, otherBatchId))
+      .run()
+    const otherTxId = `tx-${crypto.randomUUID()}`
+    db.insert(transactions)
+      .values({
+        id: otherTxId,
+        userId: otherUser,
+        accountId: otherAccountId,
+        batchId: otherBatchId,
+        bookingDate: "2026-02-03",
+        status: "Gebucht",
+        payer: "Max Mustermann",
+        payee: "REWE",
+        type: "Ausgang",
+        counterpartyIban: "DE02120300000000202051",
+        amountCents: -100,
+        sourceHash: `hash-${otherTxId}`,
+        labelStatus: "pending",
+        labelAttempts: 0,
+      })
+      .run()
+    const aTxId = seedTx(batchId)
+
+    // user A's vocabulary so their chunk is identifiable by prompt content
+    db.insert(categories)
+      .values({
+        userId,
+        name: "Miete",
+        nameKey: "miete",
+        language: "de",
+      })
+      .run()
+
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    // user A owns the "Miete" vocabulary; their chunk gets the 503.
+    // user B has no labels in the prompt — their chunk succeeds.
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/health") && !url.includes("chat")) {
+        return new Response("{}", { status: 200 })
+      }
+      const b = JSON.parse(String(init?.body)) as {
+        messages: Array<{ role: string; content: string }>
+      }
+      const systemMsg = b.messages.find((m) => m.role === "system")!.content
+      if (systemMsg.includes("Miete")) {
+        return new Response("{}", { status: 503 })
+      }
+      const userMsg = b.messages.find((m) => m.role === "user")!
+      const count = (userMsg.content.match(/^\[\d+\]/gm) ?? []).length
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  results: Array.from({ length: count }, (_, i) => ({
+                    index: i,
+                    label: "Lebensmittel",
+                  })),
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await tick()
+
+    // user A's row: failed (its chunk errored)
+    expect(getTx(aTxId)!.labelStatus).toBe("failed")
+    // user B's row: labeled (its chunk succeeded — not collateral damage)
+    expect(getTx(otherTxId)!.labelStatus).toBe("labeled")
+    // only the failing user's chunk was logged
+    expect(errSpy).toHaveBeenCalledTimes(1)
   })
 
   it("marks unapplied rows failed on partial model output", async () => {
@@ -461,7 +691,7 @@ describe("retry requeue", () => {
     // below the cap: worker self-heals these, retry leaves them alone
     seedTx(batchId, { labelStatus: "failed", labelAttempts: 2 })
 
-    const queued = resetFailedLabels(5)
+    const queued = resetFailedLabels(5, userId)
 
     expect(queued).toBe(2)
     expect(getTx(capped)!.labelStatus).toBe("pending")
@@ -477,7 +707,7 @@ describe("retry requeue", () => {
       labelAttempts: 2,
     })
 
-    expect(resetFailedLabels(5)).toBe(0)
+    expect(resetFailedLabels(5, userId)).toBe(0)
     expect(getTx(belowCap)!.labelStatus).toBe("failed")
   })
 })

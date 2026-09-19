@@ -6,8 +6,10 @@ DKB Analytics is a **single-process, local-first web application**: one Node
 process serves the Next.js UI, the REST API, a background import job, and a
 background labeling worker — all reading and writing one SQLite database, and
 talking to one local llama.cpp `llama-server` for transaction categorization.
-There is no queue, no Redis, no second service, no auth (see
-[ADR-0031](adr/adr-0031-no-auth-local-first-privacy.md)).
+There is no queue, no Redis, no second service. Access is gated by mandatory
+OIDC authentication with per-user data isolation (see
+[ADR-0032](adr/adr-0032-multi-user-oidc.md), superseding the no-auth posture
+of [ADR-0031](adr/adr-0031-no-auth-local-first-privacy.md)).
 
 ## System overview
 
@@ -18,14 +20,16 @@ flowchart LR
   N -->|OpenAI-compatible HTTP| L["llama.cpp llama-server (127.0.0.1:8080)"]
   subgraph N[" "]
     direction TB
-    A1["16 REST route handlers"] --- A2["Import job (single-flight)"]
+    A1["17 REST route handlers"] --- A2["Import job (single-flight)"]
     A2 --- A3["Label worker (setInterval 3 s)"]
   end
   L ---|"pinned GGUF model"| M["models/*.gguf (~19 GB)"]
 ```
 
 - **Browser** — three client-rendered pages (`/`, `/imports`, `/labels`);
-  all data flows through React Query (see [frontend.md](frontend.md)).
+  all data flows through React Query (see [frontend.md](frontend.md)). Login
+  is mandatory: `proxy.ts` redirects unauthenticated page requests to
+  `/auth/login` and returns 401 JSON for `/api/*` ([ADR-0032](adr/adr-0032-multi-user-oidc.md)).
 - **Next.js server** — route handlers under `app/api/**`, all
   `runtime = "nodejs"` + `dynamic = "force-dynamic"`
   (see [ADR-0025](adr/adr-0025-manual-api-validation.md) and [api.md](api.md)).

@@ -66,35 +66,37 @@ export function createTestDb(): Db {
 
 /** Create all tables idempotently (drizzle-kit push equivalent, code-first). */
 export function createSchemaSqlite(db: Db) {
-  // label_rules: older DBs carry the previous (iban, name_key) shape — that
-  // schema is gone, so the table is dropped before the new-shape DDL/index
-  // below would fail with "no such column: payer" (old rules are discarded;
-  // they regenerate on the next manual assignment). Fresh files are handled
-  // by CREATE TABLE IF NOT EXISTS (idempotent). The same check lives in
-  // migrateSchema so a hot-reloaded singleton heals without a restart.
-  {
-    const ruleCols = db
-      .all<{ name: string }>(`PRAGMA table_info(label_rules)`)
-      .map((c) => c.name)
-    if (ruleCols.length > 0 && !ruleCols.includes("counterparty_iban")) {
-      db.run(`DROP TABLE label_rules`)
-    }
-  }
+  dropLegacyUserlessTables(db)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      issuer TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `)
+  db.run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS users_issuer_subject_unique ON users (issuer, subject)`
+  )
   db.run(`
     CREATE TABLE IF NOT EXISTS accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
       iban TEXT NOT NULL,
       name TEXT NOT NULL,
       created_at TEXT NOT NULL
     )
   `)
   db.run(
-    `CREATE UNIQUE INDEX IF NOT EXISTS accounts_iban_unique ON accounts (iban)`
+    `CREATE UNIQUE INDEX IF NOT EXISTS accounts_user_iban_unique ON accounts (user_id, iban)`
   )
   db.run(`
     CREATE TABLE IF NOT EXISTS import_batches (
       id TEXT PRIMARY KEY,
       file_name TEXT NOT NULL,
+      user_id INTEGER NOT NULL REFERENCES users(id),
       account_id INTEGER REFERENCES accounts(id),
       status TEXT NOT NULL DEFAULT 'parsing',
       error TEXT,
@@ -118,6 +120,7 @@ export function createSchemaSqlite(db: Db) {
   db.run(`
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
       name TEXT NOT NULL,
       name_key TEXT NOT NULL,
       language TEXT NOT NULL,
@@ -128,7 +131,7 @@ export function createSchemaSqlite(db: Db) {
     )
   `)
   db.run(
-    `CREATE UNIQUE INDEX IF NOT EXISTS categories_name_key_unique ON categories (name_key)`
+    `CREATE UNIQUE INDEX IF NOT EXISTS categories_user_name_key_unique ON categories (user_id, name_key)`
   )
   // Only when the table already has the column — old-shape DBs get it via
   // migrateSchema (which also creates the index after backfilling colors).
@@ -145,6 +148,7 @@ export function createSchemaSqlite(db: Db) {
   db.run(`
     CREATE TABLE IF NOT EXISTS label_rules (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
       label_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
       payer TEXT NOT NULL CHECK (payer <> ''),
       payee TEXT NOT NULL CHECK (payee <> ''),
@@ -154,7 +158,7 @@ export function createSchemaSqlite(db: Db) {
     )
   `)
   db.run(
-    `CREATE UNIQUE INDEX IF NOT EXISTS label_rules_triple_unique ON label_rules (payer, payee, counterparty_iban)`
+    `CREATE UNIQUE INDEX IF NOT EXISTS label_rules_triple_unique ON label_rules (user_id, payer, payee, counterparty_iban)`
   )
   db.run(
     `CREATE INDEX IF NOT EXISTS label_rules_label_idx ON label_rules (label_id)`
@@ -162,6 +166,7 @@ export function createSchemaSqlite(db: Db) {
   db.run(`
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
       account_id INTEGER NOT NULL REFERENCES accounts(id),
       batch_id TEXT REFERENCES import_batches(id),
       booking_date TEXT NOT NULL,
@@ -188,6 +193,9 @@ export function createSchemaSqlite(db: Db) {
   `)
   db.run(
     `CREATE UNIQUE INDEX IF NOT EXISTS transactions_dedupe_unique ON transactions (account_id, source_hash, occurrence_index)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS transactions_user_booking_idx ON transactions (user_id, booking_date)`
   )
   db.run(
     `CREATE INDEX IF NOT EXISTS transactions_account_booking_idx ON transactions (account_id, booking_date)`
@@ -226,9 +234,45 @@ export function ensureSchema() {
  */
 const colorHealSettled = new WeakSet<object>()
 
+/**
+ * Drop pre-multi-user tables (no user_id column): children first. The
+ * canonical user-shaped DDL in createSchemaSqlite/migrateSchema recreates
+ * them right after. Runs from both paths so a fresh singleton AND a
+ * hot-reloaded one heal the file DB.
+ */
+function dropLegacyUserlessTables(db: Db) {
+  const cols = (table: string) =>
+    db.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name)
+  const legacy = [
+    "transactions",
+    "label_rules",
+    "categories",
+    "import_batches",
+    "accounts",
+  ]
+  const stale = legacy.filter((t) => {
+    const tableCols = cols(t)
+    return tableCols.length > 0 && !tableCols.includes("user_id")
+  })
+  if (stale.length === 0) return
+  // FK enforcement cannot be toggled inside a transaction (SQLite ignores
+  // the pragma there) — drops run with FKs on, so the children-first order
+  // below is load-bearing. legacy is ordered children-first on purpose.
+  for (const t of legacy) {
+    if (cols(t).length > 0) db.run(`DROP TABLE IF EXISTS ${t}`)
+  }
+}
+
 export function migrateSchema(db: Db) {
   const cols = (table: string) =>
     db.all<{ name: string }>(`PRAGMA table_info(${table})`).map((c) => c.name)
+  // ── multi-user migration (v2.0): fresh start for everyone ────────────
+  // Pre-user tables carry no user_id. Backfilling them would need an owner,
+  // and the multi-user design discards single-user-era data (ADR-0032), so
+  // the legacy tables are dropped wholesale and recreated with user_id by
+  // the canonical DDL below. Runs in both createSchemaSqlite (fresh getDb)
+  // and here (hot-reload heal) — same as the old label_rules shape check.
+  dropLegacyUserlessTables(db)
   if (!cols("import_batches").includes("rows_updated")) {
     db.run(
       `ALTER TABLE import_batches ADD COLUMN rows_updated INTEGER NOT NULL DEFAULT 0`
@@ -300,33 +344,128 @@ export function migrateSchema(db: Db) {
       `CREATE UNIQUE INDEX IF NOT EXISTS categories_color_unique ON categories (color)`
     )
   }
-  // label_rules: older DBs carry the previous (iban, name_key) shape — that
-  // schema is gone, so the table is dropped before any new-shape DDL/index
-  // would fail with "no such column: payer" (old rules are discarded; they
-  // regenerate on the next manual assignment). Fresh files are handled by
-  // CREATE TABLE IF NOT EXISTS (idempotent). Runs here (not only in
-  // createSchemaSqlite) so a hot-reloaded singleton also heals the file DB.
-  {
-    const ruleCols = cols("label_rules")
-    if (ruleCols.length > 0 && !ruleCols.includes("counterparty_iban")) {
-      db.run(`DROP TABLE label_rules`)
-    }
-  }
+  // ── recreate tables that the multi-user migration dropped ─────────────
+  // (createSchemaSqlite would handle fresh files; migrateSchema must also
+  // heal the file DB after a drop without a restart.) The legacy-shape
+  // label_rules check above predates user scoping and is kept for very old
+  // files. After any drop, the canonical user-shaped DDL below recreates
+  // everything (idempotent); users is created first as the FK target.
   db.run(`
-    CREATE TABLE IF NOT EXISTS label_rules (
+    CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      label_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-      payer TEXT NOT NULL CHECK (payer <> ''),
-      payee TEXT NOT NULL CHECK (payee <> ''),
-      counterparty_iban TEXT NOT NULL CHECK (counterparty_iban <> ''),
+      issuer TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `)
+  db.run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS users_issuer_subject_unique ON users (issuer, subject)`
+  )
+  db.run(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      iban TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `)
+  db.run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS accounts_user_iban_unique ON accounts (user_id, iban)`
+  )
+  db.run(`
+    CREATE TABLE IF NOT EXISTS categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      name TEXT NOT NULL,
+      name_key TEXT NOT NULL,
+      language TEXT NOT NULL,
+      origin TEXT NOT NULL DEFAULT 'llm',
+      usage_count INTEGER NOT NULL DEFAULT 0,
+      color TEXT,
+      created_at TEXT NOT NULL
+    )
+  `)
+  db.run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS categories_user_name_key_unique ON categories (user_id, name_key)`
+  )
+  db.run(`
+    CREATE TABLE IF NOT EXISTS import_batches (
+      id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      account_id INTEGER REFERENCES accounts(id),
+      status TEXT NOT NULL DEFAULT 'parsing',
+      error TEXT,
+      snapshot_date TEXT,
+      snapshot_amount_cents INTEGER,
+      rows_total INTEGER NOT NULL DEFAULT 0,
+      rows_imported INTEGER NOT NULL DEFAULT 0,
+      rows_duplicate INTEGER NOT NULL DEFAULT 0,
+      rows_updated INTEGER NOT NULL DEFAULT 0,
+      labels_total INTEGER NOT NULL DEFAULT 0,
+      labels_done INTEGER NOT NULL DEFAULT 0,
+      labels_failed INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT
+    )
+  `)
+  db.run(
+    `CREATE INDEX IF NOT EXISTS import_batches_status_idx ON import_batches (status)`
+  )
+  db.run(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      account_id INTEGER NOT NULL REFERENCES accounts(id),
+      batch_id TEXT REFERENCES import_batches(id),
+      booking_date TEXT NOT NULL,
+      value_date TEXT,
+      status TEXT NOT NULL DEFAULT 'Gebucht',
+      payer TEXT,
+      payee TEXT,
+      purpose TEXT,
+      type TEXT NOT NULL,
+      counterparty_iban TEXT,
+      amount_cents INTEGER NOT NULL,
+      creditor_id TEXT,
+      mandate_ref TEXT,
+      customer_ref TEXT,
+      category_id INTEGER REFERENCES categories(id),
+      label_status TEXT NOT NULL DEFAULT 'pending',
+      label_attempts INTEGER NOT NULL DEFAULT 0,
+      source_hash TEXT NOT NULL,
+      occurrence_index INTEGER NOT NULL DEFAULT 0,
+      hash_version INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `)
   db.run(
-    `CREATE UNIQUE INDEX IF NOT EXISTS label_rules_triple_unique ON label_rules (payer, payee, counterparty_iban)`
+    `CREATE UNIQUE INDEX IF NOT EXISTS transactions_dedupe_unique ON transactions (account_id, source_hash, occurrence_index)`
   )
   db.run(
-    `CREATE INDEX IF NOT EXISTS label_rules_label_idx ON label_rules (label_id)`
+    `CREATE INDEX IF NOT EXISTS transactions_user_booking_idx ON transactions (user_id, booking_date)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS transactions_account_booking_idx ON transactions (account_id, booking_date)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS transactions_booking_date_idx ON transactions (booking_date)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS transactions_label_status_idx ON transactions (label_status)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS transactions_batch_id_idx ON transactions (batch_id)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS transactions_category_idx ON transactions (category_id)`
+  )
+  db.run(
+    `CREATE INDEX IF NOT EXISTS transactions_payee_idx ON transactions (payee)`
   )
 }

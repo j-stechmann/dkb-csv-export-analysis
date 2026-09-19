@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories, transactions } from "@/lib/db/schema"
 import { normalizeCategoryKey, isValidLabelName } from "@/lib/labeller/service"
 import { learnRule } from "@/lib/labels/matching"
 import { pickCategoryColor } from "@/lib/category-colors"
+import { requireSession, unauthorized } from "@/lib/auth/guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -21,6 +22,8 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireSession(request)
+  if (!session) return unauthorized()
   const { id } = await params
 
   const body = (await request.json().catch(() => null)) as {
@@ -42,24 +45,27 @@ export async function POST(
   const row = db
     .select({
       id: transactions.id,
+      userId: transactions.userId,
       payer: transactions.payer,
       payee: transactions.payee,
       counterpartyIban: transactions.counterpartyIban,
     })
     .from(transactions)
-    .where(eq(transactions.id, id))
+    .where(and(eq(transactions.id, id), eq(transactions.userId, session.uid)))
     .get()
   if (!row) {
     return NextResponse.json({ error: "not_found" }, { status: 404 })
   }
 
-  // resolve-or-create the category
+  // resolve-or-create the category (per-user namespace)
   let categoryId: number
   if (typeof labelIdRaw === "number") {
     const cat = db
       .select({ id: categories.id })
       .from(categories)
-      .where(eq(categories.id, labelIdRaw))
+      .where(
+        and(eq(categories.id, labelIdRaw), eq(categories.userId, session.uid))
+      )
       .get()
     if (!cat) {
       return NextResponse.json({ error: "label_not_found" }, { status: 404 })
@@ -80,7 +86,9 @@ export async function POST(
     const existing = db
       .select({ id: categories.id })
       .from(categories)
-      .where(eq(categories.nameKey, nameKey))
+      .where(
+        and(eq(categories.userId, session.uid), eq(categories.nameKey, nameKey))
+      )
       .get()
     if (existing) {
       categoryId = existing.id
@@ -97,6 +105,7 @@ export async function POST(
         return tx
           .insert(categories)
           .values({
+            userId: session.uid,
             name: labelName.trim(),
             nameKey,
             language: "de",
@@ -112,7 +121,12 @@ export async function POST(
         const reread = db
           .select({ id: categories.id })
           .from(categories)
-          .where(eq(categories.nameKey, nameKey))
+          .where(
+            and(
+              eq(categories.userId, session.uid),
+              eq(categories.nameKey, nameKey)
+            )
+          )
           .get()
         if (!reread) {
           return NextResponse.json(
@@ -136,18 +150,21 @@ export async function POST(
         labelAttempts: 0,
         updatedAt: now,
       })
-      .where(eq(transactions.id, id))
+      .where(and(eq(transactions.id, id), eq(transactions.userId, session.uid)))
       .run()
 
     // adoption = approval: manual assignment flips the origin
     tx.update(categories)
       .set({ origin: "manual", usageCount: sql`${categories.usageCount} + 1` })
-      .where(eq(categories.id, categoryId))
+      .where(
+        and(eq(categories.id, categoryId), eq(categories.userId, session.uid))
+      )
       .run()
 
     // learn rule from this transaction's payer/payee/IBAN verbatim
     // (learnRule rejects rows missing any of the three)
     learnRule(tx, {
+      userId: session.uid,
       payer: row.payer,
       payee: row.payee,
       counterpartyIban: row.counterpartyIban,

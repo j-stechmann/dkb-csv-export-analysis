@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatCentsAsGerman } from "@/lib/money"
+import { apiFetch } from "@/lib/api-fetch"
 
 export interface AnalyticsResponse {
   kpis: {
@@ -60,7 +61,7 @@ export function useAnalytics(params: string) {
   return useQuery<AnalyticsResponse>({
     queryKey: ["analytics", params],
     queryFn: async () => {
-      const res = await fetch(`/api/analytics?${params}`)
+      const res = await apiFetch(`/api/analytics?${params}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },

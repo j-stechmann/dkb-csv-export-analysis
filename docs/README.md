@@ -71,13 +71,14 @@ here. Guides cross-link to the ADRs they implement.
 
 ### Toolchain & platform
 
-| ADR                                                   | Decision                                                                |
-| ----------------------------------------------------- | ----------------------------------------------------------------------- |
-| [0001](adr/adr-0001-bun-toolchain.md)                 | Bun + Next.js 16 + React 19 + strict TypeScript toolchain               |
-| [0004](adr/adr-0004-better-sqlite3-wal-singleton.md)  | better-sqlite3 + WAL + synchronous singleton (drizzle as query builder) |
-| [0005](adr/adr-0005-code-first-ddl.md)                | Code-first idempotent DDL + hot-reload healing (no migration files)     |
-| [0008](adr/adr-0008-in-process-workers-globalthis.md) | In-process background workers via globalThis singletons                 |
-| [0031](adr/adr-0031-no-auth-local-first-privacy.md)   | No-auth, local-first privacy posture                                    |
+| ADR                                                   | Decision                                                                                |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [0001](adr/adr-0001-bun-toolchain.md)                 | Bun + Next.js 16 + React 19 + strict TypeScript toolchain                               |
+| [0004](adr/adr-0004-better-sqlite3-wal-singleton.md)  | better-sqlite3 + WAL + synchronous singleton (drizzle as query builder)                 |
+| [0005](adr/adr-0005-code-first-ddl.md)                | Code-first idempotent DDL + hot-reload healing (no migration files)                     |
+| [0008](adr/adr-0008-in-process-workers-globalthis.md) | In-process background workers via globalThis singletons                                 |
+| [0031](adr/adr-0031-no-auth-local-first-privacy.md)   | No-auth, local-first privacy posture                                                    |
+| [0032](adr/adr-0032-multi-user-oidc.md)               | Multi-user OIDC authentication with per-user data isolation (supersedes 0031's no-auth) |
 
 ### Data & import
 

@@ -32,6 +32,7 @@ export function lowestFreeIndex(occupied: Set<number>): number {
  */
 export function computeDedupe(
   accountIban: string,
+  userId: number,
   accountId: number,
   batchId: string,
   rows: ParsedTransactionRow[],
@@ -73,7 +74,7 @@ export function computeDedupe(
       const candidate = lowestFreeIndex(existingOcc)
       const row = group[duplicateHere + placed]
       toInsert.push(
-        rowToNewTransaction(row, accountId, batchId, hash, candidate)
+        rowToNewTransaction(row, userId, accountId, batchId, hash, candidate)
       )
       existingOcc.add(candidate)
       placed++
@@ -90,6 +91,7 @@ export function computeDedupe(
 
 export function rowToNewTransaction(
   row: ParsedTransactionRow,
+  userId: number,
   accountId: number,
   batchId: string,
   sourceHash: string,
@@ -97,6 +99,7 @@ export function rowToNewTransaction(
 ): NewTransaction {
   return {
     id: crypto.randomUUID(),
+    userId,
     accountId,
     batchId,
     bookingDate: row.bookingDate,

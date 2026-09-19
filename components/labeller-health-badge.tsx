@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
+import { apiFetch } from "@/lib/api-fetch"
 
 type Status = "ok" | "degraded" | "unreachable"
 
@@ -22,7 +23,7 @@ export function LabellerHealthBadge() {
   const { data } = useQuery<{ status: Status }>({
     queryKey: ["llm-health"],
     queryFn: async () => {
-      const res = await fetch("/api/llm/health")
+      const res = await apiFetch("/api/llm/health")
       if (!res.ok) return { status: "unreachable" as const }
       return res.json()
     },

@@ -29,6 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { resolveCategoryColor } from "@/lib/category-colors"
+import { apiFetch } from "@/lib/api-fetch"
 
 interface LabelRow {
   id: number
@@ -80,7 +81,7 @@ function CreateLabelForm() {
     if (!name.trim()) return
     setBusy(true)
     try {
-      const res = await fetch("/api/labels", {
+      const res = await apiFetch("/api/labels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() }),
@@ -138,7 +139,7 @@ function RenameDialog({
   const rename = async () => {
     setBusy(true)
     try {
-      const res = await fetch(`/api/labels/${label.id}`, {
+      const res = await apiFetch(`/api/labels/${label.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() }),
@@ -209,7 +210,9 @@ function DeleteLabelDialog({
   const remove = async () => {
     setBusy(true)
     try {
-      const res = await fetch(`/api/labels/${label.id}`, { method: "DELETE" })
+      const res = await apiFetch(`/api/labels/${label.id}`, {
+        method: "DELETE",
+      })
       const data = (await res.json()) as {
         affected?: number
         error?: string
@@ -285,7 +288,7 @@ function EditRuleDialog({
   const save = async () => {
     setBusy(true)
     try {
-      const res = await fetch(`/api/label-rules/${rule.id}`, {
+      const res = await apiFetch(`/api/label-rules/${rule.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -406,7 +409,7 @@ function ApplyRuleDialog({
   } = useQuery<{ count: number }>({
     queryKey: ["label-rules", rule.id, "matches"],
     queryFn: async () => {
-      const res = await fetch(`/api/label-rules/${rule.id}/matches`)
+      const res = await apiFetch(`/api/label-rules/${rule.id}/matches`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },
@@ -416,7 +419,7 @@ function ApplyRuleDialog({
   const apply = async () => {
     setBusy(true)
     try {
-      const res = await fetch(`/api/label-rules/${rule.id}/apply`, {
+      const res = await apiFetch(`/api/label-rules/${rule.id}/apply`, {
         method: "POST",
       })
       const data = (await res.json()) as {
@@ -495,7 +498,7 @@ function RulesList({
   const { data } = useQuery<{ rules: LabelRuleRow[] }>({
     queryKey: ["label-rules", labelId],
     queryFn: async () => {
-      const res = await fetch(`/api/labels/${labelId}/rules`)
+      const res = await apiFetch(`/api/labels/${labelId}/rules`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },
@@ -564,7 +567,7 @@ function RulesList({
               onClick={async () => {
                 setBusyId(rule.id)
                 try {
-                  const res = await fetch(`/api/label-rules/${rule.id}`, {
+                  const res = await apiFetch(`/api/label-rules/${rule.id}`, {
                     method: "DELETE",
                   })
                   if (res.ok) {
@@ -609,7 +612,7 @@ export default function LabelsPage() {
   const { data, isLoading } = useQuery<{ labels: LabelRow[] }>({
     queryKey: ["labels"],
     queryFn: async () => {
-      const res = await fetch("/api/labels")
+      const res = await apiFetch("/api/labels")
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },

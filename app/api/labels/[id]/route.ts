@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import { categories } from "@/lib/db/schema"
 import {
@@ -7,6 +7,7 @@ import {
   isValidLabelName,
   resetTransactionsForLabelDeletion,
 } from "@/lib/labeller/service"
+import { requireSession, unauthorized } from "@/lib/auth/guard"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -15,6 +16,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireSession(request)
+  if (!session) return unauthorized()
   const { id } = await params
   const labelId = Number.parseInt(id, 10)
   if (!Number.isInteger(labelId)) {
@@ -37,10 +40,14 @@ export async function PATCH(
   }
 
   const db = getDb()
+  const userScope = and(
+    eq(categories.id, labelId),
+    eq(categories.userId, session.uid)
+  )
   const current = db
     .select({ id: categories.id, nameKey: categories.nameKey })
     .from(categories)
-    .where(eq(categories.id, labelId))
+    .where(userScope)
     .get()
   if (!current) {
     return NextResponse.json({ error: "not_found" }, { status: 404 })
@@ -51,7 +58,9 @@ export async function PATCH(
     const clash = db
       .select({ id: categories.id })
       .from(categories)
-      .where(eq(categories.nameKey, nameKey))
+      .where(
+        and(eq(categories.userId, session.uid), eq(categories.nameKey, nameKey))
+      )
       .get()
     if (clash) {
       return NextResponse.json(
@@ -68,7 +77,7 @@ export async function PATCH(
   try {
     db.update(categories)
       .set({ name, nameKey, origin: "manual" })
-      .where(eq(categories.id, labelId))
+      .where(userScope)
       .run()
   } catch (err) {
     if (err instanceof Error && err.message.includes("UNIQUE constraint")) {
@@ -84,9 +93,11 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await requireSession(request)
+  if (!session) return unauthorized()
   const { id } = await params
   const labelId = Number.parseInt(id, 10)
   if (!Number.isInteger(labelId)) {
@@ -97,7 +108,7 @@ export async function DELETE(
   const current = db
     .select({ id: categories.id })
     .from(categories)
-    .where(eq(categories.id, labelId))
+    .where(and(eq(categories.id, labelId), eq(categories.userId, session.uid)))
     .get()
   if (!current) {
     return NextResponse.json({ error: "not_found" }, { status: 404 })
@@ -113,7 +124,11 @@ export async function DELETE(
   // single commit removes that window entirely.
   const affectedIds = db.transaction((tx) => {
     const ids = resetTransactionsForLabelDeletion(labelId, tx)
-    tx.delete(categories).where(eq(categories.id, labelId)).run()
+    tx.delete(categories)
+      .where(
+        and(eq(categories.id, labelId), eq(categories.userId, session.uid))
+      )
+      .run()
     return ids
   })
 

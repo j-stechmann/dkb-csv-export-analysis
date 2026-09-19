@@ -4,6 +4,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { BarChart3, Tags, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { UserChip } from "@/components/user-chip"
+import { useSessionUser } from "@/components/user-session"
 
 export const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: BarChart3 },
@@ -16,6 +18,7 @@ export const NAV_LINK_CLASS =
 
 export function AppNav() {
   const pathname = usePathname()
+  const user = useSessionUser()
 
   return (
     <nav className="hidden items-center gap-1 sm:flex">
@@ -36,6 +39,7 @@ export function AppNav() {
           </Link>
         )
       })}
+      {user && <UserChip user={user} />}
     </nav>
   )
 }
