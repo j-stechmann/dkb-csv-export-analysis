@@ -112,7 +112,10 @@ export async function GET(request: NextRequest) {
     // openid-client errors can carry internal issuer/token-endpoint URLs
     console.error("[auth/callback] error:", err)
     return NextResponse.json(
-      { error: "exchange_failed", message: "authorization code exchange failed" },
+      {
+        error: "exchange_failed",
+        message: "authorization code exchange failed",
+      },
       { status: 401 }
     )
   }
