@@ -2,8 +2,8 @@
 #
 # Quick start:
 #   make dev     # llama-server + Next.js app together (offers model download
-#                # on first run; Ctrl-C stops llama-server too)
-#   make stop    # stop llama-server (the app runs in the foreground)
+#                # on first run; Ctrl-C tears down what dev started itself)
+#   make stop    # stop llama-server + remove the dev OIDC provider containers
 #
 # Machine-specific overrides (binary paths, env) belong in Makefile.local
 # (gitignored, included below).
@@ -54,7 +54,7 @@ LLAMA_SERVER ?= $(shell command -v llama-server 2>/dev/null)
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-.PHONY: help dev app model llm stop llm-stop llm-status oidc oidc-down oidc-stop oidc-status oidc-logs test check format build start
+.PHONY: help dev app model llm llm-kill stop llm-stop llm-status oidc oidc-down oidc-stop oidc-status oidc-logs test check format build start
 
 help:
 	@echo "DKB Analytics — make targets:"
@@ -67,7 +67,7 @@ help:
 	@echo "  make oidc-logs  tail the dev OIDC provider logs"
 	@echo "  make model      download the pinned model ($(MODEL_HF_FILE), ~$$(($(MODEL_SIZE) / 1000000000)) GB) — run once"
 	@echo "  make llm        start llama-server in the background (log: /tmp/llama-server.log)"
-	@echo "  make stop       stop llama-server + remove dev OIDC provider containers"
+	@echo "  make stop       interactive teardown: llama-server + dev OIDC provider"
 	@echo "  make llm-status health + GPU usage check"
 	@echo "  make test       run the vitest suite"
 	@echo "  make check      typecheck + lint + prettier"
@@ -90,17 +90,29 @@ help:
 # other's services.
 dev:
 	@if ! curl -s -m 2 http://$(LLM_HOST):$(LLM_PORT)/health >/dev/null 2>&1; then \
+		rm -f /tmp/llama-server.managed; \
 		$(MAKE) --no-print-directory llm; \
 		touch /tmp/llama-server.managed; \
 	else \
 		echo "llama-server already running on :$(LLM_PORT) (left running after exit)"; \
+		rm -f /tmp/llama-server.managed; \
 	fi; \
 	if curl -sf -m 2 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1 || docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) ps --quiet 2>/dev/null | grep -q .; then \
 		echo "dev OIDC provider already running on :$(OIDC_PORT) (left running after exit)"; \
+		rm -f /tmp/dkb-oidc.managed; \
 	else \
 		touch /tmp/dkb-oidc.managed; \
 	fi; \
-	trap 'if [ -f /tmp/llama-server.managed ]; then rm -f /tmp/llama-server.managed; $(MAKE) --no-print-directory stop; fi; if [ -f /tmp/dkb-oidc.managed ]; then rm -f /tmp/dkb-oidc.managed; $(MAKE) --no-print-directory oidc-down; fi' EXIT INT TERM; \
+	trap 'rc=$$?; \
+		if [ -f /tmp/llama-server.managed ]; then \
+			rm -f /tmp/llama-server.managed; \
+			$(MAKE) --no-print-directory llm-kill || true; \
+		fi; \
+		if [ -f /tmp/dkb-oidc.managed ]; then \
+			rm -f /tmp/dkb-oidc.managed; \
+			$(MAKE) --no-print-directory oidc-down || true; \
+		fi; \
+		exit $$rc' EXIT INT TERM; \
 	$(MAKE) --no-print-directory oidc; \
 	if [ ! -d node_modules ]; then echo "installing dependencies…"; bun install; fi; \
 	bun dev
@@ -139,8 +151,10 @@ endef
 llm:
 	@if curl -s -m 2 http://$(LLM_HOST):$(LLM_PORT)/health >/dev/null 2>&1; then \
 		echo "llama-server already running on :$(LLM_PORT)"; \
+		rm -f /tmp/llama-server.pid /tmp/llama-server.managed; \
 		exit 0; \
 	fi; \
+	rm -f /tmp/llama-server.pid /tmp/llama-server.managed; \
 	if [ -n "$(MODEL)" ]; then model="$(MODEL)"; \
 	elif [ -f "$(MODEL_FILE)" ] && [ -f "$$(cat $(MODEL_FILE) 2>/dev/null)" ]; then model=$$(cat $(MODEL_FILE)); \
 	else model=""; fi; \
@@ -221,18 +235,24 @@ llm-wait:
 	done; \
 	echo; echo "timeout waiting for llama-server — see /tmp/llama-server.log"; exit 1
 
-# pidfile-targeted kill only: never touch llama-server processes this
-# project didn't start (the health check below reports leftovers)
-stop:
+# Pidfile-targeted llama-server teardown, no health-check verdict and no
+# OIDC coupling: used by the `dev` trap (only after `dev` started
+# llama-server itself) and by `stop`. A failed health check never aborts
+# callers — `stop` reports leftovers; `dev`'s trap just reaps the pidfile.
+llm-kill:
 	@if [ -s /tmp/llama-server.pid ]; then \
 		kill -9 $$(cat /tmp/llama-server.pid) 2>/dev/null || true; \
 	fi; \
-	rm -f /tmp/llama-server.pid; \
-	rm -f /tmp/llama-server.managed; \
-	sleep 1; \
+	rm -f /tmp/llama-server.pid /tmp/llama-server.managed; \
+	sleep 1
+
+# Interactive teardown: llama-server (pidfile-targeted) + the dev OIDC
+# provider containers. Only llama-server processes this project started are
+# touched; the health check reports leftovers without failing the target.
+stop:
+	@$(MAKE) --no-print-directory llm-kill; \
 	if curl -s -m 2 http://$(LLM_HOST):$(LLM_PORT)/health >/dev/null 2>&1; then \
 		echo "llama-server still running on :$(LLM_PORT) — kill it manually"; \
-		exit 1; \
 	else \
 		echo "stopped"; \
 	fi; \

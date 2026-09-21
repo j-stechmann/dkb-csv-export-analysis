@@ -55,7 +55,8 @@ The labeller talks OpenAI-compatible chat completions to a local
 starts it in the background and runs the app in the foreground; on exit it
 tears down what it started (llama-server, and the OIDC containers if it
 started those too). `make stop` stops llama-server and removes the OIDC
-containers; `make llm-status` shows health + GPU usage.
+containers (explicit teardown — it doesn't track who started what);
+`make llm-status` shows health + GPU usage.
 
 **Model download (no Ollama):** `make model` downloads one exact GGUF file
 from Hugging Face with a pinned revision (`ggml-org/Qwen3.8-27B-GGUF`,

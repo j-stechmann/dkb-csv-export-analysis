@@ -30,7 +30,15 @@ export function useSessionUser(): SessionUser | null {
   const [user, setUser] = useState<SessionUser | null>(null)
   useEffect(() => {
     let alive = true
-    sessionUserPromise ??= fetchSessionUser()
+    // Memoize only a successful fetch: a transient /api/me failure (dev
+    // server restart, offline moment) must stay retryable by the next
+    // component mount, so the empty result isn't cached for the tab's
+    // lifetime.
+    sessionUserPromise ??= fetchSessionUser().then((data) => {
+      if (data) return data
+      sessionUserPromise = undefined
+      return data
+    })
     void sessionUserPromise.then((data) => {
       if (alive) setUser(data)
     })

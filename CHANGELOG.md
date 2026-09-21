@@ -41,6 +41,21 @@
   other's services. `make stop` removes the OIDC containers too;
   `oidc-stop` is now an alias of the new `oidc-down` (`compose stop` →
   `compose down`, volume kept).
+- **`make dev`'s exit trap no longer tears down services it didn't start**:
+  the trap's llama-server branch called `make stop`, whose new `oidc-down`
+  step also removed a _pre-existing_ OIDC stack — contradicting the
+  "left running after exit" message. The trap now uses the new pidfile-only
+  `llm-kill` target (no OIDC coupling, no failing health check), so a
+  pre-existing stack is always left running. `make stop` keeps its
+  interactive both-services teardown (explicit intent), but a failed
+  llama-server health check now only reports leftovers instead of aborting
+  before `oidc-down` runs.
+- **Stale marker files can no longer hijack the next `make dev`**: when a
+  previous run died without its trap (SIGKILL, power loss),
+  `/tmp/llama-server.managed` / `/tmp/dkb-oidc.managed` lingered and the
+  next run would tear down services it didn't start. `make dev` (and
+  `make llm`) now clear a marker whenever the service it references is
+  healthy at startup, so markers only ever describe _this_ run's services.
 
 ## v1.10.0
 

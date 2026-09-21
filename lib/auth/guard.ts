@@ -74,14 +74,12 @@ export function assertSameOrigin(request: Request): NextResponse | null {
   // Sec-Fetch-Site: same-origin (the navigation initiator is treated as
   // opaque even though the document origin is the app's). Sec-Fetch-Site
   // can't be spoofed by an attacker page, so "null + same-origin" is a
-  // legitimate browser-sent combination — accept it. "null" together with
-  // cross-site/same-site (sandboxed iframes etc.) stays blocked below via
-  // the unparseable-Origin fail-closed branch.
-  if (origin === "null") {
-    return !fetchSite || fetchSite === "same-origin"
-      ? null
-      : crossSiteForbidden()
-  }
+  // legitimate browser-sent combination — accept it. "null" with a
+  // cross-site/same-site Sec-Fetch-Site (sandboxed iframes etc.) was
+  // already rejected above; a "null" Origin without fetch metadata rides
+  // the legacy-browser allowance below (no headers at all), where
+  // SameSite=Lax holds the line.
+  if (origin === "null") return null
   // new URL() normalizes trailing slashes/default ports/casing that a raw
   // APP_ORIGIN string wouldn't (same pattern as the logout route's check).
   // .origin also lowercases the host — hosts are case-insensitive (RFC
@@ -100,7 +98,19 @@ export function assertSameOrigin(request: Request): NextResponse | null {
     // same-origin construction can't fail here; defensive only
   }
   // Origin as the browser sees it: X-Forwarded-Host (TLS-terminating
-  // proxy) → Host, with X-Forwarded-Proto → request protocol
+  // proxy) → Host, with X-Forwarded-Proto → request protocol.
+  //
+  // Trusted-proxy assumption: X-Forwarded-* are only meaningful when a
+  // proxy in front of the app strips/overwrites client-supplied values
+  // (standard proxy behavior). When the app is exposed directly, an
+  // attacker page CAN set X-Forwarded-Host to its own origin — the fetch
+  // forbidden-header list doesn't cover it — but that alone doesn't help
+  // it: its Origin must equal the app's actual Host (it can't spoof that
+  // header in browser flows), and modern browsers are already pinned by
+  // the Sec-Fetch-Site check above. The residual window (same-site
+  // attacker page + no Fetch Metadata + direct exposure) rests on
+  // SameSite=Lax. Set APP_ORIGIN behind a proxy to pin the browser-facing
+  // origin unconditionally.
   const host =
     request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ??
     request.headers.get("host")
