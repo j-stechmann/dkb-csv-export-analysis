@@ -54,19 +54,20 @@ LLAMA_SERVER ?= $(shell command -v llama-server 2>/dev/null)
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-.PHONY: help dev app model llm stop llm-status oidc oidc-stop oidc-status oidc-logs test check format build start
+.PHONY: help dev app model llm stop llm-stop llm-status oidc oidc-down oidc-stop oidc-status oidc-logs test check format build start
 
 help:
 	@echo "DKB Analytics — make targets:"
-	@echo "  make dev        llama-server + dev app together (offers model download; Ctrl-C stops both)"
-	@echo "  make app        dev app only (llama-server must already run)"
+	@echo "  make dev        llama-server + dev OIDC provider + dev app together (offers model download; Ctrl-C tears down what it started)"
+	@echo "  make app        dev app only (llama-server + OIDC provider must already run)"
 	@echo "  make oidc       start the dev OIDC provider (Authentik, :$(OIDC_PORT)) + provision the client"
-	@echo "  make oidc-stop  stop the dev OIDC provider (config survives in a named volume)"
+	@echo "  make oidc-down  stop and remove the dev OIDC provider containers (config survives in a named volume)"
+	@echo "  make oidc-stop  alias for oidc-down"
 	@echo "  make oidc-status health check for the dev OIDC provider"
 	@echo "  make oidc-logs  tail the dev OIDC provider logs"
 	@echo "  make model      download the pinned model ($(MODEL_HF_FILE), ~$$(($(MODEL_SIZE) / 1000000000)) GB) — run once"
 	@echo "  make llm        start llama-server in the background (log: /tmp/llama-server.log)"
-	@echo "  make stop       stop llama-server"
+	@echo "  make stop       stop llama-server + remove dev OIDC provider containers"
 	@echo "  make llm-status health + GPU usage check"
 	@echo "  make test       run the vitest suite"
 	@echo "  make check      typecheck + lint + prettier"
@@ -81,10 +82,12 @@ help:
 
 # ── combined / app ───────────────────────────────────────────────────────────
 # dev = llama-server (if not already running) + dev OIDC provider (if not
-# already running) + foreground app. When this command started llama-server
-# itself, Ctrl-C stops it again; a pre-existing server is left alone. The
-# Authentik containers are stateful (named volume) and slow to restart, so
-# they are always left running — `make oidc-stop` when done.
+# already running) + foreground app. Anything this command started itself is
+# torn down on exit (llama-server via pidfile, OIDC stack via `compose down`
+# — containers removed, the authentik-db named volume keeps the provisioned
+# client). Pre-existing llama-server or a pre-existing OIDC stack is left
+# alone (tracked via marker files), so parallel sessions don't steal each
+# other's services.
 dev:
 	@if ! curl -s -m 2 http://$(LLM_HOST):$(LLM_PORT)/health >/dev/null 2>&1; then \
 		$(MAKE) --no-print-directory llm; \
@@ -92,7 +95,12 @@ dev:
 	else \
 		echo "llama-server already running on :$(LLM_PORT) (left running after exit)"; \
 	fi; \
-	trap 'if [ -f /tmp/llama-server.managed ]; then rm -f /tmp/llama-server.managed; $(MAKE) --no-print-directory stop; fi' EXIT INT TERM; \
+	if curl -sf -m 2 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1 || docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) ps --quiet 2>/dev/null | grep -q .; then \
+		echo "dev OIDC provider already running on :$(OIDC_PORT) (left running after exit)"; \
+	else \
+		touch /tmp/dkb-oidc.managed; \
+	fi; \
+	trap 'if [ -f /tmp/llama-server.managed ]; then rm -f /tmp/llama-server.managed; $(MAKE) --no-print-directory stop; fi; if [ -f /tmp/dkb-oidc.managed ]; then rm -f /tmp/dkb-oidc.managed; $(MAKE) --no-print-directory oidc-down; fi' EXIT INT TERM; \
 	$(MAKE) --no-print-directory oidc; \
 	if [ ! -d node_modules ]; then echo "installing dependencies…"; bun install; fi; \
 	bun dev
@@ -227,7 +235,8 @@ stop:
 		exit 1; \
 	else \
 		echo "stopped"; \
-	fi
+	fi; \
+	$(MAKE) --no-print-directory oidc-down
 
 llm-stop: stop
 
@@ -286,11 +295,20 @@ oidc-wait:
 		echo; echo "timeout waiting for the dev OIDC provider — see: make oidc-logs"; exit 1; \
 	fi
 
-# compose `stop` (not `down -v`): the authentik-db named volume keeps the
-# provisioned dkb-analytics client, so the next `make oidc` is fast.
-oidc-stop:
+# compose `down` (not `down -v`): containers are removed, but the
+# authentik-db named volume keeps the provisioned dkb-analytics client and
+# bootstrap state, so the next `make oidc` re-creates and re-provisions from
+# the current compose.dev.env instead of serving stale volume state.
+oidc-down:
 	@if [ ! -f compose.dev.env ]; then cp compose.dev.env.example compose.dev.env; fi; \
-	docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) stop
+	if docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) ps --quiet 2>/dev/null | grep -q .; then \
+		echo "stopping and removing dev OIDC provider containers (volume kept)…"; \
+		docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) down; \
+	else \
+		echo "dev OIDC provider not running"; \
+	fi
+
+oidc-stop: oidc-down
 
 oidc-status:
 	@curl -sf -m 3 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1 \

@@ -3,14 +3,16 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Menu } from "lucide-react"
+import { Menu, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NAV_ITEMS, NAV_LINK_CLASS } from "@/components/app-nav"
 import { Button } from "@/components/ui/button"
+import { useSessionUser } from "@/components/user-session"
 import {
   Sheet,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
@@ -18,6 +20,7 @@ import {
 
 export function MobileNav() {
   const pathname = usePathname()
+  const user = useSessionUser()
   const [open, setOpen] = React.useState(false)
 
   return (
@@ -59,6 +62,25 @@ export function MobileNav() {
             )
           })}
         </nav>
+        {user && (
+          <SheetFooter className="border-t">
+            <span
+              className="truncate px-1 text-sm text-muted-foreground"
+              title={user.email}
+            >
+              {user.name || user.email || "Angemeldet"}
+            </span>
+            <form action="/auth/logout" method="post">
+              <button
+                type="submit"
+                className={cn(NAV_LINK_CLASS, "w-full justify-start py-2")}
+              >
+                <LogOut className="size-4" />
+                Abmelden
+              </button>
+            </form>
+          </SheetFooter>
+        )}
       </SheetContent>
     </Sheet>
   )

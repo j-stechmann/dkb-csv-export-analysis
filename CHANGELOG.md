@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Logout (and every mutating request) rejected with 403
+  `cross_site_request_rejected` when browsing via a LAN IP or hostname**:
+  the CSRF guard (`assertSameOrigin`) built its allowed-origin set from
+  `APP_ORIGIN` and `request.url` — but the Next dev server normalizes
+  `request.url` to the server's initialized hostname (`localhost`), so
+  requests arriving via any other Host carried an Origin that could never
+  match. The guard now also accepts the origin derived from
+  `X-Forwarded-Host`/`Host` (+ `X-Forwarded-Proto`) as browser-facing
+  origin, and compares hosts case-insensitively (`URL.origin` lowercases
+  the Host-derived host while browsers echo `Origin` in the case used to
+  reach the server — `http://Desktop:x` vs `http://desktop:x` used to
+  fail). Unparseable `Origin` headers fail closed. Attacker pages still
+  can't pass (their `Origin` never equals the app's `Host`), and
+  cross-site `Sec-Fetch-Site` stays blocked.
+- **Chromium's post-OIDC `Origin: null` form POSTs**: after the OIDC login
+  round-trip, Chromium (observed in 153) can send a form POST from the
+  app's own page with the literal `Origin: null` alongside
+  `Sec-Fetch-Site: same-origin` — the navigation initiator is treated as
+  opaque even though the document origin is the app's. The guard now
+  accepts `Origin: null` **only** when `Sec-Fetch-Site` is `same-origin`
+  or absent (both browser-generated and unspoofable); `Origin: null` with
+  cross-site/same-site fetch metadata (sandboxed attacker iframes) stays
+  rejected. Reproduced end-to-end with real Chromium (login → Abmelden →
+  post-logout redirect) before and after the fix.
+
+### Changed
+
+- **`make dev` cleans up after itself**: on exit (Ctrl-C included) it now
+  tears down the dev OIDC provider containers it started
+  (`docker compose down` — the `authentik-db` named volume keeps the
+  provisioned client, so the next start re-creates containers from the
+  _current_ `compose.dev.env` instead of serving stale volume state).
+  Pre-existing llama-server or OIDC stacks are left alone (marker files
+  track what the invocation started), so parallel sessions don't steal each
+  other's services. `make stop` removes the OIDC containers too;
+  `oidc-stop` is now an alias of the new `oidc-down` (`compose stop` →
+  `compose down`, volume kept).
+
 ## v1.10.0
 
 ### Breaking
