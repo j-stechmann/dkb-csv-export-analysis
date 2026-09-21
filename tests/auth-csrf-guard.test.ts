@@ -117,6 +117,140 @@ describe("assertSameOrigin", () => {
       resetConfigCache()
     }
   })
+
+  it("accepts an Origin matching the request Host (dev LAN-IP testing)", () => {
+    // Next dev normalizes request.url to the server's initialized hostname
+    // (localhost), so requests arriving via a LAN IP carry an Origin that
+    // can never match request.url — the Host-derived origin covers this.
+    const res = assertSameOrigin(
+      req("http://localhost:3000/auth/logout", {
+        origin: "http://192.168.178.165:3000",
+        host: "192.168.178.165:3000",
+      })
+    )
+    expect(res).toBeNull()
+  })
+
+  it("matches hosts case-insensitively (Origin http://Desktop:x vs Host desktop:x)", () => {
+    // URL.origin lowercases the host from the Host header; browsers echo
+    // the hostname in Origin with the case they used to reach the server.
+    // Hosts are case-insensitive (RFC 1035), so the comparison must be too.
+    const res = assertSameOrigin(
+      req("http://localhost:3000/auth/logout", {
+        origin: "http://Desktop:3000",
+        host: "Desktop:3000",
+      })
+    )
+    expect(res).toBeNull()
+  })
+
+  it("prefers X-Forwarded-Host + X-Forwarded-Proto over Host (APP_ORIGIN set → proxy)", () => {
+    const res = assertSameOrigin(
+      req("http://internal/app/api/labels", {
+        origin: "https://public.example.com",
+        host: "internal",
+        "x-forwarded-host": "public.example.com",
+        "x-forwarded-proto": "https",
+      })
+    )
+    expect(res).toBeNull()
+  })
+
+  it("ignores X-Forwarded-* without APP_ORIGIN (direct exposure — attacker-settable)", () => {
+    // Without a proxy declaration, an attacker page could set
+    // X-Forwarded-Host to its own origin via fetch() (not a forbidden
+    // header) and mirror its Origin to match — so the guard must not
+    // widen the allowed set from those headers when APP_ORIGIN is unset.
+    const prev = process.env.APP_ORIGIN
+    delete process.env.APP_ORIGIN
+    resetConfigCache()
+    try {
+      const res = assertSameOrigin(
+        req("http://localhost:3000/api/labels", {
+          origin: "http://evil.example.com",
+          host: "localhost:3000",
+          "x-forwarded-host": "evil.example.com",
+          "x-forwarded-proto": "http",
+        })
+      )
+      expect(res!.status).toBe(403)
+    } finally {
+      process.env.APP_ORIGIN = prev
+      resetConfigCache()
+    }
+  })
+
+  it("without APP_ORIGIN, Host still supplies the browser-facing origin", () => {
+    const prev = process.env.APP_ORIGIN
+    delete process.env.APP_ORIGIN
+    resetConfigCache()
+    try {
+      const res = assertSameOrigin(
+        req("http://localhost:3000/api/labels", {
+          origin: "http://app.example.com",
+          host: "app.example.com",
+          "x-forwarded-host": "evil.example.com",
+        })
+      )
+      expect(res).toBeNull()
+    } finally {
+      process.env.APP_ORIGIN = prev
+      resetConfigCache()
+    }
+  })
+
+  it("still rejects an Origin that matches neither APP_ORIGIN, request.url, nor Host", () => {
+    const res = assertSameOrigin(
+      req("http://localhost:3000/api/labels", {
+        origin: "http://evil.example.com",
+        host: "localhost:3000",
+      })
+    )
+    expect(res!.status).toBe(403)
+  })
+
+  it("rejects an unparseable Origin (fail closed)", () => {
+    const res = assertSameOrigin(
+      req("http://localhost:3000/api/labels", {
+        origin: ":://not-a-url",
+        host: "localhost:3000",
+      })
+    )
+    expect(res!.status).toBe(403)
+  })
+
+  it("accepts Origin: null with Sec-Fetch-Site: same-origin (Chromium OIDC quirk)", () => {
+    // After the OIDC login round-trip, Chromium can send a form POST from
+    // the app's own page with Origin: null + Sec-Fetch-Site: same-origin.
+    // Sec-Fetch-Site is browser-generated and unspoofable, so this passes.
+    const res = assertSameOrigin(
+      req("http://localhost:3000/auth/logout", {
+        origin: "null",
+        "sec-fetch-site": "same-origin",
+      })
+    )
+    expect(res).toBeNull()
+  })
+
+  it("accepts Origin: null without any Sec-Fetch-Site header (legacy-browser residual risk)", () => {
+    // Legacy browsers without Fetch Metadata don't send Sec-Fetch-Site.
+    // This window matters only for same-site attacker content on such a
+    // browser (Lax cookies ride same-site requests); see the guard comment.
+    const res = assertSameOrigin(
+      req("http://localhost:3000/api/labels", { origin: "null" })
+    )
+    expect(res).toBeNull()
+  })
+
+  it("rejects Origin: null with a cross-site Sec-Fetch-Site (sandboxed attacker iframe)", () => {
+    const res = assertSameOrigin(
+      req("http://localhost:3000/auth/logout", {
+        origin: "null",
+        "sec-fetch-site": "cross-site",
+      })
+    )
+    expect(res!.status).toBe(403)
+  })
 })
 
 describe("cookie decode hardening", () => {

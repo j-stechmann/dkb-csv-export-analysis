@@ -1,5 +1,92 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- **Client-settable `X-Forwarded-*` headers are only trusted with
+  `APP_ORIGIN` set**: those headers are not fetch-forbidden, so on a
+  directly-exposed app (no proxy stripping them) an attacker page could set
+  them via `fetch()` and pass trust checks built on them. Two places
+  aligned on the same rule — `APP_ORIGIN` is the operator's declaration
+  that a proxy fronts the app and normalizes those headers; the plain
+  `Host` header and the request's own protocol stay trusted in all cases:
+  - The CSRF guard (`assertSameOrigin`) no longer honors
+    `X-Forwarded-Host`/`X-Forwarded-Proto` without `APP_ORIGIN` — an
+    attacker page could otherwise mirror its `Origin` to a forged
+    `X-Forwarded-Host` and pass the origin check with the session cookie
+    attached on browsers without Fetch Metadata (`Sec-Fetch-Site` absent,
+    e.g. Safari < 16.4; SameSite=Lax does not close this — Lax cookies ride
+    same-site requests).
+  - `sessionCookieOptions` no longer reads `X-Forwarded-Proto` without
+    `APP_ORIGIN` — a forged `https` value could otherwise flip the
+    `Secure` attribute as a cookie-overwrite gadget (an attacker-set
+    `http`/absent value could also strip it; both directions now require
+    the proxy declaration).
+  - Corrected the guard's `Origin: null` rationale (residual risk: same-site
+    attacker content on a browser without Fetch Metadata — where Lax does
+    not hold the line).
+
+### Fixed
+
+- **Logout (and every mutating request) rejected with 403
+  `cross_site_request_rejected` when browsing via a LAN IP or hostname**:
+  the CSRF guard (`assertSameOrigin`) built its allowed-origin set from
+  `APP_ORIGIN` and `request.url` — but the Next dev server normalizes
+  `request.url` to the server's initialized hostname (`localhost`), so
+  requests arriving via any other Host carried an Origin that could never
+  match. The guard now also accepts the origin derived from
+  `X-Forwarded-Host`/`Host` (+ `X-Forwarded-Proto`) as browser-facing
+  origin, and compares hosts case-insensitively (`URL.origin` lowercases
+  the Host-derived host while browsers echo `Origin` in the case used to
+  reach the server — `http://Desktop:x` vs `http://desktop:x` used to
+  fail). Unparseable `Origin` headers fail closed. Attacker pages still
+  can't pass (their `Origin` never equals the app's `Host`), and
+  cross-site `Sec-Fetch-Site` stays blocked.
+- **Chromium's post-OIDC `Origin: null` form POSTs**: after the OIDC login
+  round-trip, Chromium (observed in 153) can send a form POST from the
+  app's own page with the literal `Origin: null` alongside
+  `Sec-Fetch-Site: same-origin` — the navigation initiator is treated as
+  opaque even though the document origin is the app's. The guard now
+  accepts `Origin: null` **only** when `Sec-Fetch-Site` is `same-origin`
+  or absent (both browser-generated and unspoofable); `Origin: null` with
+  cross-site/same-site fetch metadata (sandboxed attacker iframes) stays
+  rejected. Reproduced end-to-end with real Chromium (login → Abmelden →
+  post-logout redirect) before and after the fix.
+
+### Changed
+
+- **`make dev` cleans up after itself**: on exit (Ctrl-C included) it now
+  tears down the dev OIDC provider containers it started
+  (`docker compose down` — the `authentik-db` named volume keeps the
+  provisioned client, so the next start re-creates containers from the
+  _current_ `compose.dev.env` instead of serving stale volume state).
+  Pre-existing llama-server or OIDC stacks are left alone (marker files
+  track what the invocation started), so parallel sessions don't steal each
+  other's services. `make stop` removes the OIDC containers too;
+  `oidc-stop` is now an alias of the new `oidc-down` (`compose stop` →
+  `compose down`, volume kept).
+- **`make dev`'s exit trap no longer tears down services it didn't start**:
+  the trap's llama-server branch called `make stop`, whose new `oidc-down`
+  step also removed a _pre-existing_ OIDC stack — contradicting the
+  "left running after exit" message. The trap now uses the new pidfile-only
+  `llm-kill` target (no OIDC coupling, no failing health check), so a
+  pre-existing stack is always left running. `make stop` keeps its
+  interactive both-services teardown (explicit intent), but a failed
+  llama-server health check now only reports leftovers instead of aborting
+  before `oidc-down` runs.
+- **Stale marker files can no longer hijack the next `make dev`**: when a
+  previous run died without its trap (SIGKILL, power loss),
+  `/tmp/llama-server.managed` / `/tmp/dkb-oidc.managed` lingered and the
+  next run would tear down services it didn't start. `make dev` (and
+  `make llm`) now clear a marker whenever the service it references is
+  healthy at startup, so markers only ever describe _this_ run's services.
+- **`make llm-stop` no longer stops the dev OIDC provider**: it was an
+  alias of `stop`, which gained the `oidc-down` step — restarting only the
+  LLM side unexpectedly tore down the IdP mid-session. `llm-stop` is now a
+  llama-server-only teardown (`llm-kill` + leftover report); full teardown
+  remains `make stop`.
+
 ## v1.10.0
 
 ### Breaking
