@@ -111,13 +111,16 @@ export interface SessionCookieOptions {
 export function sessionCookieOptions(request?: Request): SessionCookieOptions {
   const cfg = getConfig()
   // Secure must reflect what the browser sees, not Next's internal origin.
-  // Precedence: X-Forwarded-Proto (TLS-terminating proxy) → APP_ORIGIN
-  // (documented requirement for proxied deployments; request.url carries the
-  // internal http origin there) → the request's own protocol (direct TLS).
-  const forwarded = request?.headers
-    .get("x-forwarded-proto")
-    ?.split(",")[0]
-    ?.trim()
+  // Precedence mirrors the CSRF guard's proxy-trust rule (lib/auth/guard.ts):
+  // X-Forwarded-Proto is trusted only when APP_ORIGIN is set (the proxy
+  // declaration — without it the header is client-settable via fetch()) →
+  // APP_ORIGIN (documented requirement for proxied deployments; request.url
+  // carries the internal http origin there) → the request's own protocol
+  // (direct TLS).
+  const behindProxy = Boolean(cfg.APP_ORIGIN)
+  const forwarded = behindProxy
+    ? request?.headers.get("x-forwarded-proto")?.split(",")[0]?.trim()
+    : undefined
   const secure = forwarded
     ? forwarded === "https"
     : cfg.APP_ORIGIN

@@ -4,17 +4,28 @@
 
 ### Security
 
-- **The CSRF guard no longer trusts `X-Forwarded-Host`/`X-Forwarded-Proto`
-  without `APP_ORIGIN`**: those headers are not fetch-forbidden, so on a
+- **Client-settable `X-Forwarded-*` headers are only trusted with
+  `APP_ORIGIN` set**: those headers are not fetch-forbidden, so on a
   directly-exposed app (no proxy stripping them) an attacker page could set
-  `X-Forwarded-Host` to its own origin via `fetch()` and mirror its `Origin`
-  to match — passing the guard with the session cookie attached on any
-  browser without Fetch Metadata (`Sec-Fetch-Site` absent, e.g. Safari
-  < 16.4). SameSite=Lax does not close this (Lax cookies ride same-site
-  requests). The guard now honors `X-Forwarded-*` only when `APP_ORIGIN` is
-  set — the operator's declaration that a proxy fronts the app and
-  normalizes those headers; the plain `Host` header (browser-controlled, not
-  forgeable in the flows that matter) stays trusted in all cases.
+  them via `fetch()` and pass trust checks built on them. Two places
+  aligned on the same rule — `APP_ORIGIN` is the operator's declaration
+  that a proxy fronts the app and normalizes those headers; the plain
+  `Host` header and the request's own protocol stay trusted in all cases:
+  - The CSRF guard (`assertSameOrigin`) no longer honors
+    `X-Forwarded-Host`/`X-Forwarded-Proto` without `APP_ORIGIN` — an
+    attacker page could otherwise mirror its `Origin` to a forged
+    `X-Forwarded-Host` and pass the origin check with the session cookie
+    attached on browsers without Fetch Metadata (`Sec-Fetch-Site` absent,
+    e.g. Safari < 16.4; SameSite=Lax does not close this — Lax cookies ride
+    same-site requests).
+  - `sessionCookieOptions` no longer reads `X-Forwarded-Proto` without
+    `APP_ORIGIN` — a forged `https` value could otherwise flip the
+    `Secure` attribute as a cookie-overwrite gadget (an attacker-set
+    `http`/absent value could also strip it; both directions now require
+    the proxy declaration).
+  - Corrected the guard's `Origin: null` rationale (residual risk: same-site
+    attacker content on a browser without Fetch Metadata — where Lax does
+    not hold the line).
 
 ### Fixed
 

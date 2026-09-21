@@ -139,8 +139,10 @@ describe("sessionCookieOptions", () => {
     resetConfigCache()
   })
 
-  it("sets Secure when X-Forwarded-Proto is https, even on an internal http origin", async () => {
-    delete process.env.APP_ORIGIN
+  it("sets Secure when X-Forwarded-Proto is https, even on an internal http origin (APP_ORIGIN set → proxy)", async () => {
+    // APP_ORIGIN is the proxy declaration: X-Forwarded-Proto is trusted only
+    // then (client-settable otherwise — same rule as the CSRF guard)
+    process.env.APP_ORIGIN = "https://app.example.com"
     resetConfigCache()
     const { sessionCookieOptions } = await import("@/lib/auth/session")
     const opts = sessionCookieOptions(
@@ -152,7 +154,7 @@ describe("sessionCookieOptions", () => {
   })
 
   it("reads the first value of a comma-separated X-Forwarded-Proto", async () => {
-    delete process.env.APP_ORIGIN
+    process.env.APP_ORIGIN = "https://app.example.com"
     resetConfigCache()
     const { sessionCookieOptions } = await import("@/lib/auth/session")
     const opts = sessionCookieOptions(
@@ -163,8 +165,8 @@ describe("sessionCookieOptions", () => {
     expect(opts.secure).toBe(true)
   })
 
-  it("sets Secure=false when X-Forwarded-Proto is http", async () => {
-    delete process.env.APP_ORIGIN
+  it("sets Secure=false when X-Forwarded-Proto is http (header wins over APP_ORIGIN)", async () => {
+    process.env.APP_ORIGIN = "https://app.example.com"
     resetConfigCache()
     const { sessionCookieOptions } = await import("@/lib/auth/session")
     const opts = sessionCookieOptions(
@@ -173,6 +175,22 @@ describe("sessionCookieOptions", () => {
       })
     )
     expect(opts.secure).toBe(false)
+  })
+
+  it("ignores X-Forwarded-Proto without APP_ORIGIN (direct exposure — attacker-settable)", async () => {
+    // An attacker page can set x-forwarded-proto via fetch() (not a
+    // forbidden header); without the proxy declaration the request's own
+    // protocol decides instead.
+    delete process.env.APP_ORIGIN
+    resetConfigCache()
+    const { sessionCookieOptions } = await import("@/lib/auth/session")
+    expect(
+      sessionCookieOptions(
+        new Request("http://localhost:3000/auth/login", {
+          headers: { "x-forwarded-proto": "https" },
+        })
+      ).secure
+    ).toBe(false)
   })
 
   it("falls back to APP_ORIGIN when no X-Forwarded-Proto is present", async () => {
