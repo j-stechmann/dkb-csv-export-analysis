@@ -28,9 +28,12 @@ mutate their own accounts, imports, transactions, labels and rules.
 against the app origin (lib/auth/guard.ts `assertSameOrigin`) and answers
 `403 {"error":"cross_site_request_rejected"}` on mismatch, on top of the
 SameSite=Lax session cookie. The allowed origin set covers `APP_ORIGIN`
-(reverse proxy), the request origin, and the `X-Forwarded-Host`/`Host`
-origin (browser-facing host; Next dev normalizes `request.url` to the
-initialized hostname). Comparison is case-insensitive on the host;
+(reverse proxy), the request origin, and the browser-facing `Host` origin;
+`X-Forwarded-Host`/`X-Forwarded-Proto` are honored **only when `APP_ORIGIN`
+is set** (the operator's proxy declaration — without it those headers are
+client-settable via `fetch()` and could mint an allowed origin; Next dev
+normalizes `request.url` to the initialized hostname, so the Host-derived
+origin covers LAN-IP browsing). Comparison is case-insensitive on the host;
 `Origin: null` passes only with `Sec-Fetch-Site: same-origin` or absent
 (Chromium sends this after the OIDC round-trip); unparseable `Origin`
 fails closed.

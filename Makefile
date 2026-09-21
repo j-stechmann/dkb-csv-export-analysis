@@ -68,6 +68,7 @@ help:
 	@echo "  make model      download the pinned model ($(MODEL_HF_FILE), ~$$(($(MODEL_SIZE) / 1000000000)) GB) — run once"
 	@echo "  make llm        start llama-server in the background (log: /tmp/llama-server.log)"
 	@echo "  make stop       interactive teardown: llama-server + dev OIDC provider"
+	@echo "  make llm-stop   llama-server-only teardown (no OIDC)"
 	@echo "  make llm-status health + GPU usage check"
 	@echo "  make test       run the vitest suite"
 	@echo "  make check      typecheck + lint + prettier"
@@ -258,7 +259,16 @@ stop:
 	fi; \
 	$(MAKE) --no-print-directory oidc-down
 
-llm-stop: stop
+# llama-server-only teardown (no OIDC coupling): pidfile-targeted kill plus
+# the same health-check report as `stop`. `stop` also removes the dev OIDC
+# containers; use this when only llama-server should be restarted.
+llm-stop:
+	@$(MAKE) --no-print-directory llm-kill; \
+	if curl -s -m 2 http://$(LLM_HOST):$(LLM_PORT)/health >/dev/null 2>&1; then \
+		echo "llama-server still running on :$(LLM_PORT) — kill it manually"; \
+	else \
+		echo "stopped"; \
+	fi
 
 llm-status:
 	@curl -s -m 3 http://$(LLM_HOST):$(LLM_PORT)/health && echo " (llama-server ok)" || echo "llama-server unreachable"

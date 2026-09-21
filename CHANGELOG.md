@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Security
+
+- **The CSRF guard no longer trusts `X-Forwarded-Host`/`X-Forwarded-Proto`
+  without `APP_ORIGIN`**: those headers are not fetch-forbidden, so on a
+  directly-exposed app (no proxy stripping them) an attacker page could set
+  `X-Forwarded-Host` to its own origin via `fetch()` and mirror its `Origin`
+  to match — passing the guard with the session cookie attached on any
+  browser without Fetch Metadata (`Sec-Fetch-Site` absent, e.g. Safari
+  < 16.4). SameSite=Lax does not close this (Lax cookies ride same-site
+  requests). The guard now honors `X-Forwarded-*` only when `APP_ORIGIN` is
+  set — the operator's declaration that a proxy fronts the app and
+  normalizes those headers; the plain `Host` header (browser-controlled, not
+  forgeable in the flows that matter) stays trusted in all cases.
+
 ### Fixed
 
 - **Logout (and every mutating request) rejected with 403
@@ -56,6 +70,11 @@
   next run would tear down services it didn't start. `make dev` (and
   `make llm`) now clear a marker whenever the service it references is
   healthy at startup, so markers only ever describe _this_ run's services.
+- **`make llm-stop` no longer stops the dev OIDC provider**: it was an
+  alias of `stop`, which gained the `oidc-down` step — restarting only the
+  LLM side unexpectedly tore down the IdP mid-session. `llm-stop` is now a
+  llama-server-only teardown (`llm-kill` + leftover report); full teardown
+  remains `make stop`.
 
 ## v1.10.0
 

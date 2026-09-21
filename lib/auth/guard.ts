@@ -2,6 +2,7 @@ import { getSession } from "@/lib/auth/session-helpers"
 import type { SessionClaims } from "@/lib/auth/session"
 import { NextResponse } from "next/server"
 import { appOrigin, appUrl } from "@/lib/auth/oidc"
+import { getConfig } from "@/lib/config"
 
 /**
  * Resolves the session from the request cookie. Returns null when absent,
@@ -49,10 +50,12 @@ function crossSiteForbidden(): NextResponse {
  * 1. Sec-Fetch-Site, when present: only same-origin passes.
  * 2. Origin, when present: must match the app's origin as the browser sees
  *    it — APP_ORIGIN (reverse proxy), the request's own origin, or the
- *    Host/X-Forwarded-Host origin. A request with neither header is
- *    allowed — legacy browsers don't send either, and such requests cannot
- *    carry SameSite=Lax cookies cross-site (defense rests on SameSite
- *    there).
+ *    Host/X-Forwarded-Host origin (X-Forwarded-* trusted only when
+ *    APP_ORIGIN is set, i.e. behind a proxy). A request with neither
+ *    header is allowed — legacy browsers don't send either, and such
+ *    requests cannot carry SameSite=Lax cookies cross-site (defense rests
+ *    on SameSite there; the same-site legacy-browser window is documented
+ *    in the Origin: null comment below).
  *
  * The Host-derived origin matters in dev: Next normalizes request.url to
  * the server's initialized hostname (localhost), so requests arriving via
@@ -74,11 +77,15 @@ export function assertSameOrigin(request: Request): NextResponse | null {
   // Sec-Fetch-Site: same-origin (the navigation initiator is treated as
   // opaque even though the document origin is the app's). Sec-Fetch-Site
   // can't be spoofed by an attacker page, so "null + same-origin" is a
-  // legitimate browser-sent combination — accept it. "null" with a
-  // cross-site/same-site Sec-Fetch-Site (sandboxed iframes etc.) was
-  // already rejected above; a "null" Origin without fetch metadata rides
-  // the legacy-browser allowance below (no headers at all), where
-  // SameSite=Lax holds the line.
+  // legitimate browser-sent combination — accept it. "null" together with
+  // cross-site/same-site (sandboxed iframes etc.) was already rejected
+  // above. "null" with NO fetch metadata is accepted as the residual risk
+  // of the legacy-browser allowance (no headers at all → no Origin check
+  // possible): it is exploit-relevant only for same-site attacker content
+  // on a browser without Fetch Metadata (Sec-Fetch-Site absent), where
+  // SameSite=Lax does NOT hold the line (Lax cookies ride same-site
+  // requests). Behind a proxy with APP_ORIGIN set the exposure is the same
+  // class the pre-guard code had; document it rather than pretending.
   if (origin === "null") return null
   // new URL() normalizes trailing slashes/default ports/casing that a raw
   // APP_ORIGIN string wouldn't (same pattern as the logout route's check).
@@ -97,28 +104,35 @@ export function assertSameOrigin(request: Request): NextResponse | null {
   } catch {
     // same-origin construction can't fail here; defensive only
   }
-  // Origin as the browser sees it: X-Forwarded-Host (TLS-terminating
-  // proxy) → Host, with X-Forwarded-Proto → request protocol.
+  // Origin as the browser sees it: behind a proxy (APP_ORIGIN set),
+  // X-Forwarded-Host → Host, with X-Forwarded-Proto → request protocol;
+  // without a proxy, the plain Host header only.
   //
-  // Trusted-proxy assumption: X-Forwarded-* are only meaningful when a
-  // proxy in front of the app strips/overwrites client-supplied values
-  // (standard proxy behavior). When the app is exposed directly, an
-  // attacker page CAN set X-Forwarded-Host to its own origin — the fetch
-  // forbidden-header list doesn't cover it — but that alone doesn't help
-  // it: its Origin must equal the app's actual Host (it can't spoof that
-  // header in browser flows), and modern browsers are already pinned by
-  // the Sec-Fetch-Site check above. The residual window (same-site
-  // attacker page + no Fetch Metadata + direct exposure) rests on
-  // SameSite=Lax. Set APP_ORIGIN behind a proxy to pin the browser-facing
-  // origin unconditionally.
-  const host =
-    request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ??
-    request.headers.get("host")
+  // X-Forwarded-* are only trusted when APP_ORIGIN is set: that variable is
+  // the operator's declaration that a TLS-terminating proxy sits in front
+  // and strips/overwrites client-supplied forwarding headers (standard
+  // proxy behavior). Without it (direct exposure), an attacker page CAN set
+  // X-Forwarded-Host via fetch() (the fetch forbidden-header list doesn't
+  // cover it) — so trusting it there would let an attacker mint its own
+  // allowed origin, and on a browser without Fetch Metadata the
+  // Sec-Fetch-Site hard block above wouldn't fire. SameSite=Lax does NOT
+  // close that gap for same-site attacker content (Lax cookies ARE attached
+  // to same-site requests — exactly the scenario this guard exists for).
+  // The plain Host header stays trusted in all cases: browsers set it to
+  // the app's real host (an attacker page's Origin can't equal it in the
+  // flows that matter), and direct non-browser clients can't forge the
+  // session cookie anyway.
+  const behindProxy = Boolean(getConfig().APP_ORIGIN)
+  const host = behindProxy
+    ? (request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ??
+      request.headers.get("host"))
+    : request.headers.get("host")
   if (host) {
     try {
-      const proto =
-        request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ||
-        new URL(request.url).protocol.replace(/:$/, "")
+      const proto = behindProxy
+        ? request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ||
+          new URL(request.url).protocol.replace(/:$/, "")
+        : new URL(request.url).protocol.replace(/:$/, "")
       allowed.add(new URL(`${proto}://${host}`).origin.toLowerCase())
     } catch {
       // malformed Host header — nothing to add
