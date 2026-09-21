@@ -27,10 +27,12 @@ client provisioned automatically. Its credentials live in `compose.dev.env`
 (gitignored — created from `compose.dev.env.example` on first `make oidc`;
 login is `akadmin` / your `AUTHENTIK_BOOTSTRAP_PASSWORD`). The stack is bound
 to localhost only and must never be exposed to other network hosts.
-Different usernames test multi-user provisioning. The containers are left
-running after Ctrl-C — `make oidc-stop` stops them (the provisioned client
-survives in a named volume); `make oidc` starts them again. `.env` is
-preconfigured for this provider:
+Different usernames test multi-user provisioning. `make dev` tears down on
+exit what it started itself (llama-server and, if it started the stack, the
+OIDC containers — the provisioned client survives in the `authentik-db`
+named volume); a pre-existing llama-server or OIDC stack is left running.
+`make stop` / `make oidc-down` remove the containers explicitly (volume kept,
+so the next `make oidc` is fast). `.env` is preconfigured for this provider:
 
 ```bash
 OIDC_ISSUER_URL=http://localhost:8081/application/o/dkb-analytics/
@@ -50,9 +52,11 @@ glossary of the DKB domain terms).
 
 The labeller talks OpenAI-compatible chat completions to a local
 [llama.cpp `llama-server`](https://github.com/ggml-org/llama.cpp). `make dev`
-starts it in the background and runs the app in the foreground; when the
-command started llama-server itself, Ctrl-C stops both. `make stop` stops
-llama-server separately; `make llm-status` shows health + GPU usage.
+starts it in the background and runs the app in the foreground; on exit it
+tears down what it started (llama-server, and the OIDC containers if it
+started those too). `make stop` stops llama-server and removes the OIDC
+containers (explicit teardown — it doesn't track who started what);
+`make llm-status` shows health + GPU usage.
 
 **Model download (no Ollama):** `make model` downloads one exact GGUF file
 from Hugging Face with a pinned revision (`ggml-org/Qwen3.8-27B-GGUF`,

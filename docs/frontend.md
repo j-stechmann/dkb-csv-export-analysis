@@ -1,6 +1,6 @@
 # Frontend
 
-_Last reviewed against v1.9.0._
+_Last reviewed against v1.10.1 (header user chip + mobile logout)._
 
 Every page is a **client component**: the entire UI is a live dashboard
 driven by filters, polling, and toasts, with no server-rendered data
@@ -115,6 +115,22 @@ created implicitly — by assigning labels in the transactions table.
 | `components/active-import-provider.tsx` | tracks the newest batch, 1 s polling while non-terminal, completion fan-out        |
 | `components/import-progress-pill.tsx`   | fixed bottom-center pill with stage + two progress bars, dismissible when terminal |
 | `components/labeller-health-badge.tsx`  | header badge polling `/api/llm/health` every 30 s                                  |
+
+## Header nav & session chip
+
+`app/layout.tsx` composes the sticky header: left `AppNav` (desktop links,
+`hidden sm:flex`), right group `LabellerHealthBadge` → `ThemeToggle` →
+`HeaderUserChip` → `MobileNav`. The user chip
+([components/user-chip.tsx](../components/user-chip.tsx)) shows name/email +
+logout form on desktop (`hidden sm:flex`, icon-only below `md`); on mobile
+(< sm) the hamburger sheet ([components/mobile-nav.tsx](../components/mobile-nav.tsx))
+carries the user identity and a full-width "Abmelden" button in a footer
+instead. Both `HeaderUserChip` and `MobileNav` call
+[useSessionUser](../components/user-session.tsx) — the `/api/me` fetch is
+deduplicated module-level (one request for all callers; logout is a full
+page navigation, so no cache invalidation is needed). Logout is a plain
+HTML form POST to `/auth/logout` (302 → provider end-session), guarded by
+the CSRF check in [lib/auth/guard.ts](../lib/auth/guard.ts).
 
 ## Chart zoom
 

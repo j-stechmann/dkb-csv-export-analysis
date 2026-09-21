@@ -3,6 +3,7 @@ import { MobileNav } from "@/components/mobile-nav"
 import { Providers } from "@/components/providers"
 import { LabellerHealthBadge } from "@/components/labeller-health-badge"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { HeaderUserChip } from "@/components/user-chip"
 import "./globals.css"
 
 export default function RootLayout({
@@ -26,6 +27,7 @@ export default function RootLayout({
                 <div className="flex min-w-0 items-center gap-2">
                   <LabellerHealthBadge />
                   <ThemeToggle />
+                  <HeaderUserChip />
                   <MobileNav />
                 </div>
               </div>
