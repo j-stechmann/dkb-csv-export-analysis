@@ -51,9 +51,9 @@ export async function GET(request: NextRequest) {
   const expectedState = cookieValue(request.headers.get("cookie"), STATE_COOKIE)
   const verifier = cookieValue(
     request.headers.get("cookie"),
-    "dkb_oidc_verifier"
+    "geldlage_oidc_verifier"
   )
-  const nonce = cookieValue(request.headers.get("cookie"), "dkb_oidc_nonce")
+  const nonce = cookieValue(request.headers.get("cookie"), "geldlage_oidc_nonce")
   if (
     !state ||
     !code ||
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     const res = NextResponse.redirect(appUrl(request.url, "/"), 302)
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_session", token, opts)
+      serializeCookie("geldlage_session", token, opts)
     )
     // flow cookies are single-use; the id_token is kept for RP-initiated
     // logout (id_token_hint)
@@ -104,11 +104,11 @@ export async function GET(request: NextRequest) {
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_oidc_verifier", "", { ...opts, maxAgeSeconds: 0 })
+      serializeCookie("geldlage_oidc_verifier", "", { ...opts, maxAgeSeconds: 0 })
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_oidc_nonce", "", { ...opts, maxAgeSeconds: 0 })
+      serializeCookie("geldlage_oidc_nonce", "", { ...opts, maxAgeSeconds: 0 })
     )
     if (result.idToken) {
       res.headers.append(

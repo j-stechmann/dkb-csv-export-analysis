@@ -21,7 +21,7 @@ At server boot ([instrumentation-node.ts](../../instrumentation-node.ts)), after
   ([labelling.md](../labelling.md)).
 - Recovery happens **before** `startLabelWorker()` so the worker never sees a
   half-recovered state, and `startLabelWorker()` is idempotent via
-  `globalThis.__dkbLabellerWorkerStarted`.
+  `globalThis.__geldlageLabellerWorkerStarted`.
 
 ## Alternatives considered
 

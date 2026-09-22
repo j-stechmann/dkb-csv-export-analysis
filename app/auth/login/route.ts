@@ -30,11 +30,11 @@ export async function GET(request: NextRequest) {
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_oidc_verifier", auth.codeVerifier, flowOpts)
+      serializeCookie("geldlage_oidc_verifier", auth.codeVerifier, flowOpts)
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_oidc_nonce", auth.nonce, flowOpts)
+      serializeCookie("geldlage_oidc_nonce", auth.nonce, flowOpts)
     )
     return res
   } catch (err) {

@@ -135,8 +135,8 @@ afterAll(() => {
 
 describe("multi-user migration (v2.0 fresh start)", () => {
   it("drops legacy userless tables and recreates them with user_id", () => {
-    const dir = makeTmpDir("dkb-multimig-")
-    const dbPath = path.join(dir, "dkb.db")
+    const dir = makeTmpDir("geldlage-multimig-")
+    const dbPath = path.join(dir, "geldlage.db")
     createLegacyFileDb(dbPath)
 
     withFileDbPath(dbPath, () => {
@@ -182,8 +182,8 @@ describe("multi-user migration (v2.0 fresh start)", () => {
   })
 
   it("migration is idempotent across repeated getDb calls", () => {
-    const dir = makeTmpDir("dkb-multimig-idem-")
-    const dbPath = path.join(dir, "dkb.db")
+    const dir = makeTmpDir("geldlage-multimig-idem-")
+    const dbPath = path.join(dir, "geldlage.db")
     withFileDbPath(dbPath, () => {
       expect(() => {
         const db = getDb()

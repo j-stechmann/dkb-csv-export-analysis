@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   const res = providerLogout
     ? NextResponse.redirect(providerLogout.toString(), 302)
     : NextResponse.redirect(fallback, 302)
-  res.headers.append("set-cookie", clearCookie("dkb_session", opts))
+  res.headers.append("set-cookie", clearCookie("geldlage_session", opts))
   res.headers.append(
     "set-cookie",
     clearCookie(STATE_COOKIE, { ...opts, maxAgeSeconds: 0 })

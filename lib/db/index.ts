@@ -22,38 +22,38 @@ function createDb() {
   return drizzle(sqlite, { schema })
 }
 
-type DbHolder = { __dkbDb?: Db }
+type DbHolder = { __geldlageDb?: Db }
 
 const globalRef = globalThis as unknown as {
-  __dkbDbHolder?: DbHolder
-  __dkbTestDb?: Db
+  __geldlageDbHolder?: DbHolder
+  __geldlageTestDb?: Db
 }
 
 export function getDb(): Db {
-  if (process.env.VITEST && globalRef.__dkbTestDb) {
-    return globalRef.__dkbTestDb
+  if (process.env.VITEST && globalRef.__geldlageTestDb) {
+    return globalRef.__geldlageTestDb
   }
-  if (!globalRef.__dkbDbHolder) {
-    globalRef.__dkbDbHolder = {}
+  if (!globalRef.__geldlageDbHolder) {
+    globalRef.__geldlageDbHolder = {}
   }
-  const holder = globalRef.__dkbDbHolder
-  if (!holder.__dkbDb) {
-    holder.__dkbDb = createDb()
-    createSchemaSqlite(holder.__dkbDb)
+  const holder = globalRef.__geldlageDbHolder
+  if (!holder.__geldlageDb) {
+    holder.__geldlageDb = createDb()
+    createSchemaSqlite(holder.__geldlageDb)
   }
   // cheap idempotent re-check so a hot-reloaded schema heals the file DB
-  migrateSchema(holder.__dkbDb)
-  return holder.__dkbDb
+  migrateSchema(holder.__geldlageDb)
+  return holder.__geldlageDb
 }
 
 /** For tests: inject an in-memory DB. */
 export function setTestDb(db: Db) {
-  globalRef.__dkbTestDb = db
+  globalRef.__geldlageTestDb = db
 }
 
 /** For tests: forget the default (file) DB singleton, e.g. after changing DATABASE_PATH. */
 export function resetDefaultDbForTest() {
-  globalRef.__dkbDbHolder = undefined
+  globalRef.__geldlageDbHolder = undefined
 }
 
 export function createTestDb(): Db {

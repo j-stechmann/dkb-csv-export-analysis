@@ -11,7 +11,7 @@ migration files exist). Schema DDL is hand-written, code-first, and idempotent
 
 [lib/db/index.ts](../lib/db/index.ts) opens the database in `createDb()`:
 
-1. `fs.mkdirSync` on the parent of `DATABASE_PATH` (default `./data/dkb.db`).
+1. `fs.mkdirSync` on the parent of `DATABASE_PATH` (default `./data/geldlage.db`).
 2. Open better-sqlite3 and set three pragmas:
    - `journal_mode = WAL` — concurrent readers while the worker writes;
    - `foreign_keys = ON` — label-rule cascade deletes depend on this;
@@ -20,7 +20,7 @@ migration files exist). Schema DDL is hand-written, code-first, and idempotent
 3. Wrap in `drizzle(sqlite, { schema })`.
 
 The connection is a **module singleton cached on `globalThis`**
-(`globalThis.__dkbDbHolder`) so dev hot-reloads reuse the handle. `getDb()`
+(`globalThis.__geldlageDbHolder`) so dev hot-reloads reuse the handle. `getDb()`
 additionally:
 
 - returns the injected test DB when `process.env.VITEST` is set (the seam
