@@ -20,7 +20,7 @@ export default function RootLayout({
               <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-4 px-4">
                 <div className="flex items-center gap-6">
                   <span className="text-sm font-semibold tracking-tight">
-                    DKB Analytics
+                    Geldlage
                   </span>
                   <AppNav />
                 </div>

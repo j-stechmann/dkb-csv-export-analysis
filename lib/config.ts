@@ -1,7 +1,7 @@
 import { z } from "zod"
 
 const envSchema = z.object({
-  DATABASE_PATH: z.string().default("./data/dkb.db"),
+  DATABASE_PATH: z.string().default("./data/geldlage.db"),
   LLM_BASE_URL: z.string().url().default("http://127.0.0.1:8080"),
   LLM_LANGUAGE: z
     .string()

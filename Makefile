@@ -1,4 +1,4 @@
-# DKB Analytics — developer entry points
+# Geldlage — developer entry points
 #
 # Quick start:
 #   make dev     # llama-server + Next.js app together (offers model download
@@ -28,7 +28,7 @@ LLM_CTX           ?= 8192
 # ── Dev OIDC provider (Authentik in Docker) ─────────────────────────────────
 # Throwaway Authentik stack (compose.dev.yaml) for the mandatory OIDC login
 # (ADR-0032). OIDC_PORT is what the app's OIDC_ISSUER_URL points at
-# (issuer: http://localhost:$(OIDC_PORT)/application/o/dkb-analytics/).
+# (issuer: http://localhost:$(OIDC_PORT)/application/o/geldlage/).
 OIDC_PORT         ?= 8081
 OIDC_COMPOSE      ?= compose.dev.yaml
 
@@ -57,7 +57,7 @@ SHELL := /bin/bash
 .PHONY: help dev app model llm llm-kill stop llm-stop llm-status oidc oidc-down oidc-stop oidc-status oidc-logs test check format build start
 
 help:
-	@echo "DKB Analytics — make targets:"
+	@echo "Geldlage — make targets:"
 	@echo "  make dev        llama-server + dev OIDC provider + dev app together (offers model download; Ctrl-C tears down what it started)"
 	@echo "  make app        dev app only (llama-server + OIDC provider must already run)"
 	@echo "  make oidc       start the dev OIDC provider (Authentik, :$(OIDC_PORT)) + provision the client"
@@ -100,17 +100,17 @@ dev:
 	fi; \
 	if curl -sf -m 2 http://localhost:$(OIDC_PORT)/-/health/ready/ >/dev/null 2>&1 || docker compose --env-file compose.dev.env -f $(OIDC_COMPOSE) ps --quiet 2>/dev/null | grep -q .; then \
 		echo "dev OIDC provider already running on :$(OIDC_PORT) (left running after exit)"; \
-		rm -f /tmp/dkb-oidc.managed; \
+		rm -f /tmp/geldlage-oidc.managed; \
 	else \
-		touch /tmp/dkb-oidc.managed; \
+		touch /tmp/geldlage-oidc.managed; \
 	fi; \
 	trap 'rc=$$?; \
 		if [ -f /tmp/llama-server.managed ]; then \
 			rm -f /tmp/llama-server.managed; \
 			$(MAKE) --no-print-directory llm-kill || true; \
 		fi; \
-		if [ -f /tmp/dkb-oidc.managed ]; then \
-			rm -f /tmp/dkb-oidc.managed; \
+		if [ -f /tmp/geldlage-oidc.managed ]; then \
+			rm -f /tmp/geldlage-oidc.managed; \
 			$(MAKE) --no-print-directory oidc-down || true; \
 		fi; \
 		exit $$rc' EXIT INT TERM; \
@@ -277,7 +277,7 @@ llm-status:
 # ── dev OIDC provider (Authentik) ───────────────────────────────────────────
 # Starts the compose.dev.yaml stack when :$(OIDC_PORT) is not ready yet,
 # waits for first-boot migrations, then idempotently provisions the
-# dkb-analytics client (scripts/dev-oidc-provision.ts). OIDC_ISSUER_URL /
+# geldlage client (scripts/dev-oidc-provision.ts). OIDC_ISSUER_URL /
 # OIDC_CLIENT_* in .env must match the values baked in there.
 #
 # Credentials: compose.dev.yaml reads them from compose.dev.env (gitignored,
@@ -301,7 +301,7 @@ oidc:
 	fi; \
 	$(MAKE) --no-print-directory oidc-wait; \
 	AUTHENTIK_BOOTSTRAP_TOKEN="$$(sed -n 's/^AUTHENTIK_BOOTSTRAP_TOKEN=//p' compose.dev.env)" bun scripts/dev-oidc-provision.ts; \
-	issuer="$$(grep -oP '^OIDC_ISSUER_URL=\K.*' .env 2>/dev/null || echo http://localhost:$(OIDC_PORT)/application/o/dkb-analytics/)"; \
+	issuer="$$(grep -oP '^OIDC_ISSUER_URL=\K.*' .env 2>/dev/null || echo http://localhost:$(OIDC_PORT)/application/o/geldlage/)"; \
 	if curl -sf -m 5 "$${issuer}.well-known/openid-configuration" >/dev/null 2>&1; then \
 		echo "OIDC discovery ready: $$issuer"; \
 	else \
@@ -326,7 +326,7 @@ oidc-wait:
 	fi
 
 # compose `down` (not `down -v`): containers are removed, but the
-# authentik-db named volume keeps the provisioned dkb-analytics client and
+# authentik-db named volume keeps the provisioned geldlage client and
 # bootstrap state, so the next `make oidc` re-creates and re-provisions from
 # the current compose.dev.env instead of serving stale volume state.
 oidc-down:

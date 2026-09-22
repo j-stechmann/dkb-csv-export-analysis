@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Rebranded to Geldlage** (formerly DKB Analytics): the tool is becoming
+  bank-agnostic with many data sources and ML/LLM functionality at its core,
+  so the bank-specific name no longer fits. Product surfaces (UI, docs,
+  Docker image `ghcr.io/j-stechmann/geldlage`, OIDC client id, compose
+  project, GHCR path) and internal identifiers (cookie names, `globalThis`
+  singleton keys, default DB path `./data/geldlage.db`) are renamed; the
+  DKB CSV import stays fully compatible — existing databases keep working
+  via `DATABASE_PATH=./data/dkb.db`.
+
 ## v1.10.1
 
 ### Security
@@ -77,7 +90,7 @@
   before `oidc-down` runs.
 - **Stale marker files can no longer hijack the next `make dev`**: when a
   previous run died without its trap (SIGKILL, power loss),
-  `/tmp/llama-server.managed` / `/tmp/dkb-oidc.managed` lingered and the
+  `/tmp/llama-server.managed` / `/tmp/geldlage-oidc.managed` lingered and the
   next run would tear down services it didn't start. `make dev` (and
   `make llm`) now clear a marker whenever the service it references is
   healthy at startup, so markers only ever describe _this_ run's services.

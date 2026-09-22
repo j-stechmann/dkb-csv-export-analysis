@@ -1,8 +1,8 @@
-# DKB Analytics — Documentation
+# Geldlage — Documentation
 
 _Docs describe intent; code comments remain the source of truth. Guides carry a "Last reviewed against vX.Y" footer — refresh it when a PR changes what they document._
 
-Documentation for the DKB Analytics app (Next.js + SQLite + local LLM
+Documentation for the Geldlage app (Next.js + SQLite + local LLM
 labeller): how it is built, why it is built that way, and how to run and
 extend it.
 

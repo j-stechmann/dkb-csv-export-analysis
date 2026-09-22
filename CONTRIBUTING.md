@@ -77,7 +77,7 @@ changes should be documented as an ADR (see [Documentation](#documentation)).
    or locally: `git switch master && git merge --ff-only develop && git push`.
 5. Tag and publish the GitHub Release — this triggers
    `.github/workflows/release.yml` (CI as quality gate, then the Docker image
-   is pushed to `ghcr.io/j-stechmann/dkb-analytics:<tag>`).
+   is pushed to `ghcr.io/j-stechmann/geldlage:<tag>`).
 
 ## Hotfixes (`master` → back to `develop`)
 

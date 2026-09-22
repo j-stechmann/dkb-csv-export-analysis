@@ -1,5 +1,5 @@
 /**
- * Provisions the dkb-analytics OIDC client in the dev Authentik instance
+ * Provisions the geldlage OIDC client in the dev Authentik instance
  * (compose.dev.yaml) via its API. Idempotent: existing provider/application
  * are detected and left alone, so re-running after `make oidc` restarts or
  * `make oidc-stop` is safe.
@@ -19,10 +19,10 @@ const API = `${HOST}/api/v3`
 // compose.dev.env — no token default here, a mismatch fails loudly at the
 // first API call instead of silently provisioning against the wrong stack.
 const TOKEN = process.env.AUTHENTIK_BOOTSTRAP_TOKEN
-const APP_SLUG = "dkb-analytics"
+const APP_SLUG = "geldlage"
 // Must stay in sync with .env (the app reads the same values). Kept as a
 // module-level default so findProvider() works before main() loads config.
-let clientId = process.env.OIDC_CLIENT_ID ?? "dkb-analytics"
+let clientId = process.env.OIDC_CLIENT_ID ?? "geldlage"
 // Both hosts (localhost / 127.0.0.1) plus 3001: `make dev` may pick a
 // fallback port when 3000 is taken (e.g. `make app` while another dev
 // server runs).
@@ -179,7 +179,7 @@ async function main(): Promise<void> {
 
   const mappings = await scopeMappingPks()
   const providerPayload = {
-    name: "dkb-analytics",
+        name: "geldlage",
     client_id: clientId,
     client_secret: clientSecret,
     authorization_flow: authorizationFlow.pk,
@@ -225,7 +225,7 @@ async function main(): Promise<void> {
     const { status } = await api("/core/applications/", {
       method: "POST",
       body: JSON.stringify({
-        name: "dkb-analytics",
+    name: "geldlage",
         slug: APP_SLUG,
         provider: provider.pk,
       }),

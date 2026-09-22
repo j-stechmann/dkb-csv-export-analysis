@@ -1,10 +1,10 @@
-# DKB Analytics
+# Geldlage
 
-Next.js app for analyzing DKB banking CSV exports: import via drag-and-drop,
-automatic categorization through a local LLM (llama.cpp `llama-server`), manual
-label management with learned counterparty rules, and analytics (balance,
-monthly cash flow, savings rate, top categories) that always reflect the
-filtered query results.
+Next.js app for analyzing bank CSV exports (currently the DKB format): import
+via drag-and-drop, automatic categorization through a local LLM
+(llama.cpp `llama-server`), manual label management with learned counterparty
+rules, and analytics (balance, monthly cash flow, savings rate, top
+categories) that always reflect the filtered query results.
 
 | Dashboard                                                                                                | Imports                                                                             |
 | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
@@ -35,8 +35,8 @@ named volume); a pre-existing llama-server or OIDC stack is left running.
 so the next `make oidc` is fast). `.env` is preconfigured for this provider:
 
 ```bash
-OIDC_ISSUER_URL=http://localhost:8081/application/o/dkb-analytics/
-OIDC_CLIENT_ID=dkb-analytics
+OIDC_ISSUER_URL=http://localhost:8081/application/o/geldlage/
+OIDC_CLIENT_ID=geldlage
 OIDC_CLIENT_SECRET=dev-only-not-secret-32-chars-min!!
 ```
 
@@ -102,7 +102,7 @@ Environment (all optional):
 
 | Variable                | Default                 | Purpose                                                          |
 | ----------------------- | ----------------------- | ---------------------------------------------------------------- |
-| `DATABASE_PATH`         | `./data/dkb.db`         | SQLite database file                                             |
+| `DATABASE_PATH`         | `./data/geldlage.db`    | SQLite database file                                             |
 | `LLM_BASE_URL`          | `http://127.0.0.1:8080` | llama-server base URL                                            |
 | `LLM_LANGUAGE`          | `de`                    | ISO 639-1 label language                                         |
 | `LLM_BATCH_SIZE`        | `20`                    | max items per LLM request                                        |
@@ -162,7 +162,7 @@ Images are built and pushed to GHCR by the release workflow
 (`.github/workflows/release.yml`) after QA passes — one tag per release:
 
 ```
-ghcr.io/j-stechmann/dkb-analytics:<release-tag>   e.g. ghcr.io/j-stechmann/dkb-analytics:v0.0.1
+ghcr.io/j-stechmann/geldlage:<release-tag>   e.g. ghcr.io/j-stechmann/geldlage:v0.0.1
 ```
 
 All configuration is read from the environment at runtime, so no rebuild is
@@ -173,21 +173,21 @@ ownership and will hit permission errors unless host uid matches):
 ```yaml
 services:
   app:
-    image: ghcr.io/j-stechmann/dkb-analytics:v0.0.1
+    image: ghcr.io/j-stechmann/geldlage:v0.0.1
     ports:
       - "3000:3000"
     environment:
-      DATABASE_PATH: /app/data/dkb.db
+      DATABASE_PATH: /app/data/geldlage.db
       LLM_BASE_URL: http://llama-server:8080 # llama-server on the compose network
       OIDC_ISSUER_URL: https://id.example.com # required: your OIDC provider
-      OIDC_CLIENT_ID: dkb-analytics # required
+      OIDC_CLIENT_ID: geldlage # required
       OIDC_CLIENT_SECRET: <secret> # required
-      APP_ORIGIN: https://dkb.example.com # public origin (behind reverse proxy)
+      APP_ORIGIN: https://geldlage.example.com # public origin (behind reverse proxy)
       # LLM_LANGUAGE: de                     # optional, defaults in lib/config.ts
       # LLM_BATCH_SIZE: "100"
       # LLM_MAX_RETRIES: "2"
     volumes:
-      - dkb-data:/app/data # required: SQLite db + WAL are written at runtime
+      - geldlage-data:/app/data # required: SQLite db + WAL are written at runtime
 
   llama-server:
     image: ghcr.io/ggml-org/llama.cpp:server
@@ -204,7 +204,7 @@ services:
       - llama-models:/models
 
 volumes:
-  dkb-data:
+  geldlage-data:
   llama-models:
 ```
 

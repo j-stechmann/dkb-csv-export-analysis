@@ -83,7 +83,7 @@ function ImportDropzone() {
       <CardHeader>
         <CardTitle>Neuer Import</CardTitle>
         <CardDescription>
-          DKB CSV-Export hierher ziehen oder auswählen. Die Verarbeitung erfolgt
+          CSV-Export hierher ziehen oder auswählen. Die Verarbeitung erfolgt
           im Hintergrund; Duplikate werden automatisch erkannt.
         </CardDescription>
       </CardHeader>

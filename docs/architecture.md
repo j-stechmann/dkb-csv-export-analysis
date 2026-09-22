@@ -2,7 +2,7 @@
 
 _Last reviewed against v1.9.0. Docs describe intent; code comments remain the source of truth._
 
-DKB Analytics is a **single-process, local-first web application**: one Node
+Geldlage is a **single-process, local-first web application**: one Node
 process serves the Next.js UI, the REST API, a background import job, and a
 background labeling worker — all reading and writing one SQLite database, and
 talking to one local llama.cpp `llama-server` for transaction categorization.
