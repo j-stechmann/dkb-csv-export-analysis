@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3"
 import { sql } from "drizzle-orm"
 import Database from "better-sqlite3"
 import * as schema from "./schema"
+import { users as usersTable } from "./schema"
 import { getConfig } from "@/lib/config"
 import { pickCategoryColor } from "@/lib/category-colors"
 
@@ -264,6 +265,91 @@ export function ensureSchema() {
 const colorHealSettled = new WeakSet<object>()
 
 /**
+ * One-time issuer migration for the rebrand: users are keyed on
+ * `(issuer, subject)` and the rebrand changed the dev issuer URL
+ * (`…/application/o/dkb-analytics/` → `…/application/o/geldlage/`), so
+ * pre-rebrand logins JIT-provision a fresh (empty) workspace while their
+ * data stays owned by the old issuer identity. Rewriting the stored issuer
+ * to the configured `OIDC_ISSUER_URL` re-attaches those workspaces; a
+ * genuine multi-issuer deployment (multiple distinct provider URLs in
+ * `users.issuer`) is deliberately left untouched — the rewrite only fires
+ * when every existing user matches the exact legacy issuer, which cannot
+ * be confused with a second, still-live provider. The JIT-created empty
+ * duplicate (same subject under the new issuer) is merged into the
+ * migrated user first: its id wins (older), duplicates move over, the
+ * empty row is deleted. Idempotent: after the rewrite no row matches the
+ * legacy issuer and the next check is a cheap no-op read.
+ */
+function adoptLegacyIssuer(db: Db) {
+  let legacyIssuer: string | undefined
+  try {
+    legacyIssuer = getConfig().LEGACY_OIDC_ISSUER_URL
+  } catch {
+    return
+  }
+  if (!legacyIssuer) return
+  const all = db.all<{ id: number; issuer: string; subject: string }>(
+    `SELECT id, issuer, subject FROM users`
+  )
+  const legacyUsers = all.filter((u) => u.issuer === legacyIssuer)
+  if (legacyUsers.length === 0) return
+  const targetIssuer = getConfig().OIDC_ISSUER_URL
+  if (targetIssuer === legacyIssuer) return
+  // Only touch data whose every issuer is either the legacy one or the
+  // configured target: that pattern is exactly "pre-rebrand rows plus at
+  // most JIT-created duplicates". A real multi-provider deployment (a third
+  // live issuer) must keep its identities — skip with a loud warning.
+  const unexpected = all.some(
+    (u) => u.issuer !== legacyIssuer && u.issuer !== targetIssuer
+  )
+  if (unexpected) {
+    console.warn(
+      `[startup] other issuers present in users — skipping legacy issuer migration (${legacyIssuer})`
+    )
+    return
+  }
+  const childTables = [
+    "accounts",
+    "categories",
+    "label_rules",
+    "import_batches",
+    "transactions",
+  ]
+  for (const legacyUser of legacyUsers) {
+    // A JIT-created duplicate (same subject, already on the new issuer) is
+    // merged into the legacy user: its data moves over, the row is deleted,
+    // and the legacy id survives (FKs elsewhere stay valid).
+    const duplicate = db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(
+        sql`${usersTable.issuer} = ${targetIssuer} AND ${usersTable.subject} = ${legacyUser.subject}`
+      )
+      .get()
+    db.transaction((tx) => {
+      if (duplicate) {
+        for (const table of childTables) {
+          tx.run(
+            sql`UPDATE ${sql.raw(table)} SET user_id = ${legacyUser.id} WHERE user_id = ${duplicate.id}`
+          )
+        }
+        tx.run(sql`DELETE FROM users WHERE id = ${duplicate.id}`)
+      }
+      tx.run(
+        sql`UPDATE users SET issuer = ${targetIssuer} WHERE id = ${legacyUser.id}`
+      )
+    })
+    console.log(
+      `[startup] migrated user #${legacyUser.id} to ${targetIssuer}` +
+        (duplicate ? ` (merged duplicate #${duplicate.id})` : "")
+    )
+  }
+  console.log(
+    `[startup] migrated users off legacy issuer: ${legacyIssuer} → ${targetIssuer}`
+  )
+}
+
+/**
  * Drop pre-multi-user tables (no user_id column): children first. The
  * canonical user-shaped DDL in createSchemaSqlite/migrateSchema recreates
  * them right after. Runs from both paths so a fresh singleton AND a
@@ -302,6 +388,7 @@ export function migrateSchema(db: Db) {
   // the canonical DDL below. Runs in both createSchemaSqlite (fresh getDb)
   // and here (hot-reload heal) — same as the old label_rules shape check.
   dropLegacyUserlessTables(db)
+  adoptLegacyIssuer(db)
   if (!cols("import_batches").includes("rows_updated")) {
     db.run(
       `ALTER TABLE import_batches ADD COLUMN rows_updated INTEGER NOT NULL DEFAULT 0`

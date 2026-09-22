@@ -14,6 +14,8 @@ const envSchema = z.object({
   LLM_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
   LLM_MAX_LABELS_PROMPT: z.coerce.number().int().min(0).default(200),
   OIDC_ISSUER_URL: z.string().url(),
+  /** Pre-rebrand issuer; when set, users still keyed on it are migrated once (lib/db). */
+  LEGACY_OIDC_ISSUER_URL: z.string().url().optional(),
   OIDC_CLIENT_ID: z.string().min(1),
   OIDC_CLIENT_SECRET: z.string().min(1),
   OIDC_SCOPES: z.string().default("openid profile email"),

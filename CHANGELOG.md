@@ -20,6 +20,17 @@
     set `DATABASE_PATH` explicitly and already have a DB there are
     unaffected. Pre-rebrand data lives on in `dkb.db` only when a target
     file already exists.
+  - **User identity migration**: users are keyed on `(issuer, subject)` and
+    the rebrand changed the default dev issuer URL
+    (`…/application/o/dkb-analytics/` → `…/application/o/geldlage/`), so a
+    pre-rebrand login would JIT-provision a fresh empty workspace while the
+    data stayed owned by the old issuer. When `LEGACY_OIDC_ISSUER_URL` is
+    set (dev `.env` ships the value) and every user in the DB matches that
+    legacy issuer, `users.issuer` is rewritten to the configured
+    `OIDC_ISSUER_URL` once at startup; a same-subject duplicate created
+    under the new issuer in the meantime is merged into the pre-rebrand
+    user. Deployments with a third, unrelated issuer are skipped (loud
+    warning) so a live multi-provider setup is never re-pointed.
   - **Dev OIDC stack migration (automatic)**: the compose project rename
     (`dkb-analytics-dev-oidc` → `geldlage-dev-oidc`) would let a
     still-running pre-rebrand stack keep holding port 8081, making `make
