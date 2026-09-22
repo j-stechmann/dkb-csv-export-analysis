@@ -15,22 +15,25 @@ export type DbTx = Parameters<Parameters<Db["transaction"]>[0]>[0]
  * One-time rename migration for the rebrand: the default DB file used to be
  * `dkb.db`. When the configured target does not exist yet but a pre-rebrand
  * `dkb.db` (with WAL sidecars) sits in the same directory, rename it over so
- * an upgrade keeps its data instead of silently starting fresh. The main
- * file moves first — a crash mid-rename leaves the target existing, which
- * makes the next boot skip the migration instead of re-pairing a stale WAL
- * with the db. An existing target is never overwritten; `:memory:` is a
- * no-op.
+ * an upgrade keeps its data instead of silently starting fresh. The sidecars
+ * move first, the main file last — every crash point heals on the next boot:
+ * before any rename the migration just retries; after the sidecar renames the
+ * main-file rename completes the set (`existsSync` skips what already moved).
+ * A main-first order could instead strand a hot WAL: a crash between renames
+ * would leave the target existing (next boot skips the migration) with
+ * committed transactions stuck in the orphaned `dkb.db-wal`. An existing
+ * target is never overwritten; `:memory:` is a no-op.
  */
 function adoptLegacyDbFile(dbPath: string) {
   if (dbPath.includes(":memory:")) return
   const legacyPath = path.join(path.dirname(dbPath), "dkb.db")
   if (fs.existsSync(dbPath) || !fs.existsSync(legacyPath)) return
-  fs.renameSync(legacyPath, dbPath)
   for (const suffix of ["-wal", "-shm"]) {
     if (fs.existsSync(legacyPath + suffix)) {
       fs.renameSync(legacyPath + suffix, dbPath + suffix)
     }
   }
+  fs.renameSync(legacyPath, dbPath)
   console.log(
     `[startup] adopted pre-rebrand database: ${legacyPath} → ${dbPath}`
   )

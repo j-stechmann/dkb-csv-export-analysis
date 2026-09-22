@@ -12,12 +12,17 @@ migration files exist). Schema DDL is hand-written, code-first, and idempotent
 [lib/db/index.ts](../lib/db/index.ts) opens the database in `createDb()`:
 
 1. `fs.mkdirSync` on the parent of `DATABASE_PATH` (default `./data/geldlage.db`).
-2. Open better-sqlite3 and set three pragmas:
+2. One-time adoption of a pre-rebrand `dkb.db`: if the target does not exist
+   but a `dkb.db` (with `-wal`/`-shm` sidecars) sits in the same directory,
+   it is renamed over — WAL sidecars first, main file last, so a crash
+   mid-rename always heals on the next boot (an existing target is never
+   overwritten; `:memory:` is a no-op).
+3. Open better-sqlite3 and set three pragmas:
    - `journal_mode = WAL` — concurrent readers while the worker writes;
    - `foreign_keys = ON` — label-rule cascade deletes depend on this;
    - `busy_timeout = 5000` — API route + label worker share one process but
      can still race on write locks across connections in tests.
-3. Wrap in `drizzle(sqlite, { schema })`.
+4. Wrap in `drizzle(sqlite, { schema })`.
 
 The connection is a **module singleton cached on `globalThis`**
 (`globalThis.__geldlageDbHolder`) so dev hot-reloads reuse the handle. `getDb()`
