@@ -179,7 +179,7 @@ async function main(): Promise<void> {
 
   const mappings = await scopeMappingPks()
   const providerPayload = {
-        name: "geldlage",
+    name: "geldlage",
     client_id: clientId,
     client_secret: clientSecret,
     authorization_flow: authorizationFlow.pk,
@@ -225,7 +225,7 @@ async function main(): Promise<void> {
     const { status } = await api("/core/applications/", {
       method: "POST",
       body: JSON.stringify({
-    name: "geldlage",
+        name: "geldlage",
         slug: APP_SLUG,
         provider: provider.pk,
       }),

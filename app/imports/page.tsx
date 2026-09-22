@@ -83,8 +83,8 @@ function ImportDropzone() {
       <CardHeader>
         <CardTitle>Neuer Import</CardTitle>
         <CardDescription>
-          CSV-Export hierher ziehen oder auswählen. Die Verarbeitung erfolgt
-          im Hintergrund; Duplikate werden automatisch erkannt.
+          CSV-Export hierher ziehen oder auswählen. Die Verarbeitung erfolgt im
+          Hintergrund; Duplikate werden automatisch erkannt.
         </CardDescription>
       </CardHeader>
       <CardContent>

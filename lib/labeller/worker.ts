@@ -251,7 +251,9 @@ function existingLabelsForPrompt(
 
 /** Start the periodic worker loop (idempotent across dev hot-reloads). */
 export function startLabelWorker(): void {
-  const g = globalThis as unknown as { __geldlageLabellerWorkerStarted?: boolean }
+  const g = globalThis as unknown as {
+    __geldlageLabellerWorkerStarted?: boolean
+  }
   if (g.__geldlageLabellerWorkerStarted) return
   g.__geldlageLabellerWorkerStarted = true
 

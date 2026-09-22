@@ -46,8 +46,8 @@ flowchart LR
 Everything runs **in one Node process**. The two background jobs are plain
 in-process loops, not external workers:
 
-| Job          | Scheduling                                                                      | Guard                                                                            | Code                                                |
-| ------------ | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Job          | Scheduling                                                                      | Guard                                                                                 | Code                                                |
+| ------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | Import job   | fire-and-forget promise from `POST /api/imports`                                | single-flight flag `globalThis.__geldlageImportJob`                                   | [lib/import/pipeline.ts](../lib/import/pipeline.ts) |
 | Label worker | `setInterval(tick, 3000)` + initial `setTimeout(tick, 3000)`, both `.unref()`ed | re-entry guard `workerState().ticking` + `globalThis.__geldlageLabellerWorkerStarted` | [lib/labeller/worker.ts](../lib/labeller/worker.ts) |
 

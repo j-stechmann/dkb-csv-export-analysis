@@ -36,8 +36,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Image is named after the app (geldlage), not the repo
-      # (dkb-csv-export-analysis). Tagged with the exact release tag only.
+      # Image is named after the app (geldlage), not the repo.
+      # Tagged with the exact release tag only.
       - name: Build and push image
         uses: docker/build-push-action@v7
         with:

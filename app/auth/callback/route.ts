@@ -53,7 +53,10 @@ export async function GET(request: NextRequest) {
     request.headers.get("cookie"),
     "geldlage_oidc_verifier"
   )
-  const nonce = cookieValue(request.headers.get("cookie"), "geldlage_oidc_nonce")
+  const nonce = cookieValue(
+    request.headers.get("cookie"),
+    "geldlage_oidc_nonce"
+  )
   if (
     !state ||
     !code ||
@@ -104,7 +107,10 @@ export async function GET(request: NextRequest) {
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("geldlage_oidc_verifier", "", { ...opts, maxAgeSeconds: 0 })
+      serializeCookie("geldlage_oidc_verifier", "", {
+        ...opts,
+        maxAgeSeconds: 0,
+      })
     )
     res.headers.append(
       "set-cookie",

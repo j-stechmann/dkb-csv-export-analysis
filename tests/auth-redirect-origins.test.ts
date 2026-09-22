@@ -291,7 +291,9 @@ describe("logout CSRF protection", () => {
     })
     expect(res.status).toBe(302)
     const setCookies = res.headers.getSetCookie()
-    expect(setCookies.some((c) => c.startsWith("geldlage_session=;"))).toBe(true)
+    expect(setCookies.some((c) => c.startsWith("geldlage_session=;"))).toBe(
+      true
+    )
   })
 
   it("accepts a request with only Sec-Fetch-Site: same-origin (no Origin)", async () => {
@@ -308,7 +310,9 @@ describe("logout CSRF protection", () => {
     })
     expect(res.status).toBe(302)
     const setCookies = res.headers.getSetCookie()
-    expect(setCookies.some((c) => c.startsWith("geldlage_session=;"))).toBe(true)
+    expect(setCookies.some((c) => c.startsWith("geldlage_session=;"))).toBe(
+      true
+    )
   })
 })
 

@@ -12,6 +12,17 @@
   singleton keys, default DB path `./data/geldlage.db`) are renamed; the
   DKB CSV import stays fully compatible — existing databases keep working
   via `DATABASE_PATH=./data/dkb.db`.
+  - **One-time dev OIDC stack migration**: the compose project rename
+    (`dkb-analytics-dev-oidc` → `geldlage-dev-oidc`) means existing dev
+    Authentik stacks must be torn down once before `make oidc` — the old
+    project's containers otherwise keep holding port 8081, so the health
+    check makes `make oidc` skip starting the renamed stack and silently
+    provision into the old project's Authentik instead, which the new
+    `make oidc-down`/`oidc-status`/`oidc-logs` targets can no longer
+    manage. Run `docker compose -p dkb-analytics-dev-oidc down` first
+    (the orphaned `dkb-analytics-dev-oidc_authentik-db` volume can be
+    removed with `docker volume rm` or just left; a fresh empty one is
+    created for the new project either way).
 
 ## v1.10.1
 
