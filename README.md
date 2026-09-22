@@ -100,24 +100,25 @@ otherwise the token budget is burned before any label is produced).
 
 Environment (all optional):
 
-| Variable                | Default                 | Purpose                                                          |
-| ----------------------- | ----------------------- | ---------------------------------------------------------------- |
-| `DATABASE_PATH`         | `./data/geldlage.db`    | SQLite database file                                             |
-| `LLM_BASE_URL`          | `http://127.0.0.1:8080` | llama-server base URL                                            |
-| `LLM_LANGUAGE`          | `de`                    | ISO 639-1 label language                                         |
-| `LLM_BATCH_SIZE`        | `20`                    | max items per LLM request                                        |
-| `LLM_MAX_RETRIES`       | `2`                     | retries for transient LLM failures                               |
-| `LLM_TIMEOUT_MS`        | `300000`                | per-request timeout (hybrid models are slow)                     |
-| `LLM_CTX`               | `8192`                  | llama-server context window used by the client-side budget guard |
-| `LLM_MAX_ATTEMPTS`      | `5`                     | per-transaction labeling attempt cap                             |
-| `LLM_MAX_LABELS_PROMPT` | `200`                   | max existing labels injected into the prompt                     |
-| `OIDC_ISSUER_URL`       | — (required)            | OIDC issuer URL (any compliant provider)                         |
-| `OIDC_CLIENT_ID`        | — (required)            | OIDC client id                                                   |
-| `OIDC_CLIENT_SECRET`    | — (required)            | OIDC client secret                                               |
-| `OIDC_SCOPES`           | `openid profile email`  | requested scopes                                                 |
-| `SESSION_TTL_SECONDS`   | `604800`                | session cookie lifetime (7 days)                                 |
-| `SESSION_SECRET`        | client secret fallback  | HS256 session-cookie key (min 32 chars)                          |
-| `APP_ORIGIN`            | derived from request    | public origin behind a reverse proxy                             |
+| Variable                 | Default                 | Purpose                                                                                                                                    |
+| ------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_PATH`          | `./data/geldlage.db`    | SQLite database file                                                                                                                       |
+| `LLM_BASE_URL`           | `http://127.0.0.1:8080` | llama-server base URL                                                                                                                      |
+| `LLM_LANGUAGE`           | `de`                    | ISO 639-1 label language                                                                                                                   |
+| `LLM_BATCH_SIZE`         | `20`                    | max items per LLM request                                                                                                                  |
+| `LLM_MAX_RETRIES`        | `2`                     | retries for transient LLM failures                                                                                                         |
+| `LLM_TIMEOUT_MS`         | `300000`                | per-request timeout (hybrid models are slow)                                                                                               |
+| `LLM_CTX`                | `8192`                  | llama-server context window used by the client-side budget guard                                                                           |
+| `LLM_MAX_ATTEMPTS`       | `5`                     | per-transaction labeling attempt cap                                                                                                       |
+| `LLM_MAX_LABELS_PROMPT`  | `200`                   | max existing labels injected into the prompt                                                                                               |
+| `OIDC_ISSUER_URL`        | — (required)            | OIDC issuer URL (any compliant provider)                                                                                                   |
+| `LEGACY_OIDC_ISSUER_URL` | — (optional)            | Pre-rebrand issuer URL; set only when upgrading from v1.10.x so users keyed on the old issuer are migrated once at startup (see CHANGELOG) |
+| `OIDC_CLIENT_ID`         | — (required)            | OIDC client id                                                                                                                             |
+| `OIDC_CLIENT_SECRET`     | — (required)            | OIDC client secret                                                                                                                         |
+| `OIDC_SCOPES`            | `openid profile email`  | requested scopes                                                                                                                           |
+| `SESSION_TTL_SECONDS`    | `604800`                | session cookie lifetime (7 days)                                                                                                           |
+| `SESSION_SECRET`         | client secret fallback  | HS256 session-cookie key (min 32 chars)                                                                                                    |
+| `APP_ORIGIN`             | derived from request    | public origin behind a reverse proxy                                                                                                       |
 
 Raising `LLM_BATCH_SIZE` substantially (> ~40) can make the completion
 budget exceed the server's context window (`-c` in `make llm`, 8192 by

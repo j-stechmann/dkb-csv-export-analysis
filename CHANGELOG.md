@@ -31,6 +31,11 @@
     under the new issuer in the meantime is merged into the pre-rebrand
     user. Deployments with a third, unrelated issuer are skipped (loud
     warning) so a live multi-provider setup is never re-pointed.
+  - **Sessions are invalidated by the upgrade**: the session cookie was
+    renamed (`dkb_session` → `geldlage_session`) and the session JWT's
+    audience changed (`dkb-csv-export-analysis` → `geldlage`), so all
+    pre-rebrand cookies fail verification and every user simply logs in
+    again — no stale-cookie handling was added, none is needed.
   - **Dev OIDC stack migration (automatic)**: the compose project rename
     (`dkb-analytics-dev-oidc` → `geldlage-dev-oidc`) would let a
     still-running pre-rebrand stack keep holding port 8081, making `make
