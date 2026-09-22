@@ -96,7 +96,7 @@ function withFileDbPath(filePath: string, fn: () => void) {
 }
 
 function rawConnection(): Database.Database {
-  return new Database(path.join(tmpDir!, "dkb.db"))
+  return new Database(path.join(tmpDir!, "geldlage.db"))
 }
 
 afterAll(() => {
@@ -110,8 +110,8 @@ afterAll(() => {
 
 describe("file DB migration: color column backfill", () => {
   it("adds color, backfills unique colors, and enforces uniqueness", () => {
-    tmpDir = makeTmpDir("dkb-color-migration-")
-    const dbPath = path.join(tmpDir, "dkb.db")
+    tmpDir = makeTmpDir("geldlage-color-migration-")
+    const dbPath = path.join(tmpDir, "geldlage.db")
     createPreColorFileDb(dbPath)
 
     withFileDbPath(dbPath, () => {
@@ -170,8 +170,8 @@ describe("file DB migration: color column backfill", () => {
   })
 
   it("violating the color unique index throws", () => {
-    tmpDir = makeTmpDir("dkb-color-unique-")
-    const dbPath = path.join(tmpDir, "dkb.db")
+    tmpDir = makeTmpDir("geldlage-color-unique-")
+    const dbPath = path.join(tmpDir, "geldlage.db")
 
     withFileDbPath(dbPath, () => {
       db = getDb()
@@ -207,10 +207,10 @@ describe("file DB migration: color column backfill", () => {
 
 describe("file DB migration: old (iban, name_key) label_rules shape", () => {
   it("getDb() drops and rebuilds label_rules instead of crashing", () => {
-    tmpDir = makeTmpDir("dkb-migration-")
-    createOldShapeFileDb(path.join(tmpDir, "dkb.db"))
+    tmpDir = makeTmpDir("geldlage-migration-")
+    createOldShapeFileDb(path.join(tmpDir, "geldlage.db"))
 
-    withFileDbPath(path.join(tmpDir, "dkb.db"), () => {
+    withFileDbPath(path.join(tmpDir, "geldlage.db"), () => {
       expect(() => {
         db = getDb()
       }).not.toThrow()
@@ -242,8 +242,8 @@ describe("file DB migration: old (iban, name_key) label_rules shape", () => {
   })
 
   it("rebuilt table enforces the triple unique index", () => {
-    tmpDir = makeTmpDir("dkb-migration-")
-    const dbPath = path.join(tmpDir, "dkb.db")
+    tmpDir = makeTmpDir("geldlage-migration-")
+    const dbPath = path.join(tmpDir, "geldlage.db")
     createOldShapeFileDb(dbPath)
 
     withFileDbPath(dbPath, () => {
@@ -276,7 +276,7 @@ describe("file DB migration: old (iban, name_key) label_rules shape", () => {
   })
 
   it("fresh (empty) file DB still creates the full schema via getDb()", () => {
-    tmpDir = makeTmpDir("dkb-fresh-")
+    tmpDir = makeTmpDir("geldlage-fresh-")
     const dbPath = path.join(tmpDir, "fresh.db")
 
     withFileDbPath(dbPath, () => {

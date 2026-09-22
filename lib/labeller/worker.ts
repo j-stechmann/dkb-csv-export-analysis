@@ -19,14 +19,14 @@ import {
 type WorkerState = { ticking: boolean }
 
 const globalRef = globalThis as unknown as {
-  __dkbLabellerWorker?: WorkerState
+  __geldlageLabellerWorker?: WorkerState
 }
 
 function workerState(): WorkerState {
-  if (!globalRef.__dkbLabellerWorker) {
-    globalRef.__dkbLabellerWorker = { ticking: false }
+  if (!globalRef.__geldlageLabellerWorker) {
+    globalRef.__geldlageLabellerWorker = { ticking: false }
   }
-  return globalRef.__dkbLabellerWorker
+  return globalRef.__geldlageLabellerWorker
 }
 
 export function isWorkerTicking(): boolean {
@@ -98,9 +98,9 @@ export async function tick(): Promise<void> {
   state.ticking = true
   try {
     const importState = globalThis as unknown as {
-      __dkbImportJob?: { running: boolean }
+      __geldlageImportJob?: { running: boolean }
     }
-    if (importState.__dkbImportJob?.running) return
+    if (importState.__geldlageImportJob?.running) return
 
     const cfg = getConfig()
 
@@ -251,9 +251,11 @@ function existingLabelsForPrompt(
 
 /** Start the periodic worker loop (idempotent across dev hot-reloads). */
 export function startLabelWorker(): void {
-  const g = globalThis as unknown as { __dkbLabellerWorkerStarted?: boolean }
-  if (g.__dkbLabellerWorkerStarted) return
-  g.__dkbLabellerWorkerStarted = true
+  const g = globalThis as unknown as {
+    __geldlageLabellerWorkerStarted?: boolean
+  }
+  if (g.__geldlageLabellerWorkerStarted) return
+  g.__geldlageLabellerWorkerStarted = true
 
   const initialTimer = setTimeout(() => {
     void tick()

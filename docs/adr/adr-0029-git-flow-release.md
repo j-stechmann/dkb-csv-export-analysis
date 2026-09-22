@@ -18,7 +18,7 @@ requires the `ci` check, up to date with head, **enforced for admins**.
 **The GitHub Release (not the git tag) is the publish trigger**:
 `release.yml` runs on `release: published`, re-runs the full CI as a
 reusable `quality-assurance` job (`workflow_call`), then pushes
-`ghcr.io/j-stechmann/dkb-analytics:<tag>` — **one immutable tag, no
+`ghcr.io/j-stechmann/geldlage:<tag>` — **one immutable tag, no
 `latest`**, image named after the app rather than the repo, amd64,
 provenance disabled.
 

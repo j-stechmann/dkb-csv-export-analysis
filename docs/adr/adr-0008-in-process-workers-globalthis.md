@@ -15,9 +15,9 @@ Both background jobs live **in the Next.js Node process**, guarded and
 discovered via `globalThis`:
 
 - Import job: fire-and-forget promise with a single-flight flag
-  (`globalThis.__dkbImportJob`) — [ADR-0010](adr-0010-single-flight-import.md).
+  (`globalThis.__geldlageImportJob`) — [ADR-0010](adr-0010-single-flight-import.md).
 - Label worker: `setInterval(tick, 3000)` + initial `setTimeout`, both
-  `.unref()`ed, re-entry guard + `globalThis.__dkbLabellerWorkerStarted`,
+  `.unref()`ed, re-entry guard + `globalThis.__geldlageLabellerWorkerStarted`,
   started from instrumentation ([ADR-0009](adr-0009-worker-reliability-protocol.md)
   covers the protocol details).
 - The worker reads the import flag directly to skip ticks while an import

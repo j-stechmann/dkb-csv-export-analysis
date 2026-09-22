@@ -1,8 +1,8 @@
 # Architecture
 
-_Last reviewed against v1.9.0. Docs describe intent; code comments remain the source of truth._
+_Last reviewed against v1.11.0. Docs describe intent; code comments remain the source of truth._
 
-DKB Analytics is a **single-process, local-first web application**: one Node
+Geldlage is a **single-process, local-first web application**: one Node
 process serves the Next.js UI, the REST API, a background import job, and a
 background labeling worker — all reading and writing one SQLite database, and
 talking to one local llama.cpp `llama-server` for transaction categorization.
@@ -46,10 +46,10 @@ flowchart LR
 Everything runs **in one Node process**. The two background jobs are plain
 in-process loops, not external workers:
 
-| Job          | Scheduling                                                                      | Guard                                                                            | Code                                                |
-| ------------ | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Import job   | fire-and-forget promise from `POST /api/imports`                                | single-flight flag `globalThis.__dkbImportJob`                                   | [lib/import/pipeline.ts](../lib/import/pipeline.ts) |
-| Label worker | `setInterval(tick, 3000)` + initial `setTimeout(tick, 3000)`, both `.unref()`ed | re-entry guard `workerState().ticking` + `globalThis.__dkbLabellerWorkerStarted` | [lib/labeller/worker.ts](../lib/labeller/worker.ts) |
+| Job          | Scheduling                                                                      | Guard                                                                                 | Code                                                |
+| ------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Import job   | fire-and-forget promise from `POST /api/imports`                                | single-flight flag `globalThis.__geldlageImportJob`                                   | [lib/import/pipeline.ts](../lib/import/pipeline.ts) |
+| Label worker | `setInterval(tick, 3000)` + initial `setTimeout(tick, 3000)`, both `.unref()`ed | re-entry guard `workerState().ticking` + `globalThis.__geldlageLabellerWorkerStarted` | [lib/labeller/worker.ts](../lib/labeller/worker.ts) |
 
 Both loops are keyed off `globalThis` so Next.js dev hot-reloads cannot start
 duplicates ([ADR-0008](adr/adr-0008-in-process-workers-globalthis.md)). The
@@ -78,7 +78,7 @@ sequenceDiagram
   participant W as Label worker
   I->>I: NEXT_RUNTIME === "nodejs"? (edge bundle never touches better-sqlite3)
   I->>R: dynamic import instrumentation-node.ts
-  R->>R: globalThis.__dkbInstrumented? (idempotent across hot reloads)
+  R->>R: globalThis.__geldlageInstrumented? (idempotent across hot reloads)
   R->>DB: ensureSchema() — createSchemaSqlite + migrateSchema
   R->>DB: resetStuckBatches() — parsing/importing batches marked failed
   R->>W: startLabelWorker() — first tick after 3 s, then every 3 s

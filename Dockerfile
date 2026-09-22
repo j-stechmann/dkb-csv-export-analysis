@@ -28,7 +28,7 @@ FROM node:24-bookworm-slim
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    DATABASE_PATH=/app/data/dkb.db
+    DATABASE_PATH=/app/data/geldlage.db
 
 WORKDIR /app
 

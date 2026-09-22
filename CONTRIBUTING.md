@@ -45,6 +45,21 @@ Extensive docs live in [`docs/`](docs/README.md) (guides + ADRs).
   number, `docs/README.md` index entry); see the existing files for the
   format.
 
+## Code design
+
+Contributed code **shall follow the SOLID principles**:
+
+- **S**ingle Responsibility — one reason to change per module/class.
+- **O**pen/Closed — extend behavior without modifying existing code.
+- **L**iskov Substitution — subtypes must be substitutable for their base types.
+- **I**nterface Segregation — small, focused interfaces over fat ones.
+- **D**ependency Inversion — depend on abstractions, not concrete
+  implementations (e.g. inject dependencies rather than instantiating them
+  inline).
+
+Reviewers may ask for refactors where SOLID is violated; significant design
+changes should be documented as an ADR (see [Documentation](#documentation)).
+
 ## Releases (`develop` → `master`)
 
 1. Create a release branch from `develop`:
@@ -62,7 +77,7 @@ Extensive docs live in [`docs/`](docs/README.md) (guides + ADRs).
    or locally: `git switch master && git merge --ff-only develop && git push`.
 5. Tag and publish the GitHub Release — this triggers
    `.github/workflows/release.yml` (CI as quality gate, then the Docker image
-   is pushed to `ghcr.io/j-stechmann/dkb-analytics:<tag>`).
+   is pushed to `ghcr.io/j-stechmann/geldlage:<tag>`).
 
 ## Hotfixes (`master` → back to `develop`)
 

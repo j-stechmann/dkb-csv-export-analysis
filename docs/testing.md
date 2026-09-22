@@ -1,6 +1,6 @@
 # Testing
 
-_Last reviewed against v1.9.0._
+_Last reviewed against v1.11.0 (legacy db adoption + issuer migration tests)._
 
 The suite is **entirely in-process** — no Next dev server, no HTTP listener,
 no supertest. It runs with `bunx vitest run` (config: [vitest.config.ts](../vitest.config.ts),
@@ -97,7 +97,7 @@ random sample, so failures are reproducible and assertions are exact.
 - `lib/db/index.ts` exposes `createTestDb()` / `setTestDb()` /
   `resetDefaultDbForTest()`; `getDb()` branches on `process.env.VITEST`.
 - `resetConfigCache()` (lib/config.ts) lets tests change env between cases.
-- The globalThis singletons (`__dkbImportJob`, worker state) are reset in
+- The globalThis singletons (`__geldlageImportJob`, worker state) are reset in
   `beforeEach` where jobs are involved; `flush()` helpers settle promise
   chains deterministically.
 

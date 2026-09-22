@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 40
     if: >-
       github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.repository == 'j-stechmann/dkb-csv-export-analysis'
+      github.repository == 'j-stechmann/geldlage'
     steps:
       - name: Fetch Dependabot metadata
         id: metadata

@@ -1,5 +1,50 @@
 # Changelog
 
+## v1.11.0
+
+### Changed
+
+- **Rebranded to Geldlage** (formerly DKB Analytics): the tool is becoming
+  bank-agnostic with many data sources and ML/LLM functionality at its core,
+  so the bank-specific name no longer fits. Product surfaces (UI, docs,
+  Docker image `ghcr.io/j-stechmann/geldlage`, OIDC client id, compose
+  project, GHCR path) and internal identifiers (cookie names, `globalThis`
+  singleton keys, default DB path `./data/geldlage.db`) are renamed; the
+  DKB CSV import stays fully compatible.
+  - **Database file adoption**: the default DB file used to be
+    `./data/dkb.db`. On first boot after the upgrade, an existing `dkb.db`
+    (with its WAL sidecars) in the database directory is renamed to the
+    configured `DATABASE_PATH` (`./data/geldlage.db` by default, Docker:
+    `/app/data/geldlage.db`) so the upgrade keeps all data with no manual
+    step. An existing target file is never overwritten; deployments that
+    set `DATABASE_PATH` explicitly and already have a DB there are
+    unaffected. Pre-rebrand data lives on in `dkb.db` only when a target
+    file already exists.
+  - **User identity migration**: users are keyed on `(issuer, subject)` and
+    the rebrand changed the default dev issuer URL
+    (`…/application/o/dkb-analytics/` → `…/application/o/geldlage/`), so a
+    pre-rebrand login would JIT-provision a fresh empty workspace while the
+    data stayed owned by the old issuer. When `LEGACY_OIDC_ISSUER_URL` is
+    set (dev `.env` ships the value) and every user in the DB matches that
+    legacy issuer, `users.issuer` is rewritten to the configured
+    `OIDC_ISSUER_URL` once at startup; a same-subject duplicate created
+    under the new issuer in the meantime is merged into the pre-rebrand
+    user. Deployments with a third, unrelated issuer are skipped (loud
+    warning) so a live multi-provider setup is never re-pointed.
+  - **Sessions are invalidated by the upgrade**: the session cookie was
+    renamed (`dkb_session` → `geldlage_session`) and the session JWT's
+    audience changed (`dkb-csv-export-analysis` → `geldlage`), so all
+    pre-rebrand cookies fail verification and every user simply logs in
+    again — no stale-cookie handling was added, none is needed.
+  - **Dev OIDC stack migration (automatic)**: the compose project rename
+    (`dkb-analytics-dev-oidc` → `geldlage-dev-oidc`) would let a
+    still-running pre-rebrand stack keep holding port 8081, making `make
+oidc` silently provision into the old project's Authentik. `make oidc`
+    now tears the old project down automatically before starting the
+    renamed stack (no-op when absent); the orphaned
+    `dkb-analytics-dev-oidc_authentik-db` volume is left in place —
+    `docker volume rm dkb-analytics-dev-oidc_authentik-db` removes it.
+
 ## v1.10.1
 
 ### Security
@@ -77,7 +122,7 @@
   before `oidc-down` runs.
 - **Stale marker files can no longer hijack the next `make dev`**: when a
   previous run died without its trap (SIGKILL, power loss),
-  `/tmp/llama-server.managed` / `/tmp/dkb-oidc.managed` lingered and the
+  `/tmp/llama-server.managed` / `/tmp/geldlage-oidc.managed` lingered and the
   next run would tear down services it didn't start. `make dev` (and
   `make llm`) now clear a marker whenever the service it references is
   healthy at startup, so markers only ever describe _this_ run's services.

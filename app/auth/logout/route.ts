@@ -3,6 +3,7 @@ import { appUrl, buildLogoutRedirect } from "@/lib/auth/oidc"
 import { assertSameOrigin } from "@/lib/auth/guard"
 import {
   ID_TOKEN_COOKIE,
+  SESSION_COOKIE,
   STATE_COOKIE,
   clearCookie,
   cookieValue,
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
   const res = providerLogout
     ? NextResponse.redirect(providerLogout.toString(), 302)
     : NextResponse.redirect(fallback, 302)
-  res.headers.append("set-cookie", clearCookie("dkb_session", opts))
+  res.headers.append("set-cookie", clearCookie(SESSION_COOKIE, opts))
   res.headers.append(
     "set-cookie",
     clearCookie(STATE_COOKIE, { ...opts, maxAgeSeconds: 0 })

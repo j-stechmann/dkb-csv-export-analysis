@@ -14,7 +14,7 @@ reconcile stage), and the UI needs progress.
 before any DB write) and returns **202 with `batchId`** while the heavy work
 runs as a fire-and-forget promise:
 
-- **Single-flight**: `globalThis.__dkbImportJob` is claimed _before_ the job
+- **Single-flight**: `globalThis.__geldlageImportJob` is claimed _before_ the job
   body runs (the body executes synchronously — no awaits — so setting the
   flag afterwards would leave it stuck on true); a concurrent upload gets
   **409 `import_in_progress`**. The flag resets in `.finally()`.

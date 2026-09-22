@@ -39,7 +39,7 @@ export function MobileNav() {
       </SheetTrigger>
       <SheetContent side="right" className="w-64">
         <SheetHeader>
-          <SheetTitle>DKB Analytics</SheetTitle>
+          <SheetTitle>Geldlage</SheetTitle>
           <SheetDescription className="sr-only">Navigation</SheetDescription>
         </SheetHeader>
         <nav className="flex flex-col gap-1 px-4">
