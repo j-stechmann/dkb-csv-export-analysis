@@ -1,6 +1,6 @@
 # Testing
 
-_Last reviewed against v1.9.0._
+_Last reviewed against v1.11.0 (legacy db adoption + issuer migration tests)._
 
 The suite is **entirely in-process** — no Next dev server, no HTTP listener,
 no supertest. It runs with `bunx vitest run` (config: [vitest.config.ts](../vitest.config.ts),

@@ -1,6 +1,6 @@
 # Operations
 
-_Last reviewed against v1.10.1 (make dev OIDC teardown + dev UX fixes)._
+_Last reviewed against v1.11.0 (rebrand: renamed compose project, `make oidc-teardown-legacy`, `LEGACY_OIDC_ISSUER_URL`)._
 
 Running, configuring, and shipping the app. Setup basics live in the root
 [README](../README.md); this guide covers what is behind the commands and
