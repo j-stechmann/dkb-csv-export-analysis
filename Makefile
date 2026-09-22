@@ -54,7 +54,7 @@ LLAMA_SERVER ?= $(shell command -v llama-server 2>/dev/null)
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-.PHONY: help dev app model llm llm-kill stop llm-stop llm-status oidc oidc-down oidc-stop oidc-status oidc-logs test check format build start
+.PHONY: help dev app model llm llm-kill stop llm-stop llm-status oidc oidc-teardown-legacy oidc-down oidc-stop oidc-status oidc-logs test check format build start
 
 help:
 	@echo "Geldlage — make targets:"
@@ -280,11 +280,25 @@ llm-status:
 # geldlage client (scripts/dev-oidc-provision.ts). OIDC_ISSUER_URL /
 # OIDC_CLIENT_* in .env must match the values baked in there.
 #
+# One-time pre-rebrand cleanup: the compose project was renamed
+# (dkb-analytics-dev-oidc → geldlage-dev-oidc), and a still-running old
+# stack would keep holding :$(OIDC_PORT), making the health check below
+# skip starting the renamed stack and silently provision into the old
+# project's Authentik. `oidc-teardown-legacy` removes it (no-op when
+# absent, exits 0); the orphaned dkb-analytics-dev-oidc_authentik-db
+# volume is kept — docker volume rm by hand if you want it gone.
+#
 # Credentials: compose.dev.yaml reads them from compose.dev.env (gitignored,
 # dockerignored). On first run a copy of compose.dev.env.example is created;
 # edit it to change any password. The stack is bound to 127.0.0.1 — it must
 # never be reachable from other network hosts.
-oidc:
+oidc-teardown-legacy:
+	@if docker ps -a --filter label=com.docker.compose.project=dkb-analytics-dev-oidc --quiet | grep -q .; then \
+		echo "removing pre-rebrand dev OIDC stack (dkb-analytics-dev-oidc)…"; \
+		docker compose -p dkb-analytics-dev-oidc down; \
+	fi
+
+oidc: oidc-teardown-legacy
 	@if [ ! -f compose.dev.env ]; then \
 		cp compose.dev.env.example compose.dev.env; \
 		echo "created compose.dev.env from compose.dev.env.example — edit it to set your dev IdP passwords"; \

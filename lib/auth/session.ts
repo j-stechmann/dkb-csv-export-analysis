@@ -3,6 +3,10 @@ import { getConfig } from "@/lib/config"
 
 export const SESSION_COOKIE = "geldlage_session"
 export const STATE_COOKIE = "geldlage_oidc_state"
+/** PKCE code verifier from the login step — checked at the callback. */
+export const VERIFIER_COOKIE = "geldlage_oidc_verifier"
+/** OIDC nonce from the login step — checked at the callback. */
+export const NONCE_COOKIE = "geldlage_oidc_nonce"
 /** id_token from the last exchange — sent as id_token_hint at RP logout. */
 export const ID_TOKEN_COOKIE = "geldlage_id_token"
 

@@ -11,10 +11,36 @@ export type Db = ReturnType<typeof createDb>
 /** Transaction callback parameter type (for helpers receiving `tx`). */
 export type DbTx = Parameters<Parameters<Db["transaction"]>[0]>[0]
 
+/**
+ * One-time rename migration for the rebrand: the default DB file used to be
+ * `dkb.db`. When the configured target does not exist yet but a pre-rebrand
+ * `dkb.db` (with WAL sidecars) sits in the same directory, rename it over so
+ * an upgrade keeps its data instead of silently starting fresh. The main
+ * file moves first — a crash mid-rename leaves the target existing, which
+ * makes the next boot skip the migration instead of re-pairing a stale WAL
+ * with the db. An existing target is never overwritten; `:memory:` is a
+ * no-op.
+ */
+function adoptLegacyDbFile(dbPath: string) {
+  if (dbPath.includes(":memory:")) return
+  const legacyPath = path.join(path.dirname(dbPath), "dkb.db")
+  if (fs.existsSync(dbPath) || !fs.existsSync(legacyPath)) return
+  fs.renameSync(legacyPath, dbPath)
+  for (const suffix of ["-wal", "-shm"]) {
+    if (fs.existsSync(legacyPath + suffix)) {
+      fs.renameSync(legacyPath + suffix, dbPath + suffix)
+    }
+  }
+  console.log(
+    `[startup] adopted pre-rebrand database: ${legacyPath} → ${dbPath}`
+  )
+}
+
 function createDb() {
   const dbPath = getConfig().DATABASE_PATH
   const dir = path.dirname(dbPath)
   fs.mkdirSync(dir, { recursive: true })
+  adoptLegacyDbFile(dbPath)
   const sqlite = new Database(dbPath)
   sqlite.pragma("journal_mode = WAL")
   sqlite.pragma("foreign_keys = ON")
