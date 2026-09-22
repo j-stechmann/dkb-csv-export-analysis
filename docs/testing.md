@@ -97,7 +97,7 @@ random sample, so failures are reproducible and assertions are exact.
 - `lib/db/index.ts` exposes `createTestDb()` / `setTestDb()` /
   `resetDefaultDbForTest()`; `getDb()` branches on `process.env.VITEST`.
 - `resetConfigCache()` (lib/config.ts) lets tests change env between cases.
-- The globalThis singletons (`__dkbImportJob`, worker state) are reset in
+- The globalThis singletons (`__geldlageImportJob`, worker state) are reset in
   `beforeEach` where jobs are involved; `flush()` helpers settle promise
   chains deterministically.
 

@@ -4,9 +4,9 @@
  * touches better-sqlite3.
  */
 export async function registerNode() {
-  const g = globalThis as unknown as { __dkbInstrumented?: boolean }
-  if (g.__dkbInstrumented) return
-  g.__dkbInstrumented = true
+  const g = globalThis as unknown as { __geldlageInstrumented?: boolean }
+  if (g.__geldlageInstrumented) return
+  g.__geldlageInstrumented = true
 
   const { ensureSchema } = await import("@/lib/db")
   const { resetStuckBatches } = await import("@/lib/import/pipeline")

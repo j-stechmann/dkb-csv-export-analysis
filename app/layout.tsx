@@ -4,7 +4,16 @@ import { Providers } from "@/components/providers"
 import { LabellerHealthBadge } from "@/components/labeller-health-badge"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { HeaderUserChip } from "@/components/user-chip"
+import type { Metadata } from "next"
 import "./globals.css"
+
+export const metadata: Metadata = {
+  title: {
+    template: "%s | Geldlage",
+    default: "Geldlage",
+  },
+  description: "Analyse von Bank-CSV-Exporten mit lokalem LLM-Labeling",
+}
 
 export default function RootLayout({
   children,
@@ -20,7 +29,7 @@ export default function RootLayout({
               <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-4 px-4">
                 <div className="flex items-center gap-6">
                   <span className="text-sm font-semibold tracking-tight">
-                    DKB Analytics
+                    Geldlage
                   </span>
                   <AppNav />
                 </div>

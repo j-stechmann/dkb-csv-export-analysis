@@ -1,7 +1,7 @@
 # Throwaway Authentik stack for local development of the OIDC login
 # (ADR-0032). Started/stopped via `make oidc` / `make oidc-stop` — do not
 # `docker compose down -v` unless you want to wipe the provider config:
-# the named volume keeps the provisioned dkb-analytics client across
+# the named volume keeps the provisioned geldlage client across
 # restarts. This is dev tooling only; production images use the plain
 # Dockerfile (no compose file ships with releases).
 #
@@ -11,7 +11,7 @@
 # Login for the app flow: user `akadmin`, password from AUTHENTIK_BOOTSTRAP_PASSWORD.
 # Admin UI: http://localhost:8081/if/admin/
 
-name: dkb-analytics-dev-oidc
+name: geldlage-dev-oidc
 
 services:
   postgres:

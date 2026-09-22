@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { buildLoginRedirect } from "@/lib/auth/oidc"
 import { assertSameOrigin } from "@/lib/auth/guard"
 import {
+  NONCE_COOKIE,
   STATE_COOKIE,
+  VERIFIER_COOKIE,
   clearCookie,
   serializeCookie,
   sessionCookieOptions,
@@ -30,11 +32,11 @@ export async function GET(request: NextRequest) {
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_oidc_verifier", auth.codeVerifier, flowOpts)
+      serializeCookie(VERIFIER_COOKIE, auth.codeVerifier, flowOpts)
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_oidc_nonce", auth.nonce, flowOpts)
+      serializeCookie(NONCE_COOKIE, auth.nonce, flowOpts)
     )
     return res
   } catch (err) {

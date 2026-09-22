@@ -106,7 +106,7 @@ describe("session helpers", () => {
     const tampered = value.slice(0, -4) + "AAAA"
     const req2 = new NextRequest(
       new Request("http://test/api/x", {
-        headers: { cookie: `dkb_session=${tampered}` },
+        headers: { cookie: `geldlage_session=${tampered}` },
       })
     )
     expect(await getSession(req2)).toBeNull()

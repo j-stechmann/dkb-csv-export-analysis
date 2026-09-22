@@ -4,7 +4,10 @@ import { appUrl, exchangeAuthorizationCode } from "@/lib/auth/oidc"
 import { upsertUser } from "@/lib/auth/users"
 import {
   ID_TOKEN_COOKIE,
+  NONCE_COOKIE,
+  SESSION_COOKIE,
   STATE_COOKIE,
+  VERIFIER_COOKIE,
   cookieValue,
   createSessionToken,
   serializeCookie,
@@ -49,11 +52,8 @@ export async function GET(request: NextRequest) {
   const state = url.searchParams.get("state")
   const code = url.searchParams.get("code")
   const expectedState = cookieValue(request.headers.get("cookie"), STATE_COOKIE)
-  const verifier = cookieValue(
-    request.headers.get("cookie"),
-    "dkb_oidc_verifier"
-  )
-  const nonce = cookieValue(request.headers.get("cookie"), "dkb_oidc_nonce")
+  const verifier = cookieValue(request.headers.get("cookie"), VERIFIER_COOKIE)
+  const nonce = cookieValue(request.headers.get("cookie"), NONCE_COOKIE)
   if (
     !state ||
     !code ||
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     const res = NextResponse.redirect(appUrl(request.url, "/"), 302)
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_session", token, opts)
+      serializeCookie(SESSION_COOKIE, token, opts)
     )
     // flow cookies are single-use; the id_token is kept for RP-initiated
     // logout (id_token_hint)
@@ -104,11 +104,14 @@ export async function GET(request: NextRequest) {
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_oidc_verifier", "", { ...opts, maxAgeSeconds: 0 })
+      serializeCookie(VERIFIER_COOKIE, "", {
+        ...opts,
+        maxAgeSeconds: 0,
+      })
     )
     res.headers.append(
       "set-cookie",
-      serializeCookie("dkb_oidc_nonce", "", { ...opts, maxAgeSeconds: 0 })
+      serializeCookie(NONCE_COOKIE, "", { ...opts, maxAgeSeconds: 0 })
     )
     if (result.idToken) {
       res.headers.append(

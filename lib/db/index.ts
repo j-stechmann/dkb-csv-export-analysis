@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3"
 import { sql } from "drizzle-orm"
 import Database from "better-sqlite3"
 import * as schema from "./schema"
+import { users as usersTable } from "./schema"
 import { getConfig } from "@/lib/config"
 import { pickCategoryColor } from "@/lib/category-colors"
 
@@ -11,10 +12,39 @@ export type Db = ReturnType<typeof createDb>
 /** Transaction callback parameter type (for helpers receiving `tx`). */
 export type DbTx = Parameters<Parameters<Db["transaction"]>[0]>[0]
 
+/**
+ * One-time rename migration for the rebrand: the default DB file used to be
+ * `dkb.db`. When the configured target does not exist yet but a pre-rebrand
+ * `dkb.db` (with WAL sidecars) sits in the same directory, rename it over so
+ * an upgrade keeps its data instead of silently starting fresh. The sidecars
+ * move first, the main file last — every crash point heals on the next boot:
+ * before any rename the migration just retries; after the sidecar renames the
+ * main-file rename completes the set (`existsSync` skips what already moved).
+ * A main-first order could instead strand a hot WAL: a crash between renames
+ * would leave the target existing (next boot skips the migration) with
+ * committed transactions stuck in the orphaned `dkb.db-wal`. An existing
+ * target is never overwritten; `:memory:` is a no-op.
+ */
+function adoptLegacyDbFile(dbPath: string) {
+  if (dbPath.includes(":memory:")) return
+  const legacyPath = path.join(path.dirname(dbPath), "dkb.db")
+  if (fs.existsSync(dbPath) || !fs.existsSync(legacyPath)) return
+  for (const suffix of ["-wal", "-shm"]) {
+    if (fs.existsSync(legacyPath + suffix)) {
+      fs.renameSync(legacyPath + suffix, dbPath + suffix)
+    }
+  }
+  fs.renameSync(legacyPath, dbPath)
+  console.log(
+    `[startup] adopted pre-rebrand database: ${legacyPath} → ${dbPath}`
+  )
+}
+
 function createDb() {
   const dbPath = getConfig().DATABASE_PATH
   const dir = path.dirname(dbPath)
   fs.mkdirSync(dir, { recursive: true })
+  adoptLegacyDbFile(dbPath)
   const sqlite = new Database(dbPath)
   sqlite.pragma("journal_mode = WAL")
   sqlite.pragma("foreign_keys = ON")
@@ -22,38 +52,38 @@ function createDb() {
   return drizzle(sqlite, { schema })
 }
 
-type DbHolder = { __dkbDb?: Db }
+type DbHolder = { __geldlageDb?: Db }
 
 const globalRef = globalThis as unknown as {
-  __dkbDbHolder?: DbHolder
-  __dkbTestDb?: Db
+  __geldlageDbHolder?: DbHolder
+  __geldlageTestDb?: Db
 }
 
 export function getDb(): Db {
-  if (process.env.VITEST && globalRef.__dkbTestDb) {
-    return globalRef.__dkbTestDb
+  if (process.env.VITEST && globalRef.__geldlageTestDb) {
+    return globalRef.__geldlageTestDb
   }
-  if (!globalRef.__dkbDbHolder) {
-    globalRef.__dkbDbHolder = {}
+  if (!globalRef.__geldlageDbHolder) {
+    globalRef.__geldlageDbHolder = {}
   }
-  const holder = globalRef.__dkbDbHolder
-  if (!holder.__dkbDb) {
-    holder.__dkbDb = createDb()
-    createSchemaSqlite(holder.__dkbDb)
+  const holder = globalRef.__geldlageDbHolder
+  if (!holder.__geldlageDb) {
+    holder.__geldlageDb = createDb()
+    createSchemaSqlite(holder.__geldlageDb)
   }
   // cheap idempotent re-check so a hot-reloaded schema heals the file DB
-  migrateSchema(holder.__dkbDb)
-  return holder.__dkbDb
+  migrateSchema(holder.__geldlageDb)
+  return holder.__geldlageDb
 }
 
 /** For tests: inject an in-memory DB. */
 export function setTestDb(db: Db) {
-  globalRef.__dkbTestDb = db
+  globalRef.__geldlageTestDb = db
 }
 
 /** For tests: forget the default (file) DB singleton, e.g. after changing DATABASE_PATH. */
 export function resetDefaultDbForTest() {
-  globalRef.__dkbDbHolder = undefined
+  globalRef.__geldlageDbHolder = undefined
 }
 
 export function createTestDb(): Db {
@@ -235,6 +265,91 @@ export function ensureSchema() {
 const colorHealSettled = new WeakSet<object>()
 
 /**
+ * One-time issuer migration for the rebrand: users are keyed on
+ * `(issuer, subject)` and the rebrand changed the dev issuer URL
+ * (`…/application/o/dkb-analytics/` → `…/application/o/geldlage/`), so
+ * pre-rebrand logins JIT-provision a fresh (empty) workspace while their
+ * data stays owned by the old issuer identity. Rewriting the stored issuer
+ * to the configured `OIDC_ISSUER_URL` re-attaches those workspaces; a
+ * genuine multi-issuer deployment (multiple distinct provider URLs in
+ * `users.issuer`) is deliberately left untouched — the rewrite only fires
+ * when every existing user matches the exact legacy issuer, which cannot
+ * be confused with a second, still-live provider. The JIT-created empty
+ * duplicate (same subject under the new issuer) is merged into the
+ * migrated user first: its id wins (older), duplicates move over, the
+ * empty row is deleted. Idempotent: after the rewrite no row matches the
+ * legacy issuer and the next check is a cheap no-op read.
+ */
+function adoptLegacyIssuer(db: Db) {
+  let legacyIssuer: string | undefined
+  try {
+    legacyIssuer = getConfig().LEGACY_OIDC_ISSUER_URL
+  } catch {
+    return
+  }
+  if (!legacyIssuer) return
+  const all = db.all<{ id: number; issuer: string; subject: string }>(
+    `SELECT id, issuer, subject FROM users`
+  )
+  const legacyUsers = all.filter((u) => u.issuer === legacyIssuer)
+  if (legacyUsers.length === 0) return
+  const targetIssuer = getConfig().OIDC_ISSUER_URL
+  if (targetIssuer === legacyIssuer) return
+  // Only touch data whose every issuer is either the legacy one or the
+  // configured target: that pattern is exactly "pre-rebrand rows plus at
+  // most JIT-created duplicates". A real multi-provider deployment (a third
+  // live issuer) must keep its identities — skip with a loud warning.
+  const unexpected = all.some(
+    (u) => u.issuer !== legacyIssuer && u.issuer !== targetIssuer
+  )
+  if (unexpected) {
+    console.warn(
+      `[startup] other issuers present in users — skipping legacy issuer migration (${legacyIssuer})`
+    )
+    return
+  }
+  const childTables = [
+    "accounts",
+    "categories",
+    "label_rules",
+    "import_batches",
+    "transactions",
+  ]
+  for (const legacyUser of legacyUsers) {
+    // A JIT-created duplicate (same subject, already on the new issuer) is
+    // merged into the legacy user: its data moves over, the row is deleted,
+    // and the legacy id survives (FKs elsewhere stay valid).
+    const duplicate = db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(
+        sql`${usersTable.issuer} = ${targetIssuer} AND ${usersTable.subject} = ${legacyUser.subject}`
+      )
+      .get()
+    db.transaction((tx) => {
+      if (duplicate) {
+        for (const table of childTables) {
+          tx.run(
+            sql`UPDATE ${sql.raw(table)} SET user_id = ${legacyUser.id} WHERE user_id = ${duplicate.id}`
+          )
+        }
+        tx.run(sql`DELETE FROM users WHERE id = ${duplicate.id}`)
+      }
+      tx.run(
+        sql`UPDATE users SET issuer = ${targetIssuer} WHERE id = ${legacyUser.id}`
+      )
+    })
+    console.log(
+      `[startup] migrated user #${legacyUser.id} to ${targetIssuer}` +
+        (duplicate ? ` (merged duplicate #${duplicate.id})` : "")
+    )
+  }
+  console.log(
+    `[startup] migrated users off legacy issuer: ${legacyIssuer} → ${targetIssuer}`
+  )
+}
+
+/**
  * Drop pre-multi-user tables (no user_id column): children first. The
  * canonical user-shaped DDL in createSchemaSqlite/migrateSchema recreates
  * them right after. Runs from both paths so a fresh singleton AND a
@@ -273,6 +388,7 @@ export function migrateSchema(db: Db) {
   // the canonical DDL below. Runs in both createSchemaSqlite (fresh getDb)
   // and here (hot-reload heal) — same as the old label_rules shape check.
   dropLegacyUserlessTables(db)
+  adoptLegacyIssuer(db)
   if (!cols("import_batches").includes("rows_updated")) {
     db.run(
       `ALTER TABLE import_batches ADD COLUMN rows_updated INTEGER NOT NULL DEFAULT 0`

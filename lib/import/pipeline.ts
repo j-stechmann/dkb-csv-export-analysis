@@ -45,14 +45,14 @@ type JobState = {
 }
 
 const globalRef = globalThis as unknown as {
-  __dkbImportJob?: JobState
+  __geldlageImportJob?: JobState
 }
 
 function jobState(): JobState {
-  if (!globalRef.__dkbImportJob) {
-    globalRef.__dkbImportJob = { running: false, currentBatchId: null }
+  if (!globalRef.__geldlageImportJob) {
+    globalRef.__geldlageImportJob = { running: false, currentBatchId: null }
   }
-  return globalRef.__dkbImportJob
+  return globalRef.__geldlageImportJob
 }
 
 export function isImportRunning(): boolean {
@@ -84,7 +84,7 @@ export function startImport(
   }
 
   const batchId = crypto.randomUUID()
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "dkb-import-"))
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "geldlage-import-"))
   const tmpFile = path.join(tmpDir, "upload.csv")
   fs.writeFileSync(tmpFile, csvContent, "utf8")
 

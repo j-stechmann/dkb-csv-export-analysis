@@ -24,7 +24,7 @@ directory, stay small, and start without build tooling.
 - **Single write target**: only `/app/data` is created and chowned; the app
   runs as `USER node`. `next.config.ts` uses `serverExternalPackages` for the
   native addon.
-- Image named after the app (`dkb-analytics`), one immutable tag per
+- Image named after the app (`geldlage`), one immutable tag per
   release, no `latest`, amd64, provenance disabled.
 
 ## Alternatives considered

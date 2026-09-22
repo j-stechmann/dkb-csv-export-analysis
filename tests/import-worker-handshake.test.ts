@@ -95,9 +95,9 @@ beforeEach(() => {
     .returning()
     .get().id
   const g = globalThis as unknown as {
-    __dkbImportJob?: { running: boolean; currentBatchId: string | null }
+    __geldlageImportJob?: { running: boolean; currentBatchId: string | null }
   }
-  g.__dkbImportJob = { running: false, currentBatchId: null }
+  g.__geldlageImportJob = { running: false, currentBatchId: null }
 })
 
 /** flush all pending microtasks (the job's promise chain settles in ticks) */
@@ -148,9 +148,9 @@ describe("startImport job-state handshake", () => {
   it("rejects a second import while the first is running", () => {
     // hold the slot: set the flag without a job ever clearing it
     const g = globalThis as unknown as {
-      __dkbImportJob?: { running: boolean }
+      __geldlageImportJob?: { running: boolean }
     }
-    if (g.__dkbImportJob) g.__dkbImportJob.running = true
+    if (g.__geldlageImportJob) g.__geldlageImportJob.running = true
 
     expect(() => startImport("c.csv", CSV_OK, userId)).toThrowError(
       /another import is already in progress/

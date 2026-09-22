@@ -1,10 +1,14 @@
 import { SignJWT, jwtVerify } from "jose"
 import { getConfig } from "@/lib/config"
 
-export const SESSION_COOKIE = "dkb_session"
-export const STATE_COOKIE = "dkb_oidc_state"
+export const SESSION_COOKIE = "geldlage_session"
+export const STATE_COOKIE = "geldlage_oidc_state"
+/** PKCE code verifier from the login step — checked at the callback. */
+export const VERIFIER_COOKIE = "geldlage_oidc_verifier"
+/** OIDC nonce from the login step — checked at the callback. */
+export const NONCE_COOKIE = "geldlage_oidc_nonce"
 /** id_token from the last exchange — sent as id_token_hint at RP logout. */
-export const ID_TOKEN_COOKIE = "dkb_id_token"
+export const ID_TOKEN_COOKIE = "geldlage_id_token"
 
 export interface SessionClaims {
   /** users.id (internal numeric key) */
@@ -67,7 +71,7 @@ export async function createSessionToken(
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(claims.sub)
     .setIssuer(claims.iss)
-    .setAudience("dkb-csv-export-analysis")
+    .setAudience("geldlage")
     .setIssuedAt()
     .setExpirationTime(`${cfg.SESSION_TTL_SECONDS}s`)
     .sign(sessionKey())
@@ -80,7 +84,7 @@ export async function verifySessionToken(
     const cfg = getConfig()
     const { payload } = await jwtVerify(token, sessionKey(), {
       algorithms: ["HS256"],
-      audience: "dkb-csv-export-analysis",
+      audience: "geldlage",
       issuer: cfg.OIDC_ISSUER_URL,
     })
     if (
