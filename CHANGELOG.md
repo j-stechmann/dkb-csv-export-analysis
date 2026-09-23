@@ -5,9 +5,9 @@
 ### Changed
 
 - **Favicon matches the Geldlage brand**: `app/icon.svg` now uses the
-  neutral-gray + emerald-green theme palette (the chart greens on the dark
-  card neutral) instead of the pre-rebrand slate/sky-blue colors. The same
-  mark appears in the header wordmark and the mobile nav sheet
+  neutral-gray + emerald-green theme palette (the chart greens on a neutral
+  gray tile, `#333333`) instead of the pre-rebrand slate/sky-blue colors. The
+  same mark appears in the header wordmark and the mobile nav sheet
   (`components/logo.tsx`).
 
 ## v1.11.0
