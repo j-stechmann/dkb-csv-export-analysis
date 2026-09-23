@@ -1,6 +1,6 @@
 # Frontend
 
-_Last reviewed against v1.10.1 (header user chip + mobile logout)._
+_Last reviewed against v1.12.0 (branded favicon + `Logo` wordmark)._
 
 Every page is a **client component**: the entire UI is a live dashboard
 driven by filters, polling, and toasts, with no server-rendered data
