@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { Menu, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NAV_ITEMS, NAV_LINK_CLASS } from "@/components/app-nav"
+import { Logo } from "@/components/logo"
 import { Button } from "@/components/ui/button"
 import { useSessionUser } from "@/components/user-session"
 import {
@@ -39,7 +40,10 @@ export function MobileNav() {
       </SheetTrigger>
       <SheetContent side="right" className="w-64">
         <SheetHeader>
-          <SheetTitle>Geldlage</SheetTitle>
+          <SheetTitle className="flex items-center gap-2">
+            <Logo className="size-6" />
+            Geldlage
+          </SheetTitle>
           <SheetDescription className="sr-only">Navigation</SheetDescription>
         </SheetHeader>
         <nav className="flex flex-col gap-1 px-4">
