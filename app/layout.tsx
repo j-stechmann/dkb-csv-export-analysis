@@ -2,6 +2,7 @@ import { AppNav } from "@/components/app-nav"
 import { MobileNav } from "@/components/mobile-nav"
 import { Providers } from "@/components/providers"
 import { LabellerHealthBadge } from "@/components/labeller-health-badge"
+import { Logo } from "@/components/logo"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { HeaderUserChip } from "@/components/user-chip"
 import type { Metadata } from "next"
@@ -28,7 +29,8 @@ export default function RootLayout({
             <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
               <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between gap-4 px-4">
                 <div className="flex items-center gap-6">
-                  <span className="text-sm font-semibold tracking-tight">
+                  <span className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+                    <Logo className="size-6" />
                     Geldlage
                   </span>
                   <AppNav />
